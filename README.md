@@ -1,1 +1,1 @@
-# BPC-Data-Engeneering-Scaling-Laws-of-learned-cardinality-Estimator
+# BPC-Data-Engeneering: Scaling Laws of Cardinality Estimators
