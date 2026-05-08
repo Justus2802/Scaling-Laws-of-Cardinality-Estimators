@@ -1,5 +1,7 @@
 """Graph signature measurement for KGs loaded via kg_io.load_kg."""
 
+import functools
+import math
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -235,4 +237,275 @@ def block_c(g: igraph.Graph) -> BlockC:
         class_size_zipf_exponent=zipf_exp,
         class_sizes=class_sizes,
         type_relation_conditional=type_relation_conditional,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Block E — Motifs (controllable shape distribution)
+# ---------------------------------------------------------------------------
+
+_SAMPLE_BUDGET = 100_000  # default walk samples for path/tree templates
+
+
+@dataclass
+class BlockE:
+    """Block E — Motif shape distribution of a KG."""
+    # Exact counts on the undirected simplification
+    triangle_count: int           # 3-cycle (K3)
+    four_cycle_count: int         # C4 (exact)
+    five_cycle_count: int         # C5 (sampled estimate)
+    six_cycle_count: int          # C6 (sampled estimate)
+    diamond_count: int            # K4 minus one edge (5 edges on 4 nodes)
+    k4_count: int                 # complete graph on 4 nodes
+    tailed_triangle_count: int    # triangle + one pendant (paw)
+
+    # Exact star counts: number of k-star subgraphs = Σ_v C(deg(v), k), k=2..10
+    star_counts: dict             # int k -> int
+
+    # Sampled directed-walk path templates, k=2..10
+    path_template_zipf: dict      # int k -> float
+    path_template_entropy: dict   # int k -> float
+
+    # Sampled depth-2 rooted tree templates
+    tree_template_zipf: float
+    tree_template_entropy: float
+
+    def as_vector(self) -> list[float]:
+        vec = [
+            float(self.triangle_count),
+            float(self.four_cycle_count),
+            float(self.five_cycle_count),
+            float(self.six_cycle_count),
+            float(self.diamond_count),
+            float(self.k4_count),
+            float(self.tailed_triangle_count),
+        ]
+        for k in range(2, 11):
+            vec.append(float(self.star_counts.get(k, 0)))
+        for k in range(2, 11):
+            vec.append(self.path_template_zipf.get(k, float("nan")))
+        for k in range(2, 11):
+            vec.append(self.path_template_entropy.get(k, float("nan")))
+        vec.extend([self.tree_template_zipf, self.tree_template_entropy])
+        return vec  # length 7 + 9 + 9 + 9 + 2 = 36
+
+
+@functools.lru_cache(maxsize=1)
+def _4node_motif_index_map() -> dict:
+    """Discover which index in motifs_randesu(size=4) maps to each named 4-node motif.
+
+    Creates a canonical 4-node example for each motif, runs full RANDESU enumeration,
+    and finds the unique index with count == 1.  Cached so it runs only once per process.
+    """
+    specs = {
+        "four_cycle":      igraph.Graph(n=4, edges=[(0,1),(1,2),(2,3),(3,0)]),
+        "diamond":         igraph.Graph(n=4, edges=[(0,1),(0,2),(0,3),(1,2),(1,3)]),
+        "k4":              igraph.Graph(n=4, edges=[(0,1),(0,2),(0,3),(1,2),(1,3),(2,3)]),
+        "tailed_triangle": igraph.Graph(n=4, edges=[(0,1),(1,2),(0,2),(2,3)]),
+    }
+    index_map: dict = {}
+    for name, pattern in specs.items():
+        for i, count in enumerate(pattern.motifs_randesu(size=4)):
+            if not math.isnan(count) and int(count) == 1:
+                index_map[name] = i
+                break
+    return index_map
+
+
+def _template_stats(counts: dict) -> tuple[float, float]:
+    """Return (Zipf exponent, Shannon entropy) from a {template: count} dict."""
+    if not counts:
+        return float("nan"), float("nan")
+    freqs = np.array(list(counts.values()), dtype=float)
+    zipf = _fit_zipf_mle(freqs)
+    p = freqs / freqs.sum()
+    p = p[p > 0]
+    entropy = -float(np.sum(p * np.log(p)))
+    return zipf, entropy
+
+
+def _build_out_adj(g: igraph.Graph) -> tuple[dict, list]:
+    """Build adjacency list for directed walks, skipping literal targets.
+
+    Returns (out_edges dict: vertex_id -> [(neighbor_id, predicate)],
+             start_verts: non-literal vertices that have at least one outgoing edge).
+    """
+    out_edges: dict = defaultdict(list)
+    for e in g.es:
+        if not g.vs[e.target]["is_literal"]:
+            out_edges[e.source].append((e.target, e["predicate"]))
+    start_verts = [v for v, adj in out_edges.items() if not g.vs[v]["is_literal"]]
+    return dict(out_edges), start_verts
+
+
+def _sample_path_templates(
+    out_edges: dict,
+    start_verts: np.ndarray,
+    k: int,
+    n_samples: int,
+    rng: np.random.Generator,
+) -> dict:
+    """Sample n_samples directed walks of length k; count relation-sequence tuples."""
+    counts: dict = defaultdict(int)
+    for _ in range(n_samples):
+        v = int(rng.choice(start_verts))
+        rels: list = []
+        for _ in range(k):
+            adj = out_edges.get(v)
+            if not adj:
+                break
+            nb, rel = adj[int(rng.integers(len(adj)))]
+            rels.append(rel)
+            v = nb
+        if len(rels) == k:
+            counts[tuple(rels)] += 1
+    return dict(counts)
+
+
+def _sample_tree_depth2_templates(
+    out_edges: dict,
+    start_verts: np.ndarray,
+    n_samples: int,
+    rng: np.random.Generator,
+) -> dict:
+    """Sample depth-2 rooted trees; template = sorted tuple of (r1, r2) pairs."""
+    counts: dict = defaultdict(int)
+    for _ in range(n_samples):
+        root = int(rng.choice(start_verts))
+        adj1 = out_edges.get(root)
+        if not adj1:
+            continue
+        pairs: list = []
+        for child, r1 in adj1:
+            adj2 = out_edges.get(child)
+            if adj2:
+                for _, r2 in adj2:
+                    pairs.append((r1, r2))
+        if pairs:
+            counts[tuple(sorted(pairs))] += 1
+    return dict(counts)
+
+
+def _count_stars(g_und: igraph.Graph) -> dict:
+    """Exact k-star counts for k=2..10 via the degree distribution.
+
+    A k-star subgraph centred at v exists for every k-subset of v's neighbours.
+    Count = Σ_v C(deg(v), k).
+    """
+    from math import comb
+    degrees = g_und.degree()
+    return {k: sum(comb(d, k) for d in degrees if d >= k) for k in range(2, 11)}
+
+
+def _estimate_k_cycle(
+    g_und: igraph.Graph,
+    k: int,
+    n_samples: int,
+    rng: np.random.Generator,
+) -> int:
+    """Estimate k-cycle count via random walk closure sampling.
+
+    Samples simple walks of length k-1 from random starting vertices and checks
+    whether the endpoint connects back to the start, forming a simple k-cycle.
+    Scales the closure rate by n * avg_degree^(k-1) / (2k) — a first-order
+    approximation that is accurate in order of magnitude for sparse graphs.
+    """
+    n = g_und.vcount()
+    if n < k:
+        return 0
+    adj = [list(g_und.neighbors(v)) for v in range(n)]
+    degrees = np.array([len(a) for a in adj], dtype=float)
+    avg_deg = float(degrees.mean()) if n > 0 else 0.0
+
+    n_closed = 0
+    n_valid = 0
+    for _ in range(n_samples):
+        start = int(rng.integers(n))
+        if not adj[start]:
+            continue
+        v = start
+        visited = {start}
+        ok = True
+        for _ in range(k - 1):
+            candidates = [nb for nb in adj[v] if nb not in visited]
+            if not candidates:
+                ok = False
+                break
+            nb = candidates[int(rng.integers(len(candidates)))]
+            visited.add(nb)
+            v = nb
+        n_valid += 1
+        if ok and len(visited) == k and start in adj[v]:
+            n_closed += 1
+
+    if n_valid == 0 or n_closed == 0:
+        return 0
+    return int((n_closed / n_valid) * n * (avg_deg ** (k - 1)) / (2 * k))
+
+
+def block_e(g: igraph.Graph, sample_budget: int = _SAMPLE_BUDGET) -> BlockE:
+    """Compute Block E (motif distribution) of the graph signature.
+
+    Exact counts for 3- and 4-node motifs on the undirected simplification.
+    Path and tree templates are estimated by random walk sampling.
+    """
+    # --- Exact motif counts on undirected simple graph ---
+    g_und = g.as_undirected(combine_edges="first").simplify()
+
+    # Triangles: A ⊙ A² summed and divided by 6 (each triangle counted 6 times)
+    A = scipy.sparse.csr_matrix(g_und.get_adjacency_sparse())
+    tri_count = int(A.multiply(A @ A).sum() // 6)
+
+    # 4-node motifs: full RANDESU enumeration with runtime index discovery
+    idx_map = _4node_motif_index_map()
+    four_motifs = g_und.motifs_randesu(size=4)
+
+    def _get_motif(name: str) -> int:
+        i = idx_map.get(name)
+        if i is None or i >= len(four_motifs):
+            return 0
+        v = four_motifs[i]
+        return 0 if math.isnan(v) else int(v)
+
+    # Stars (exact) and 5/6-cycles (sampled)
+    star_counts = _count_stars(g_und)
+    motif_rng = np.random.default_rng(0)
+    n_cycle = max(1, sample_budget // 2)
+    five_cycle = _estimate_k_cycle(g_und, 5, n_cycle, motif_rng)
+    six_cycle  = _estimate_k_cycle(g_und, 6, n_cycle, motif_rng)
+
+    # --- Path and tree templates from directed graph ---
+    out_edges, start_verts_list = _build_out_adj(g)
+    start_verts = np.array(start_verts_list)
+
+    path_template_zipf: dict = {}
+    path_template_entropy: dict = {}
+    tree_zipf = float("nan")
+    tree_ent = float("nan")
+
+    if start_verts.size > 0:
+        rng = np.random.default_rng(1)
+        n_per_k = max(1, sample_budget // 9)  # spread budget evenly across k=2..10
+        for k in range(2, 11):
+            counts = _sample_path_templates(out_edges, start_verts, k, n_per_k, rng)
+            path_template_zipf[k], path_template_entropy[k] = _template_stats(counts)
+
+        tree_counts = _sample_tree_depth2_templates(
+            out_edges, start_verts, sample_budget, rng
+        )
+        tree_zipf, tree_ent = _template_stats(tree_counts)
+
+    return BlockE(
+        triangle_count=tri_count,
+        four_cycle_count=_get_motif("four_cycle"),
+        five_cycle_count=five_cycle,
+        six_cycle_count=six_cycle,
+        diamond_count=_get_motif("diamond"),
+        k4_count=_get_motif("k4"),
+        tailed_triangle_count=_get_motif("tailed_triangle"),
+        star_counts=star_counts,
+        path_template_zipf=path_template_zipf,
+        path_template_entropy=path_template_entropy,
+        tree_template_zipf=tree_zipf,
+        tree_template_entropy=tree_ent,
     )
