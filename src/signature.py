@@ -468,6 +468,181 @@ def block_c(g: igraph.Graph) -> BlockC:
 
 
 # ---------------------------------------------------------------------------
+# Block D — Characteristic Sets
+# ---------------------------------------------------------------------------
+
+_TOP_K_PAIRS = 20  # top pair frequencies kept in as_vector(); mirrors _TOP_K_SV
+
+
+@dataclass
+class BlockD:
+    """Block D — Characteristic set features of a KG."""
+    # Forward CS: CS(s) = {p : ∃o. (s,p,o) ∈ G}
+    num_distinct_cs: int
+    cs_freq_stats: PowerLawStats   # powerlaw fit of per-CS entity counts; .alpha is Zipf exp
+    cs_size_mean: float
+    cs_size_median: float
+    cs_size_p90: float
+
+    # Inverse CS: CS⁻¹(o) = {p : ∃s. (s,p,o) ∈ G}
+    inv_num_distinct_cs: int
+    inv_cs_freq_stats: PowerLawStats
+    inv_cs_size_mean: float
+    inv_cs_size_median: float
+    inv_cs_size_p90: float
+
+    # Two-step characteristic pairs: (q,p) where s→[q]→x→[p]→o
+    top_pair_freqs: np.ndarray     # shape (_TOP_K_PAIRS,), normalised, zero-padded
+    pair_freq_stats: PowerLawStats
+    top_pairs: list                # [(q, p, count), ...], rich data, not in vector
+
+    def as_vector(self) -> list[float]:
+        return [
+            float(self.num_distinct_cs),
+            self.cs_freq_stats.alpha,
+            self.cs_size_mean,
+            self.cs_size_median,
+            self.cs_size_p90,
+            float(self.inv_num_distinct_cs),
+            self.inv_cs_freq_stats.alpha,
+            self.inv_cs_size_mean,
+            self.inv_cs_size_median,
+            self.inv_cs_size_p90,
+            *self.top_pair_freqs.tolist(),
+            self.pair_freq_stats.alpha,
+        ]
+
+
+def _compute_cs(g: igraph.Graph) -> dict:
+    """Single g.es pass → cs_of[v_idx] = frozenset of outgoing predicates.
+
+    All sources are non-literal by the RDF contract enforced in kg_io, so no
+    is_literal check is needed on the source side. Edges to literals are
+    included — CS(s) covers all ∃o regardless of whether o is a literal.
+    """
+    cs_of: dict = defaultdict(set)
+    for e in g.es:
+        cs_of[e.source].add(e["predicate"])
+    return {v: frozenset(preds) for v, preds in cs_of.items()}
+
+
+def _compute_inv_cs(g: igraph.Graph) -> dict:
+    """Single g.es pass → inv_cs_of[v_idx] = frozenset of incoming predicates.
+
+    Only non-literal vertices are included as keys (literals have no meaningful
+    inverse CS in the Neumann & Moerkotte sense).
+    """
+    inv_cs_of: dict = defaultdict(set)
+    is_literal = g.vs["is_literal"]
+    for e in g.es:
+        if not is_literal[e.target]:
+            inv_cs_of[e.target].add(e["predicate"])
+    return {v: frozenset(preds) for v, preds in inv_cs_of.items()}
+
+
+def _cs_scalar_stats(
+    cs_of: dict,
+) -> tuple:
+    """Derive scalar summary from a cs_of / inv_cs_of mapping.
+
+    Returns (num_distinct_cs, cs_freq_stats, size_mean, size_median, size_p90).
+    All float stats are NaN when cs_of is empty.
+    """
+    if not cs_of:
+        return 0, _nan_power_law_stats(), float("nan"), float("nan"), float("nan")
+
+    cs_values = list(cs_of.values())
+    num_distinct = len(set(cs_values))
+
+    # Frequency distribution: how many entities share each distinct CS
+    freq_counter: dict = defaultdict(int)
+    for cs in cs_values:
+        freq_counter[cs] += 1
+    freq_arr = np.fromiter(freq_counter.values(), dtype=int, count=len(freq_counter))
+    freq_stats = _fit_powerlaw(freq_arr)
+
+    # Size distribution: |CS(s)| per entity
+    sizes = np.fromiter((len(cs) for cs in cs_values), dtype=float, count=len(cs_values))
+    size_mean = float(np.mean(sizes))
+    size_median = float(np.median(sizes))
+    size_p90 = float(np.percentile(sizes, 90))
+
+    return num_distinct, freq_stats, size_mean, size_median, size_p90
+
+
+def _two_step_pair_stats(g: igraph.Graph) -> tuple:
+    """Enumerate (in_pred, out_pred) pairs at every bridge entity in one g.es pass.
+
+    Returns (top_pair_freqs, pair_freq_stats, top_pairs):
+      - top_pair_freqs: np.ndarray shape (_TOP_K_PAIRS,), normalised counts, zero-padded
+      - pair_freq_stats: PowerLawStats of the full pair frequency distribution
+      - top_pairs: list of (q, p, count) for the _TOP_K_PAIRS most frequent pairs
+    """
+    out_preds: dict = defaultdict(set)
+    in_preds: dict = defaultdict(set)
+    is_literal = g.vs["is_literal"]
+    for e in g.es:
+        out_preds[e.source].add(e["predicate"])
+        if not is_literal[e.target]:
+            in_preds[e.target].add(e["predicate"])
+
+    pair_counts: dict = defaultdict(int)
+    for v in set(out_preds) & set(in_preds):
+        for q in in_preds[v]:
+            for p in out_preds[v]:
+                pair_counts[(q, p)] += 1
+
+    if not pair_counts:
+        return (
+            np.zeros(_TOP_K_PAIRS, dtype=float),
+            _nan_power_law_stats(),
+            [],
+        )
+
+    sorted_pairs = sorted(pair_counts.items(), key=lambda kv: kv[1], reverse=True)
+    all_counts = np.fromiter(
+        (cnt for _, cnt in sorted_pairs), dtype=int, count=len(sorted_pairs)
+    )
+    total = int(all_counts.sum())
+
+    top_k = sorted_pairs[:_TOP_K_PAIRS]
+    freqs = np.zeros(_TOP_K_PAIRS, dtype=float)
+    for i, (_, cnt) in enumerate(top_k):
+        freqs[i] = cnt / total
+
+    top_pairs = [(q, p, cnt) for (q, p), cnt in top_k]
+    freq_stats = _fit_powerlaw(all_counts)
+
+    return freqs, freq_stats, top_pairs
+
+
+def block_d(g: igraph.Graph) -> BlockD:
+    """Compute Block D (characteristic sets) of the graph signature."""
+    cs_of = _compute_cs(g)
+    inv_cs_of = _compute_inv_cs(g)
+
+    n_cs, cs_freq, cs_mean, cs_med, cs_p90 = _cs_scalar_stats(cs_of)
+    n_inv, inv_freq, inv_mean, inv_med, inv_p90 = _cs_scalar_stats(inv_cs_of)
+    top_freqs, pair_freq, top_pairs = _two_step_pair_stats(g)
+
+    return BlockD(
+        num_distinct_cs=n_cs,
+        cs_freq_stats=cs_freq,
+        cs_size_mean=cs_mean,
+        cs_size_median=cs_med,
+        cs_size_p90=cs_p90,
+        inv_num_distinct_cs=n_inv,
+        inv_cs_freq_stats=inv_freq,
+        inv_cs_size_mean=inv_mean,
+        inv_cs_size_median=inv_med,
+        inv_cs_size_p90=inv_p90,
+        top_pair_freqs=top_freqs,
+        pair_freq_stats=pair_freq,
+        top_pairs=top_pairs,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Block E — Motifs (controllable shape distribution)
 # ---------------------------------------------------------------------------
 
