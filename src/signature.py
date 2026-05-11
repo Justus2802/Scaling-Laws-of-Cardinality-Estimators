@@ -1,17 +1,35 @@
-"""Graph signature measurement for KGs loaded via kg_io.load_kg."""
+"""Graph signature measurement for KGs loaded via kg_io.load_kg.
 
+Block B (degree structure) uses the `powerlaw` package to fit heavy-tailed
+degree distributions and compare against alternative distributions via
+Kolmogorov–Smirnov goodness-of-fit. References:
+
+- Clauset, A., Shalizi, C. R., & Newman, M. E. J. (2009). Power-Law
+  Distributions in Empirical Data. SIAM Review, 51(4), 661–703.
+  https://doi.org/10.1137/070710111
+- Alstott, J., Bullmore, E., & Plenz, D. (2014). powerlaw: A Python Package
+  for Analysis of Heavy-Tailed Distributions. PLoS ONE 9(1): e85777.
+  https://doi.org/10.1371/journal.pone.0085777
+"""
+
+import contextlib
 import functools
+import io
 import math
+import warnings
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import Iterable, NamedTuple
 
 import igraph
 import numpy as np
+import powerlaw
 import scipy.sparse
 import scipy.sparse.linalg
 
 RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 _TOP_K_SV = 10  # number of singular values to keep
+MIN_SAMPLES_FOR_FIT = 10  # below this, powerlaw.Fit results are dominated by noise
 
 
 @dataclass
@@ -41,7 +59,7 @@ def block_a(g: igraph.Graph) -> BlockA:
     Literals are excluded from the entity count, matching the definition
     |V| = distinct subjects ∪ objects excluding RDF literals.
     """
-    num_entities = sum(1 for v in g.vs if not v["is_literal"])
+    num_entities = len(g.vs.select(is_literal_eq=False))
     num_triples = g.ecount()
     num_relations = len(set(g.es["predicate"])) if num_triples > 0 else 0
 
@@ -56,6 +74,215 @@ def block_a(g: igraph.Graph) -> BlockA:
         density=density,
         triples_per_entity=triples_per_entity,
         relation_reuse=relation_reuse,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Block B — Degree structure
+# ---------------------------------------------------------------------------
+
+
+class PowerLawStats(NamedTuple):
+    """Six-number summary of a power-law fit via `powerlaw.Fit`.
+
+    Used uniformly for the two aggregate degree distributions and for every
+    per-relation multiplicity distribution. An all-NaN instance means the fit
+    was skipped (too few samples) or raised internally.
+    """
+    alpha: float          # power-law exponent α from P(x) ∝ x^(-α)
+    xmin: float           # lower-bound of the tail (KS-optimized by powerlaw)
+    ks: float             # KS distance of the power-law fit itself
+    D_lognormal: float    # KS distance for the alternative lognormal fit
+    D_exponential: float  # KS distance for the alternative exponential fit
+    D_truncated: float    # KS distance for the alternative truncated_power_law fit
+
+
+def _nan_power_law_stats() -> PowerLawStats:
+    """Return an all-NaN PowerLawStats — the canonical 'fit unavailable' value."""
+    return PowerLawStats(*([float("nan")] * 6))
+
+
+def _fit_powerlaw(data: np.ndarray) -> PowerLawStats:
+    """Fit a power-law to a 1-D non-negative integer array and report KS distances.
+
+    Filters to strictly positive samples (the `powerlaw` package rejects zeros).
+    If fewer than MIN_SAMPLES_FOR_FIT positive samples remain, short-circuits
+    to all-NaN — Clauset/Shalizi/Newman (2009, Sec. 3.3) show that fitted α
+    has prohibitively wide confidence intervals on small samples, so the fit
+    would produce noise. Skipping also avoids the package's stdout chatter,
+    division-by-zero warnings, and per-call overhead on long-tail relations.
+
+    Returns a PowerLawStats with:
+      - alpha, xmin, ks from `fit.power_law` (the power-law fit itself)
+      - D_lognormal, D_exponential, D_truncated from each alternative's own KS
+        distance (`fit.<dist>.D`). Smaller D ⇒ that distribution fits better.
+
+    Any exception inside the fitter is swallowed and yields all-NaN.
+    """
+    positive = data[data > 0]
+    if positive.size < MIN_SAMPLES_FOR_FIT:
+        return _nan_power_law_stats()
+    try:
+        with warnings.catch_warnings(), \
+             np.errstate(divide="ignore", invalid="ignore"), \
+             contextlib.redirect_stdout(io.StringIO()):
+            warnings.simplefilter("ignore")
+            fit = powerlaw.Fit(positive, discrete=True, verbose=False)
+            return PowerLawStats(
+                alpha=float(fit.power_law.alpha),
+                xmin=float(fit.power_law.xmin),
+                ks=float(fit.power_law.D),
+                D_lognormal=float(fit.lognormal.D),
+                D_exponential=float(fit.exponential.D),
+                D_truncated=float(fit.truncated_power_law.D),
+            )
+    except Exception:
+        return _nan_power_law_stats()
+
+
+def _summarize_values(values: Iterable[float]) -> tuple[float, float, float, float]:
+    """Return NaN-safe (mean, std, min, max) over an iterable of floats.
+
+    Returns four NaNs when the iterable is empty or all values are NaN
+    (guards the `nanmin`/`nanmax` "all-NaN slice" warning).
+    """
+    arr = np.asarray(list(values), dtype=float)
+    if arr.size == 0 or np.all(np.isnan(arr)):
+        return float("nan"), float("nan"), float("nan"), float("nan")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return (
+            float(np.nanmean(arr)),
+            float(np.nanstd(arr)),
+            float(np.nanmin(arr)),
+            float(np.nanmax(arr)),
+        )
+
+
+def _per_relation_features(
+    g: igraph.Graph,
+) -> tuple[dict, dict, dict, dict]:
+    """Build per-relation multiplicity / functionality features in one edge pass.
+
+    For each predicate r, computes:
+      - object_multiplicity[r]: PowerLawStats over (#distinct objects per subject)
+      - subject_multiplicity[r]: PowerLawStats over (#distinct subjects per object)
+      - functionality[r]: fraction of subjects whose object-multiplicity == 1
+      - inverse_functionality[r]: fraction of objects whose subject-multiplicity == 1
+
+    Assumes `kg_io.load_kg`'s contract: at most one edge per (subject, predicate,
+    object) triple. Under that invariant, the count of edges with fixed (r, s)
+    equals the number of distinct objects, so plain integer counters suffice.
+    Per-relation `_fit_powerlaw` calls short-circuit to all-NaN for relations
+    with fewer than MIN_SAMPLES_FOR_FIT distinct subjects (or objects).
+    """
+    subj_obj_count: dict = defaultdict(lambda: defaultdict(int))
+    obj_subj_count: dict = defaultdict(lambda: defaultdict(int))
+    for e in g.es:
+        r = e["predicate"]
+        subj_obj_count[r][e.source] += 1
+        obj_subj_count[r][e.target] += 1
+
+    object_multiplicity: dict = {}
+    subject_multiplicity: dict = {}
+    functionality: dict = {}
+    inverse_functionality: dict = {}
+
+    for r, subj_map in subj_obj_count.items():
+        obj_counts = np.fromiter(subj_map.values(), dtype=int, count=len(subj_map))
+        object_multiplicity[r] = _fit_powerlaw(obj_counts)
+        functionality[r] = float(np.mean(obj_counts == 1)) if obj_counts.size else float("nan")
+
+    for r, obj_map in obj_subj_count.items():
+        subj_counts = np.fromiter(obj_map.values(), dtype=int, count=len(obj_map))
+        subject_multiplicity[r] = _fit_powerlaw(subj_counts)
+        inverse_functionality[r] = float(np.mean(subj_counts == 1)) if subj_counts.size else float("nan")
+
+    return object_multiplicity, subject_multiplicity, functionality, inverse_functionality
+
+
+@dataclass
+class BlockB:
+    """Block B — Degree structure features of a KG.
+
+    Aggregate features fit the in/out-degree distributions (over non-literal
+    vertices) with the `powerlaw` package. Per-relation features quantify how
+    multi-valued each predicate is, distinguishing functional relations like
+    `bornIn` from many-to-many ones like `friend`/`type` — they have very
+    different join selectivities.
+    """
+    out_degree_fit: PowerLawStats   # over d_out(v) for non-literal v with d_out>0
+    in_degree_fit: PowerLawStats    # over d_in(v)  for non-literal v with d_in>0
+
+    object_multiplicity: dict       # relation_uri -> PowerLawStats
+    subject_multiplicity: dict      # relation_uri -> PowerLawStats
+    functionality: dict             # relation_uri -> fraction in [0, 1]
+    inverse_functionality: dict     # relation_uri -> fraction in [0, 1]
+
+    def as_vector(self) -> list[float]:
+        """Flatten to a fixed-length 68-vector for cross-KG comparison.
+
+        Layout (in order):
+          - out_degree_fit fields (6 floats: alpha, xmin, ks, D_lognormal,
+            D_exponential, D_truncated)
+          - in_degree_fit fields (6 floats, same order)
+          - For object_multiplicity: for each of the 6 PowerLawStats fields,
+            (mean, std, min, max) over the per-relation values → 24 floats
+          - Same for subject_multiplicity → 24 floats
+          - (mean, std, min, max) of functionality.values() → 4 floats
+          - (mean, std, min, max) of inverse_functionality.values() → 4 floats
+
+        Per-relation dicts are summarized rather than emitted directly so the
+        vector length stays fixed across KGs with any number of predicates.
+        """
+        vec: list[float] = []
+        vec.extend(self.out_degree_fit)
+        vec.extend(self.in_degree_fit)
+
+        for stat_dict in (self.object_multiplicity, self.subject_multiplicity):
+            for field in PowerLawStats._fields:
+                vec.extend(_summarize_values(getattr(v, field) for v in stat_dict.values()))
+
+        vec.extend(_summarize_values(self.functionality.values()))
+        vec.extend(_summarize_values(self.inverse_functionality.values()))
+        return vec
+
+
+def block_b(g: igraph.Graph) -> BlockB:
+    """Compute Block B (degree structure) of the graph signature.
+
+    Degree distributions are taken over non-literal vertices only (matching
+    Block A's |V| definition); literals can only appear as RDF objects and
+    would always have d_out=0. Self-loops contribute 1 to each side, which is
+    the RDF-correct count of triples-as-subject and triples-as-object.
+
+    The aggregate power-law fits use `powerlaw.Fit` (KS-optimized x_min,
+    discrete-aware, with alternative-distribution KS distances); per-relation
+    fits reuse the same helper. See `_fit_powerlaw` for the short-circuit on
+    small samples.
+    """
+    non_lit_vs = g.vs.select(is_literal_eq=False)
+    if len(non_lit_vs):
+        subject_multiplicity_overall = np.array(g.degree(non_lit_vs, mode="out"), dtype=int)
+        object_multiplicity_overall = np.array(g.degree(non_lit_vs, mode="in"), dtype=int)
+    else:
+        subject_multiplicity_overall = np.array([], dtype=int)
+        object_multiplicity_overall = np.array([], dtype=int)
+
+    subject_multiplicity_overall_fit = _fit_powerlaw(subject_multiplicity_overall)
+    object_multiplicity_overall_fit = _fit_powerlaw(object_multiplicity_overall)
+
+    object_multiplicity, subject_multiplicity, functionality, inverse_functionality = (
+        _per_relation_features(g)
+    )
+
+    return BlockB(
+        out_degree_fit=subject_multiplicity_overall_fit,
+        in_degree_fit=object_multiplicity_overall_fit,
+        object_multiplicity=object_multiplicity,
+        subject_multiplicity=subject_multiplicity,
+        functionality=functionality,
+        inverse_functionality=inverse_functionality,
     )
 
 

@@ -76,6 +76,18 @@ class TestLoadKG(unittest.TestCase):
         with self.assertRaises(ValueError):
             load_kg(path)
 
+    def test_duplicate_triples_collapse_to_one_edge(self):
+        ttl = (
+            "@prefix ex: <http://example.org/> .\n"
+            "ex:a ex:knows ex:b .\n"
+            "ex:a ex:knows ex:b .\n"  # duplicate of line above
+            "ex:a ex:knows ex:b .\n"  # another duplicate
+        )
+        path = self._write("dupes.ttl", ttl)
+        g = load_kg(path)
+        self.assertEqual(g.vcount(), 2)
+        self.assertEqual(g.ecount(), 1)
+
 
 class TestSaveKG(unittest.TestCase):
     def setUp(self):

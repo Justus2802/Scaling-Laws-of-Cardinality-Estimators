@@ -19,6 +19,11 @@ def _rdf_node_id(node: rdflib.term.Identifier) -> str:
 def load_kg(path: str | Path) -> igraph.Graph:
     """Parse a .ttl or .nt file and return a directed igraph Graph.
 
+    Edges are deduplicated by (subject, predicate, object): the resulting
+    graph contains at most one edge per distinct RDF triple. rdflib's `Graph`
+    already enforces this at parse time, but the loader also guards against
+    duplicates explicitly so the contract holds for any input source.
+
     Vertices carry:
         name         – URI string (or blank-node id like "_:b0")
         is_literal   – True for RDF literal objects
@@ -59,11 +64,16 @@ def load_kg(path: str | Path) -> igraph.Graph:
             vertex_attrs.append(attrs)
         return node_index[key]
 
+    seen_triples: set[tuple[int, int, str]] = set()
     edges: list[tuple[int, int, str]] = []
     for s, p, o in rdf_graph:
         si = _ensure_vertex(s)
         oi = _ensure_vertex(o)
-        edges.append((si, oi, str(p)))
+        triple = (si, oi, str(p))
+        if triple in seen_triples:
+            continue
+        seen_triples.add(triple)
+        edges.append(triple)
 
     g = igraph.Graph(directed=True)
     g.add_vertices(len(node_index))
