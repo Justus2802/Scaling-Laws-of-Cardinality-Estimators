@@ -19,6 +19,7 @@ import math
 import warnings
 from collections import defaultdict
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable, NamedTuple
 
 import igraph
@@ -1024,4 +1025,55 @@ def block_f(
         avg_shortest_path_length_se=sp_se,
         clustering_coefficient=clustering,
         degree_assortativity=assortativity,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Full signature
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class GraphSignature:
+    """All six measurement blocks for a single KG.
+
+    as_vector() concatenates the blocks in A–F order, producing a fixed-length
+    176-float vector (6 + 68 + 29 + 31 + 36 + 6).
+    """
+    a: BlockA
+    b: BlockB
+    c: BlockC
+    d: BlockD
+    e: BlockE
+    f: BlockF
+
+    def as_vector(self) -> list[float]:
+        vec: list[float] = []
+        for block in (self.a, self.b, self.c, self.d, self.e, self.f):
+            vec.extend(block.as_vector())
+        return vec
+
+
+def compute_signature(
+    path: str | Path,
+    *,
+    sample_budget: int = _SAMPLE_BUDGET,
+    sample_k: int = _SAMPLE_K,
+    n_bootstrap: int = _N_BOOTSTRAP,
+) -> GraphSignature:
+    """Load a .ttl or .nt file and compute its full graph signature.
+
+    Returns a GraphSignature whose as_vector() yields a 176-float vector
+    suitable for cross-KG comparison or as input to a learned model.
+    """
+    from kg_io import load_kg  # local import avoids circular dependency at module level
+
+    g = load_kg(path)
+    return GraphSignature(
+        a=block_a(g),
+        b=block_b(g),
+        c=block_c(g),
+        d=block_d(g),
+        e=block_e(g, sample_budget=sample_budget),
+        f=block_f(g, sample_k=sample_k, n_bootstrap=n_bootstrap),
     )
