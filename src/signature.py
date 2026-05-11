@@ -849,8 +849,12 @@ def block_e(g: igraph.Graph, sample_budget: int = _SAMPLE_BUDGET) -> BlockE:
     g_und = g.as_undirected(combine_edges="first").simplify()
 
     # Triangles: A ⊙ A² summed and divided by 6 (each triangle counted 6 times)
-    A = scipy.sparse.csr_matrix(g_und.get_adjacency_sparse())
-    tri_count = int(A.multiply(A @ A).sum() // 6)
+    # get_adjacency_sparse() raises on 0-vertex graphs, so guard explicitly.
+    if g_und.vcount() > 0:
+        A = scipy.sparse.csr_matrix(g_und.get_adjacency_sparse())
+        tri_count = int(A.multiply(A @ A).sum() // 6)
+    else:
+        tri_count = 0
 
     # 4-node motifs: full RANDESU enumeration with runtime index discovery
     idx_map = _4node_motif_index_map()
