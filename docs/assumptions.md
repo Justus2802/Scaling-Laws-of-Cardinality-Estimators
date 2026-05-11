@@ -1,5 +1,83 @@
 # Implementation Assumptions
 
+## Block A — Size and Density
+
+### Literals are excluded from |V|
+`num_entities` counts only vertices whose `is_literal` attribute is `False`. RDF literals (strings, numbers, dates) are objects in triples but are not knowledge-graph entities in the graph-theoretic sense. The spec defines |V| as "distinct entities (subjects ∪ objects, **excluding literals**)".
+
+### |E| counts all edges, including rdf:type triples
+No predicate is special-cased. `g.ecount()` includes `rdf:type`, `owl:sameAs`, and all other predicates. This is consistent with the spec definition "|E| = number of triples" and avoids a decision that would need to be replicated in every other block.
+
+### |R| counts distinct predicate URIs, including rdf:type
+`len(set(g.es["predicate"]))` treats `rdf:type` as an ordinary relation. Excluding it would change relation-reuse and density in hard-to-predict ways. Block C is the designated place for type-specific measurement.
+
+### Density uses |V|² (not |V|(|V|−1)) as denominator
+`density = |E| / |V|²` follows the standard definition for directed graphs where self-loops are permitted. The off-by-one correction `|V|(|V|−1)` is only conventional for simple undirected graphs without self-loops.
+
+### Division-by-zero falls back to 0.0, not NaN
+When |V| = 0 or |R| = 0, derived ratios (density, triples_per_entity, relation_reuse) return `0.0`. An empty graph is a degenerate but valid input; returning `0.0` keeps `as_vector()` free of NaN entries for downstream numeric use.
+
+---
+
+## Block C — Schema and Relation Correlation
+
+### Subject-side and object-side matrices are built independently
+`M_subj[i,j]` counts subjects that use both r_i and r_j; `M_obj[i,j]` counts objects that appear as the target of both r_i and r_j. These capture different aspects of schema correlation (who tends to emit relation pairs vs. who tends to receive them) and are not interchangeable.
+
+### Object-side co-occurrence includes literal targets
+`obj_to_rels[e.target]` is populated for every edge target, including literals. A literal object "receives" a relation the same way as a URI — its relation-multiplicity on the object side is 1 per incoming predicate. Excluding literals would silently drop all datatype-property co-occurrences (e.g. `label` and `comment` always co-occurring on the same object string).
+
+### Co-occurrence matrix counts entities, not edge occurrences
+For each entity, only the **set** of relations it uses is recorded (`subj_to_rels[e.source].add(ri)`). If a subject has five triples with predicate r_i and three with r_j, M[i,j] is incremented by 1, not 5 or 3. This matches the spec definition: M[i,j] = |{s : ∃o₁o₂. (s,r_i,o₁) ∈ G ∧ (s,r_j,o₂) ∈ G}|.
+
+### Top-k singular values are padded to exactly _TOP_K_SV = 10
+When |R| < 11, `svds` is called with `k = min(10, |R|−1)` and the result is zero-padded to length 10. This keeps `as_vector()` length constant regardless of how few relations the graph has.
+
+### Row entropy treats the co-occurrence row as a probability distribution
+Each row M[i, :] is normalised to sum to 1 before computing Shannon entropy. This measures how spread out relation i's co-occurrences are, independent of the raw co-occurrence counts. A row of all zeros (relation never co-occurs with anything) is assigned entropy 0.
+
+### Type statistics require rdf:type triples; absence yields zero classes
+If no edges carry the predicate `RDF_TYPE`, `class_sizes` is empty, `num_classes = 0`, and `class_size_zipf_exponent = nan`. Downstream consumers should treat `nan` as "no type information available" rather than as an error.
+
+### P(r | type) counts relation uses with repetition across all typed subjects
+`type_rel_counts[t][r]` is incremented once per outgoing edge of each typed subject. If entity A has type Person and has three `name` edges, it contributes 3 to `type_rel_counts["Person"]["name"]`. This weights relations by how heavily they are used, not merely whether they appear.
+
+### `_fit_powerlaw` from Block B is used for the class-size Zipf exponent
+`class_size_zipf_exponent` uses `_fit_powerlaw(...).alpha` instead of a hand-rolled Hill estimator. This gives the KS-optimised x_min and is consistent with Block B's degree fits. Fewer than `MIN_SAMPLES_FOR_FIT` classes yields `nan`.
+
+---
+
+## Block E — Motifs
+
+### All motif counts use the undirected simplification of the directed KG
+`g.as_undirected(combine_edges="first").simplify()` is computed once and reused for triangle counting, 4-node RANDESU, star counting, and 5/6-cycle estimation. Multi-edges (multiple predicates between the same node pair) are collapsed to one; self-loops are removed. BGP query shapes in the spec are drawn without direction arrows, so the undirected structure is the correct substrate for motif counting.
+
+### Triangle count uses the sparse A ⊙ A² identity
+`A.multiply(A @ A).sum() // 6` counts triangles without materialising A³. Each triangle appears exactly 6 times in trace(A³) (3 vertices × 2 traversal directions), so dividing by 6 gives the exact count. The sparse element-wise multiply avoids the O(n²) dense materialisation.
+
+### 4-node motif indices are discovered at runtime, not hardcoded
+`_4node_motif_index_map()` creates one canonical 4-node example for each named motif (4-cycle, diamond, K4, tailed triangle) and runs `motifs_randesu(size=4)` on it to find which list position holds count = 1. The result is cached with `@lru_cache`. This avoids a dependency on igraph's internal canonical ordering, which is not guaranteed stable across versions.
+
+### 5- and 6-cycle counts are sampled estimates, not exact values
+Exact enumeration of simple 5- and 6-cycles is intractable for large KGs. The spec explicitly endorses sampling-based estimation for 5+ node motifs. `_estimate_k_cycle` samples simple random walks of length k−1 and checks closure, then scales the closure rate by `n × avg_deg^(k−1) / (2k)`. This is accurate in order of magnitude for sparse graphs; the scaling degrades for dense or highly heterogeneous degree distributions.
+
+### Star counts use the exact combinatorial formula C(deg(v), k)
+`_count_stars` computes `Σ_v C(deg(v), k)` for k = 2..10 using `math.comb`. This is exact: every k-subset of a vertex's neighbours is a distinct k-star subgraph centred at that vertex. Degrees are taken from the undirected simplification so that multi-edges do not artificially inflate star counts.
+
+### Path templates follow directed edges and stop at literal targets
+`_build_out_adj` only adds edges whose **target** is not a literal. A walk that would enter a literal node is a dead end (literals have no outgoing edges), so stopping there avoids wasted samples. The walk still records the relation that led to the literal.
+
+### Path template sampling uses a fixed seed for reproducibility
+`np.random.default_rng(1)` seeds the sampler for path/tree templates. Motif-count sampling uses seed 0. Fixing seeds makes signatures deterministic across runs on the same graph, which is required for signature comparison and regression testing.
+
+### Depth-2 tree template is the sorted tuple of all (r1, r2) pairs from a root
+A sampled root's template is `tuple(sorted([(r1, r2) for child, r1 in adj1 for _, r2 in adj2]))`. Sorting makes the template order-independent (the root's children are not ordered). Roots with no two-hop paths contribute nothing to the distribution.
+
+### `_fit_powerlaw` from Block B is used for all template Zipf exponents
+`_template_stats` uses `_fit_powerlaw(freqs).alpha` for both path and tree template distributions. Fewer than `MIN_SAMPLES_FOR_FIT` distinct templates yields `nan`. The powerlaw package's lazy distribution fitting means `.alpha` must be accessed **inside** the `catch_warnings` context — this is handled inside `_fit_powerlaw`.
+
+---
+
 ## Block D — Characteristic Sets
 
 ### CS definition includes edges to literals
