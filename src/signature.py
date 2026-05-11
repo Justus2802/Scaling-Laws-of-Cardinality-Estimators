@@ -388,13 +388,6 @@ def _cooc_stats(
     return svs, density, row_entropies
 
 
-def _fit_zipf_mle(sizes: np.ndarray) -> float:
-    """MLE power-law exponent via the Hill estimator (α = 1 + n / Σ ln(x_i/x_min))."""
-    sizes = sizes[sizes > 0]
-    if sizes.size < 2:
-        return float("nan")
-    x_min = float(sizes.min())
-    return 1.0 + sizes.size / float(np.sum(np.log(sizes / x_min)))
 
 
 def block_c(g: igraph.Graph) -> BlockC:
@@ -439,7 +432,7 @@ def block_c(g: igraph.Graph) -> BlockC:
 
     class_sizes = dict(class_counts)
     num_classes = len(class_sizes)
-    zipf_exp = _fit_zipf_mle(np.array(list(class_sizes.values()), dtype=float))
+    zipf_exp = _fit_powerlaw(np.array(list(class_sizes.values()), dtype=float)).alpha
 
     # P(r | type): for each type, distribution over outgoing relations of its subjects
     type_rel_counts: dict = defaultdict(lambda: defaultdict(int))
@@ -720,7 +713,7 @@ def _template_stats(counts: dict) -> tuple[float, float]:
     if not counts:
         return float("nan"), float("nan")
     freqs = np.array(list(counts.values()), dtype=float)
-    zipf = _fit_zipf_mle(freqs)
+    zipf = _fit_powerlaw(freqs).alpha
     p = freqs / freqs.sum()
     p = p[p > 0]
     entropy = -float(np.sum(p * np.log(p)))
