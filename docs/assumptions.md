@@ -42,9 +42,6 @@ If no edges carry the predicate `RDF_TYPE`, `class_sizes` is empty, `num_classes
 ### P(r | type) counts relation uses with repetition across all typed subjects
 `type_rel_counts[t][r]` is incremented once per outgoing edge of each typed subject. If entity A has type Person and has three `name` edges, it contributes 3 to `type_rel_counts["Person"]["name"]`. This weights relations by how heavily they are used, not merely whether they appear.
 
-### `_fit_powerlaw` from Block B is used for the class-size Zipf exponent
-`class_size_zipf_exponent` uses `_fit_powerlaw(...).alpha` instead of a hand-rolled Hill estimator. This gives the KS-optimised x_min and is consistent with Block B's degree fits. Fewer than `MIN_SAMPLES_FOR_FIT` classes yields `nan`.
-
 ---
 
 ## Block E — Motifs
@@ -73,8 +70,6 @@ Exact enumeration of simple 5- and 6-cycles is intractable for large KGs. The sp
 ### Depth-2 tree template is the sorted tuple of all (r1, r2) pairs from a root
 A sampled root's template is `tuple(sorted([(r1, r2) for child, r1 in adj1 for _, r2 in adj2]))`. Sorting makes the template order-independent (the root's children are not ordered). Roots with no two-hop paths contribute nothing to the distribution.
 
-### `_fit_powerlaw` from Block B is used for all template Zipf exponents
-`_template_stats` uses `_fit_powerlaw(freqs).alpha` for both path and tree template distributions. Fewer than `MIN_SAMPLES_FOR_FIT` distinct templates yields `nan`. The powerlaw package's lazy distribution fitting means `.alpha` must be accessed **inside** the `catch_warnings` context — this is handled inside `_fit_powerlaw`.
 
 ---
 
