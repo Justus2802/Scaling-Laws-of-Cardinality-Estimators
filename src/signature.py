@@ -26,6 +26,7 @@ import numpy as np
 import powerlaw
 import scipy.sparse
 import scipy.sparse.linalg
+import scipy.stats
 
 RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 _TOP_K_SV = 10  # number of singular values to keep
@@ -910,4 +911,120 @@ def block_e(g: igraph.Graph, sample_budget: int = _SAMPLE_BUDGET) -> BlockE:
         path_template_entropy=path_template_entropy,
         tree_template_zipf=tree_zipf,
         tree_template_entropy=tree_ent,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Block F — Connectivity
+# ---------------------------------------------------------------------------
+
+_SAMPLE_K = 2        # default exponent: 10^k independently sampled pairs
+_N_BOOTSTRAP = 999   # default bootstrap resamples for SE estimation
+
+
+@dataclass
+class BlockF:
+    """Block F — Connectivity features of a KG."""
+    num_components: int                  # number of weakly connected components
+    largest_component_fraction: float    # |LCC| / |V_all|
+    avg_shortest_path_length: float      # sampled over 10^k pairs in LCC
+    avg_shortest_path_length_se: float   # bootstrap SE of the mean (n_bootstrap resamples)
+    clustering_coefficient: float        # average local clustering (undirected)
+    degree_assortativity: float          # Pearson r of endpoint total degrees
+
+    def as_vector(self) -> list[float]:
+        return [
+            float(self.num_components),
+            self.largest_component_fraction,
+            self.avg_shortest_path_length,
+            self.avg_shortest_path_length_se,
+            self.clustering_coefficient,
+            self.degree_assortativity,
+        ]
+
+
+def block_f(
+    g: igraph.Graph,
+    sample_k: int = _SAMPLE_K,
+    n_bootstrap: int = _N_BOOTSTRAP,
+) -> BlockF:
+    """Compute Block F (connectivity) of the graph signature.
+
+    Shortest-path length is estimated by sampling 10^sample_k independent
+    (src, tgt) pairs with replacement from non-literal vertices in the largest
+    weakly connected component (LCC). Unique sources and targets are
+    deduplicated into a single distances() call; per-pair distances are then
+    looked up from the resulting matrix. Undirected BFS (mode='all') ensures
+    every pair within the weakly connected LCC is reachable.
+
+    Clustering and assortativity both use the undirected simplification of g
+    (same pattern as Block E).
+    """
+    if g.vcount() == 0:
+        return BlockF(
+            num_components=0,
+            largest_component_fraction=float("nan"),
+            avg_shortest_path_length=float("nan"),
+            avg_shortest_path_length_se=float("nan"),
+            clustering_coefficient=float("nan"),
+            degree_assortativity=float("nan"),
+        )
+
+    cc = g.connected_components(mode="weak")
+    num_components = len(cc)
+    lcc = cc.giant()
+    lcc_fraction = lcc.vcount() / g.vcount()
+
+    # --- Sampled avg shortest-path length ---
+    non_lit = [v.index for v in lcc.vs if not v["is_literal"]]
+    avg_sp = float("nan")
+    sp_se = float("nan")
+    if len(non_lit) >= 2:
+        n_samples = 10 ** sample_k
+        rng = np.random.default_rng(42)
+        # Independent pairs sampled with replacement
+        src_idx = rng.choice(len(non_lit), size=n_samples, replace=True)
+        tgt_idx = rng.choice(len(non_lit), size=n_samples, replace=True)
+        srcs = [non_lit[i] for i in src_idx]
+        tgts = [non_lit[i] for i in tgt_idx]
+
+        # Single batched distances() call via deduplication
+        unique_srcs = list(dict.fromkeys(srcs))
+        unique_tgts = list(dict.fromkeys(tgts))
+        mat = np.array(
+            lcc.distances(source=unique_srcs, target=unique_tgts, mode="all"),
+            dtype=float,
+        )
+        src_pos = {v: i for i, v in enumerate(unique_srcs)}
+        tgt_pos = {v: i for i, v in enumerate(unique_tgts)}
+        pair_dists = np.array(
+            [mat[src_pos[s], tgt_pos[t]] for s, t in zip(srcs, tgts)],
+            dtype=float,
+        )
+        pair_dists[pair_dists == np.inf] = np.nan
+        finite = pair_dists[pair_dists > 0]  # exclude self-pairs (distance == 0)
+        if finite.size >= 2:
+            avg_sp = float(np.mean(finite))
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                res = scipy.stats.bootstrap(
+                    (finite,), np.mean, n_resamples=n_bootstrap, rng=42
+                )
+            sp_se = float(res.standard_error)
+        elif finite.size == 1:
+            avg_sp = float(finite[0])
+            sp_se = float("nan")
+
+    # --- Clustering coefficient and assortativity (undirected simplification) ---
+    g_und = g.as_undirected(combine_edges="first").simplify()
+    clustering = float(g_und.transitivity_avglocal_undirected(mode="zero"))
+    assortativity = float(g_und.assortativity_degree(directed=False))
+
+    return BlockF(
+        num_components=num_components,
+        largest_component_fraction=lcc_fraction,
+        avg_shortest_path_length=avg_sp,
+        avg_shortest_path_length_se=sp_se,
+        clustering_coefficient=clustering,
+        degree_assortativity=assortativity,
     )

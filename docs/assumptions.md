@@ -28,3 +28,34 @@ The full `PowerLawStats` (alpha, xmin, KS distance, and three alternative-distri
 
 ### `rdf:type` edges are treated as ordinary predicates in CS
 No special handling is applied to `rdf:type` triples in Block D. A subject's type assertions contribute their predicate to its CS the same as any other relation. Block C handles type-specific statistics separately.
+
+---
+
+## Block F — Connectivity
+
+### Weak (not strong) connectivity for components and LCC
+`g.connected_components(mode="weak")` is used instead of `mode="strong"`. Real KGs are almost never strongly connected but are typically one large weakly connected component. Weak connectivity matches the standard graph-database notion of reachability used by the spec.
+
+### LCC fraction denominator includes literal vertices
+`largest_component_fraction = lcc.vcount() / g.vcount()` counts all vertices (including RDF literals) in both numerator and denominator. The LCC is computed on the full graph, so literals are members of components and belong in the count. This differs from Block A's `num_entities`, which excludes literals.
+
+### Shortest-path sampling uses undirected BFS within the LCC
+`lcc.distances(source=..., target=..., mode="all")` treats edges as undirected. This guarantees that every (src, tgt) pair within the weakly connected LCC has a finite distance. Directed BFS (`mode="out"`) would leave many pairs unreachable in a typical KG, making the average meaningless.
+
+### Sampling: 10^k independent pairs with replacement via a deduplicated matrix call
+`n_samples = 10 ** sample_k` (src, tgt) pairs are drawn independently and with replacement from the pool of non-literal vertices in the LCC. Sources and targets are then deduplicated so that a single `distances()` call returns the full result matrix; individual pair distances are looked up by index. This avoids `n_samples` separate distance calls while keeping the pairs statistically independent.
+
+### Self-pairs (distance == 0) are excluded from the average
+When src == tgt is drawn (possible because sampling is with replacement), the distance is 0. These entries are filtered with `pair_dists > 0` before computing the mean, so the average reflects only actual between-entity distances.
+
+### Literal vertices are excluded from the sampling pool
+Only `lcc.vs` entries with `is_literal == False` are eligible as sources or targets. Literals always have in-degree > 0 and out-degree 0 in RDF, so including them as sources would produce only self-pairs or dead ends, biasing the average upward.
+
+### Clustering coefficient uses the undirected simplification
+`g.as_undirected(combine_edges="first").simplify()` is computed before calling `transitivity_avglocal_undirected(mode="zero")`. The undirected simplification is shared with Block E and is the standard definition of local clustering. `mode="zero"` assigns 0 (rather than NaN) to degree-0 and degree-1 vertices so the average is always finite.
+
+### Degree assortativity uses total (undirected) degree
+`g_und.assortativity_degree(directed=False)` computes the Pearson correlation between the total degrees of the two endpoints of each undirected edge. The directed alternative (`directed=True`) correlates out-degree of source with in-degree of target, which conflates structural assortativity with the subject/object role split of RDF. The undirected version is used for now.
+
+### Bootstrap SE is configurable via `n_bootstrap`
+`block_f` accepts `n_bootstrap: int = _N_BOOTSTRAP` (default 999). `scipy.stats.bootstrap` is called with `n_resamples=n_bootstrap` and a fixed `rng=42` for reproducibility. Warnings from scipy (e.g. the BCa degeneracy warning that fires when all sampled distances are equal) are suppressed with `warnings.catch_warnings` — consistent with how Block B silences powerlaw output. When `finite` has fewer than 2 values, the SE is set to NaN without calling bootstrap.
