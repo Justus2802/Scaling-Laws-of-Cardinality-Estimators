@@ -1,0 +1,311 @@
+@prefix ex:   <http://example.org/> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+# ── Types ────────────────────────────────────────────────────────────────────
+
+ex:Person       rdf:type rdfs:Class .
+ex:Paper        rdf:type rdfs:Class .
+ex:Organization rdf:type rdfs:Class .
+ex:Venue        rdf:type rdfs:Class .
+ex:Topic        rdf:type rdfs:Class .
+
+# ── Persons (16) ─────────────────────────────────────────────────────────────
+
+ex:alice   rdf:type ex:Person .
+ex:bob     rdf:type ex:Person .
+ex:carol   rdf:type ex:Person .
+ex:dave    rdf:type ex:Person .
+ex:eve     rdf:type ex:Person .
+ex:frank   rdf:type ex:Person .
+ex:grace   rdf:type ex:Person .
+ex:henry   rdf:type ex:Person .
+ex:iris    rdf:type ex:Person .
+ex:jack    rdf:type ex:Person .
+ex:karen   rdf:type ex:Person .
+ex:leo     rdf:type ex:Person .
+ex:mia     rdf:type ex:Person .
+ex:noah    rdf:type ex:Person .
+ex:olivia  rdf:type ex:Person .
+ex:paul    rdf:type ex:Person .
+
+# ── Organizations (5) ────────────────────────────────────────────────────────
+
+ex:uniA    rdf:type ex:Organization .
+ex:uniB    rdf:type ex:Organization .
+ex:uniC    rdf:type ex:Organization .
+ex:labX    rdf:type ex:Organization .
+ex:labY    rdf:type ex:Organization .
+
+# ── Venues (4) ───────────────────────────────────────────────────────────────
+
+ex:confSig  rdf:type ex:Venue .
+ex:confVldb rdf:type ex:Venue .
+ex:confIcde rdf:type ex:Venue .
+ex:journalA rdf:type ex:Venue .
+
+# ── Topics (5) ───────────────────────────────────────────────────────────────
+
+ex:topicML  rdf:type ex:Topic .
+ex:topicDB  rdf:type ex:Topic .
+ex:topicNLP rdf:type ex:Topic .
+ex:topicKG  rdf:type ex:Topic .
+ex:topicCV  rdf:type ex:Topic .
+
+# ── Papers (20) ──────────────────────────────────────────────────────────────
+
+ex:p01  rdf:type ex:Paper .
+ex:p02  rdf:type ex:Paper .
+ex:p03  rdf:type ex:Paper .
+ex:p04  rdf:type ex:Paper .
+ex:p05  rdf:type ex:Paper .
+ex:p06  rdf:type ex:Paper .
+ex:p07  rdf:type ex:Paper .
+ex:p08  rdf:type ex:Paper .
+ex:p09  rdf:type ex:Paper .
+ex:p10  rdf:type ex:Paper .
+ex:p11  rdf:type ex:Paper .
+ex:p12  rdf:type ex:Paper .
+ex:p13  rdf:type ex:Paper .
+ex:p14  rdf:type ex:Paper .
+ex:p15  rdf:type ex:Paper .
+ex:p16  rdf:type ex:Paper .
+ex:p17  rdf:type ex:Paper .
+ex:p18  rdf:type ex:Paper .
+ex:p19  rdf:type ex:Paper .
+ex:p20  rdf:type ex:Paper .
+
+# ── Affiliation (person → org) ───────────────────────────────────────────────
+
+ex:alice   ex:affiliatedWith ex:uniA .
+ex:bob     ex:affiliatedWith ex:uniA .
+ex:carol   ex:affiliatedWith ex:uniA .
+ex:dave    ex:affiliatedWith ex:uniB .
+ex:eve     ex:affiliatedWith ex:uniB .
+ex:frank   ex:affiliatedWith ex:uniB .
+ex:grace   ex:affiliatedWith ex:uniC .
+ex:henry   ex:affiliatedWith ex:uniC .
+ex:iris    ex:affiliatedWith ex:labX .
+ex:jack    ex:affiliatedWith ex:labX .
+ex:karen   ex:affiliatedWith ex:labX .
+ex:leo     ex:affiliatedWith ex:labY .
+ex:mia     ex:affiliatedWith ex:labY .
+ex:noah    ex:affiliatedWith ex:uniA .
+ex:olivia  ex:affiliatedWith ex:uniB .
+ex:paul    ex:affiliatedWith ex:uniC .
+
+# ── Authorship (paper → person; highly skewed — alice/bob are hub authors) ───
+
+ex:p01  ex:author ex:alice .
+ex:p01  ex:author ex:bob .
+ex:p02  ex:author ex:alice .
+ex:p02  ex:author ex:carol .
+ex:p03  ex:author ex:alice .
+ex:p03  ex:author ex:dave .
+ex:p03  ex:author ex:eve .
+ex:p04  ex:author ex:bob .
+ex:p04  ex:author ex:frank .
+ex:p05  ex:author ex:bob .
+ex:p05  ex:author ex:grace .
+ex:p06  ex:author ex:carol .
+ex:p06  ex:author ex:henry .
+ex:p07  ex:author ex:dave .
+ex:p07  ex:author ex:iris .
+ex:p08  ex:author ex:eve .
+ex:p08  ex:author ex:jack .
+ex:p09  ex:author ex:frank .
+ex:p09  ex:author ex:karen .
+ex:p10  ex:author ex:grace .
+ex:p10  ex:author ex:leo .
+ex:p11  ex:author ex:henry .
+ex:p11  ex:author ex:mia .
+ex:p12  ex:author ex:iris .
+ex:p12  ex:author ex:noah .
+ex:p13  ex:author ex:jack .
+ex:p13  ex:author ex:olivia .
+ex:p14  ex:author ex:karen .
+ex:p14  ex:author ex:paul .
+ex:p15  ex:author ex:leo .
+ex:p15  ex:author ex:alice .
+ex:p16  ex:author ex:mia .
+ex:p16  ex:author ex:bob .
+ex:p17  ex:author ex:noah .
+ex:p17  ex:author ex:carol .
+ex:p18  ex:author ex:olivia .
+ex:p18  ex:author ex:dave .
+ex:p19  ex:author ex:paul .
+ex:p19  ex:author ex:alice .
+ex:p20  ex:author ex:alice .
+ex:p20  ex:author ex:bob .
+ex:p20  ex:author ex:eve .
+
+# ── Publication venue (paper → venue) ────────────────────────────────────────
+
+ex:p01  ex:publishedAt ex:confSig .
+ex:p02  ex:publishedAt ex:confSig .
+ex:p03  ex:publishedAt ex:confVldb .
+ex:p04  ex:publishedAt ex:confVldb .
+ex:p05  ex:publishedAt ex:confIcde .
+ex:p06  ex:publishedAt ex:confIcde .
+ex:p07  ex:publishedAt ex:journalA .
+ex:p08  ex:publishedAt ex:journalA .
+ex:p09  ex:publishedAt ex:confSig .
+ex:p10  ex:publishedAt ex:confVldb .
+ex:p11  ex:publishedAt ex:confSig .
+ex:p12  ex:publishedAt ex:confIcde .
+ex:p13  ex:publishedAt ex:journalA .
+ex:p14  ex:publishedAt ex:confSig .
+ex:p15  ex:publishedAt ex:confVldb .
+ex:p16  ex:publishedAt ex:confIcde .
+ex:p17  ex:publishedAt ex:journalA .
+ex:p18  ex:publishedAt ex:confSig .
+ex:p19  ex:publishedAt ex:confVldb .
+ex:p20  ex:publishedAt ex:confSig .
+
+# ── Topics (paper → topic) ───────────────────────────────────────────────────
+
+ex:p01  ex:hasTopic ex:topicML .
+ex:p01  ex:hasTopic ex:topicKG .
+ex:p02  ex:hasTopic ex:topicML .
+ex:p03  ex:hasTopic ex:topicDB .
+ex:p03  ex:hasTopic ex:topicKG .
+ex:p04  ex:hasTopic ex:topicDB .
+ex:p05  ex:hasTopic ex:topicNLP .
+ex:p05  ex:hasTopic ex:topicML .
+ex:p06  ex:hasTopic ex:topicNLP .
+ex:p07  ex:hasTopic ex:topicKG .
+ex:p07  ex:hasTopic ex:topicDB .
+ex:p08  ex:hasTopic ex:topicCV .
+ex:p09  ex:hasTopic ex:topicML .
+ex:p09  ex:hasTopic ex:topicDB .
+ex:p10  ex:hasTopic ex:topicDB .
+ex:p11  ex:hasTopic ex:topicKG .
+ex:p12  ex:hasTopic ex:topicNLP .
+ex:p13  ex:hasTopic ex:topicCV .
+ex:p14  ex:hasTopic ex:topicML .
+ex:p15  ex:hasTopic ex:topicDB .
+ex:p16  ex:hasTopic ex:topicNLP .
+ex:p17  ex:hasTopic ex:topicKG .
+ex:p18  ex:hasTopic ex:topicML .
+ex:p19  ex:hasTopic ex:topicDB .
+ex:p20  ex:hasTopic ex:topicML .
+ex:p20  ex:hasTopic ex:topicKG .
+
+# ── Citations (paper → paper; creates triangles) ─────────────────────────────
+
+ex:p02  ex:cites ex:p01 .
+ex:p03  ex:cites ex:p01 .
+ex:p03  ex:cites ex:p02 .
+ex:p04  ex:cites ex:p01 .
+ex:p05  ex:cites ex:p02 .
+ex:p05  ex:cites ex:p03 .
+ex:p06  ex:cites ex:p03 .
+ex:p06  ex:cites ex:p04 .
+ex:p07  ex:cites ex:p01 .
+ex:p07  ex:cites ex:p05 .
+ex:p08  ex:cites ex:p05 .
+ex:p08  ex:cites ex:p06 .
+ex:p09  ex:cites ex:p04 .
+ex:p09  ex:cites ex:p07 .
+ex:p10  ex:cites ex:p06 .
+ex:p10  ex:cites ex:p08 .
+ex:p11  ex:cites ex:p07 .
+ex:p11  ex:cites ex:p09 .
+ex:p12  ex:cites ex:p08 .
+ex:p12  ex:cites ex:p10 .
+ex:p13  ex:cites ex:p09 .
+ex:p13  ex:cites ex:p11 .
+ex:p14  ex:cites ex:p10 .
+ex:p14  ex:cites ex:p12 .
+ex:p15  ex:cites ex:p11 .
+ex:p15  ex:cites ex:p13 .
+ex:p16  ex:cites ex:p12 .
+ex:p16  ex:cites ex:p14 .
+ex:p17  ex:cites ex:p13 .
+ex:p17  ex:cites ex:p15 .
+ex:p18  ex:cites ex:p14 .
+ex:p18  ex:cites ex:p16 .
+ex:p19  ex:cites ex:p15 .
+ex:p19  ex:cites ex:p17 .
+ex:p20  ex:cites ex:p16 .
+ex:p20  ex:cites ex:p18 .
+
+# ── Collaboration (person ↔ person, via co-authorship — creates triangles) ───
+
+ex:alice  ex:knows ex:bob .
+ex:alice  ex:knows ex:carol .
+ex:alice  ex:knows ex:dave .
+ex:alice  ex:knows ex:eve .
+ex:alice  ex:knows ex:leo .
+ex:alice  ex:knows ex:paul .
+ex:bob    ex:knows ex:carol .
+ex:bob    ex:knows ex:frank .
+ex:bob    ex:knows ex:grace .
+ex:bob    ex:knows ex:mia .
+ex:carol  ex:knows ex:henry .
+ex:carol  ex:knows ex:noah .
+ex:dave   ex:knows ex:eve .
+ex:dave   ex:knows ex:iris .
+ex:dave   ex:knows ex:olivia .
+ex:eve    ex:knows ex:jack .
+ex:frank  ex:knows ex:karen .
+ex:grace  ex:knows ex:leo .
+ex:henry  ex:knows ex:mia .
+ex:iris   ex:knows ex:jack .
+ex:iris   ex:knows ex:noah .
+ex:jack   ex:knows ex:karen .
+ex:karen  ex:knows ex:paul .
+ex:leo    ex:knows ex:mia .
+ex:noah   ex:knows ex:olivia .
+
+# ── Literal properties ───────────────────────────────────────────────────────
+
+ex:alice   ex:name  "Alice Smith" .
+ex:bob     ex:name  "Bob Jones" .
+ex:carol   ex:name  "Carol White" .
+ex:dave    ex:name  "Dave Brown" .
+ex:eve     ex:name  "Eve Davis" .
+ex:frank   ex:name  "Frank Miller" .
+ex:grace   ex:name  "Grace Wilson" .
+ex:henry   ex:name  "Henry Moore" .
+ex:iris    ex:name  "Iris Taylor" .
+ex:jack    ex:name  "Jack Anderson" .
+ex:karen   ex:name  "Karen Thomas" .
+ex:leo     ex:name  "Leo Jackson" .
+ex:mia     ex:name  "Mia Harris" .
+ex:noah    ex:name  "Noah Martin" .
+ex:olivia  ex:name  "Olivia Garcia" .
+ex:paul    ex:name  "Paul Martinez" .
+
+ex:p01  ex:title "Learning Graph Embeddings at Scale" .
+ex:p02  ex:title "Scalable KG Construction from Text" .
+ex:p03  ex:title "Query Cardinality Estimation in RDF" .
+ex:p04  ex:title "Efficient Join Ordering for SPARQL" .
+ex:p05  ex:title "Neural Cardinality Estimation" .
+ex:p06  ex:title "Language Models for Knowledge Graphs" .
+ex:p07  ex:title "Hierarchical Graph Representation Learning" .
+ex:p08  ex:title "Visual Relation Detection" .
+ex:p09  ex:title "Selectivity Estimation with Sketches" .
+ex:p10  ex:title "Wander Join for Online Aggregation" .
+ex:p11  ex:title "Knowledge Graph Completion via Tensor" .
+ex:p12  ex:title "Cross-Lingual Knowledge Transfer" .
+ex:p13  ex:title "Object Detection in Dense Scenes" .
+ex:p14  ex:title "Adaptive Query Processing" .
+ex:p15  ex:title "Temporal Knowledge Graph Reasoning" .
+ex:p16  ex:title "Multi-Modal Relation Extraction" .
+ex:p17  ex:title "Structural Patterns in Linked Data" .
+ex:p18  ex:title "Learned Index Structures for Graphs" .
+ex:p19  ex:title "Benchmark for KG Cardinality Estimators" .
+ex:p20  ex:title "Scaling Laws of Graph Neural Networks" .
+
+ex:uniA    ex:name "University A" .
+ex:uniB    ex:name "University B" .
+ex:uniC    ex:name "University C" .
+ex:labX    ex:name "Research Lab X" .
+ex:labY    ex:name "Research Lab Y" .
+
+ex:confSig   ex:name "International Conference on Data Management" .
+ex:confVldb  ex:name "Very Large Data Bases" .
+ex:confIcde  ex:name "International Conference on Data Engineering" .
+ex:journalA  ex:name "Transactions on Knowledge and Data Engineering" .
