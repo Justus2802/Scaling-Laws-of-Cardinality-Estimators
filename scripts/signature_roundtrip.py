@@ -110,7 +110,7 @@ def main():
     parser.add_argument(
         "kg_file",
         nargs="?",
-        default=str(Path(__file__).parent.parent / "tests/fixtures/academic_kg.ttl"),
+        default=str(Path(__file__).parent.parent / "tests/fixtures/aifb.ttl"),
         help="Path to the input KG (.ttl or .nt). Defaults to the academic fixture.",
     )
     parser.add_argument("--seed", type=int, default=42)
