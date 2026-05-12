@@ -26,12 +26,14 @@ Design decisions:
     time, making every output fully reproducible.
 """
 
+import math
 from dataclasses import dataclass
+from pathlib import Path
 
 import igraph
 import numpy as np
 
-from signature import BlockA, BlockC
+from signature import BlockA, BlockC, BlockE, block_e as _measure_block_e
 
 _RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 
@@ -401,3 +403,297 @@ def instantiate(
         g.es["predicate"] = [p for _, _, p in all_edges]
 
     return g
+
+
+# ---------------------------------------------------------------------------
+# Stage 3 — Maslov-Sneppen rewiring with simulated annealing
+# ---------------------------------------------------------------------------
+
+
+def _adj_inc(adj: list, u: int, v: int) -> None:
+    """Increment undirected adjacency count for edge (u, v)."""
+    adj[u][v] = adj[u].get(v, 0) + 1
+    adj[v][u] = adj[v].get(u, 0) + 1
+
+
+def _adj_dec(adj: list, u: int, v: int) -> None:
+    """Decrement undirected adjacency count for edge (u, v)."""
+    adj[u][v] -= 1
+    if adj[u][v] == 0:
+        del adj[u][v]
+    adj[v][u] -= 1
+    if adj[v][u] == 0:
+        del adj[v][u]
+
+
+def _triangle_delta(adj: list, s1: int, o1: int, s2: int, o2: int) -> int:
+    """Compute change in triangle count from swapping o1↔o2 for edges s1→o1, s2→o2.
+
+    Temporarily removes both edges from adj to isolate the common-neighbour
+    calculation, then restores them.  Returns gained_triangles - lost_triangles.
+    """
+    lost1 = len(set(adj[s1]) & set(adj[o1]))
+    lost2 = len(set(adj[s2]) & set(adj[o2]))
+
+    _adj_dec(adj, s1, o1)
+    _adj_dec(adj, s2, o2)
+
+    gained1 = len(set(adj[s1]) & set(adj[o2]))
+    gained2 = len(set(adj[s2]) & set(adj[o1]))
+
+    _adj_inc(adj, s1, o1)
+    _adj_inc(adj, s2, o2)
+
+    return (gained1 + gained2) - (lost1 + lost2)
+
+
+def refine(
+    g: igraph.Graph,
+    target_e: "BlockE",
+    *,
+    budget: int = 10_000,
+    initial_temp: float = 1.0,
+    cooling_rate: float = 0.999,
+    seed: int = 0,
+) -> igraph.Graph:
+    """Stage 3: Maslov-Sneppen rewiring + simulated annealing.
+
+    Rewires content edges (never rdf:type edges) using the Maslov-Sneppen
+    double-edge swap to preserve per-relation degree sequences while moving the
+    triangle count toward target_e.triangle_count.  Metropolis-Hastings
+    acceptance allows uphill moves early on; temperature decays geometrically.
+
+    The best graph seen during the walk (lowest |triangle_count - target|) is
+    returned, so the result is robust even if SA gets stuck.
+
+    Parameters
+    ----------
+    g : igraph.Graph
+        Output of Stage 2 (instantiate).
+    target_e : BlockE
+        Block E signature of the target KG — supplies target triangle_count.
+    budget : int
+        Maximum number of rewiring attempts.
+    initial_temp : float
+        Starting temperature for the Metropolis criterion.
+    cooling_rate : float
+        Geometric decay factor applied after each accepted swap.
+    seed : int
+        RNG seed.
+
+    Returns
+    -------
+    igraph.Graph
+        Best graph encountered during the annealing walk.
+    """
+    from collections import defaultdict
+
+    rng = np.random.default_rng(seed)
+    target_tri = int(target_e.triangle_count)
+
+    # Extract all edges as a mutable list; igraph edges are immutable.
+    # type_edges stay fixed; content_edges are rewired.
+    type_edge_data: list[tuple[int, int, str]] = []
+    content_edge_data: list[tuple[int, int, str]] = []
+    for e in g.es:
+        entry = (e.source, e.target, e["predicate"])
+        if e["predicate"] == _RDF_TYPE:
+            type_edge_data.append(entry)
+        else:
+            content_edge_data.append(entry)
+
+    if len(content_edge_data) < 2:
+        return g
+
+    # Group content edge *list indices* by predicate
+    rel_to_idxs: dict[str, list[int]] = defaultdict(list)
+    for i, (_, _, p) in enumerate(content_edge_data):
+        rel_to_idxs[p].append(i)
+
+    swappable_rels = [r for r, lst in rel_to_idxs.items() if len(lst) >= 2]
+    if not swappable_rels:
+        return g
+
+    # Build dict-based undirected adjacency for fast local triangle counting
+    n = g.vcount()
+    adj: list[dict] = [{} for _ in range(n)]
+    for s, o, _ in content_edge_data:
+        _adj_inc(adj, s, o)
+
+    def _count_triangles() -> int:
+        total = 0
+        for u, nbrs in enumerate(adj):
+            for v in nbrs:
+                if v > u:
+                    total += len(set(adj[u]) & set(adj[v]))
+        return total // 3
+
+    current_tri = _count_triangles()
+    current_dist = abs(current_tri - target_tri)
+
+    best_dist = current_dist
+    best_content = list(content_edge_data)  # snapshot of best-seen layout
+
+    temp = initial_temp
+
+    for _ in range(budget):
+        rel = swappable_rels[int(rng.integers(len(swappable_rels)))]
+        pool = rel_to_idxs[rel]
+        pi1, pi2 = rng.choice(len(pool), size=2, replace=False)
+        i1, i2 = pool[pi1], pool[pi2]
+
+        s1, o1, p1 = content_edge_data[i1]
+        s2, o2, _  = content_edge_data[i2]
+
+        # Skip swaps that create self-loops
+        if s1 == o2 or s2 == o1:
+            continue
+
+        delta = _triangle_delta(adj, s1, o1, s2, o2)
+        new_tri = current_tri + delta
+        new_dist = abs(new_tri - target_tri)
+
+        if new_dist < current_dist:
+            accept = True
+        else:
+            diff = new_dist - current_dist
+            accept = bool(rng.random() < math.exp(-diff / max(temp, 1e-10)))
+
+        if accept:
+            # Commit the swap in the mutable edge list and adjacency
+            content_edge_data[i1] = (s1, o2, p1)
+            content_edge_data[i2] = (s2, o1, p1)
+
+            _adj_dec(adj, s1, o1)
+            _adj_dec(adj, s2, o2)
+            _adj_inc(adj, s1, o2)
+            _adj_inc(adj, s2, o1)
+
+            current_tri = new_tri
+            current_dist = new_dist
+            temp *= cooling_rate
+
+            if current_dist < best_dist:
+                best_dist = current_dist
+                best_content = list(content_edge_data)
+
+    # Rebuild igraph from best snapshot, preserving vertex attributes
+    all_best = best_content + type_edge_data
+    g_out = igraph.Graph(n=g.vcount(), directed=True)
+    for attr in g.vertex_attributes():
+        g_out.vs[attr] = list(g.vs[attr])
+    if all_best:
+        g_out.add_edges([(s, o) for s, o, _ in all_best])
+        g_out.es["predicate"] = [p for _, _, p in all_best]
+
+    return g_out
+
+
+# ---------------------------------------------------------------------------
+# High-level API: Signature + Generator
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Signature:
+    """Compact target signature used by Generator (Blocks A, C, E only).
+
+    Block A supplies size/density targets; Block C supplies schema/class
+    structure; Block E supplies motif counts that Stage 3 optimises toward.
+    """
+
+    a: "BlockA"
+    c: "BlockC"
+    e: "BlockE"
+
+    @classmethod
+    def from_graph(cls, g: igraph.Graph) -> "Signature":
+        from signature import block_a, block_c
+        return cls(
+            a=block_a(g),
+            c=block_c(g),
+            e=_measure_block_e(g),
+        )
+
+    @classmethod
+    def from_file(cls, path) -> "Signature":
+        from kg_io import load_kg
+        return cls.from_graph(load_kg(Path(path)))
+
+
+class Generator:
+    """Full three-stage KG generator.
+
+    Usage
+    -----
+    >>> sig = Signature.from_file("target.ttl")
+    >>> gen = Generator(sig)
+    >>> g = gen.sample(seed=42)          # reproducible
+    >>> g2 = gen.sample(seed=99)         # structurally different
+
+    Parameters
+    ----------
+    target : Signature
+        Measured signature of the target KG.  All three stages read from it.
+    """
+
+    def __init__(self, target: Signature) -> None:
+        self.target = target
+
+    def sample(
+        self,
+        *,
+        seed: int = 0,
+        relation_zipf_exponent: float = 2.0,
+        v_noise: float = 0.05,
+        e_noise: float = 0.05,
+        pa_exponent: float = 0.5,
+        rewire_budget: int = 10_000,
+        initial_temp: float = 1.0,
+        cooling_rate: float = 0.999,
+    ) -> igraph.Graph:
+        """Generate one synthetic KG from the target signature.
+
+        Parameters
+        ----------
+        seed : int
+            Master seed; all three stages derive sub-seeds from it so the
+            entire pipeline is reproducible from a single integer.
+        relation_zipf_exponent : float
+            Passed to Stage 1; controls skewness of relation frequency.
+        v_noise, e_noise : float
+            Relative Gaussian noise for |V| and |E| in Stage 2.
+        pa_exponent : float
+            Preferential-attachment exponent in Stage 2.
+        rewire_budget : int
+            Number of rewiring attempts in Stage 3.
+        initial_temp, cooling_rate : float
+            Simulated-annealing parameters for Stage 3.
+
+        Returns
+        -------
+        igraph.Graph
+            Synthetic KG with the same vertex/edge attribute schema as a
+            graph loaded by kg_io.load_kg.
+        """
+        schema = sample_schema(
+            self.target.a,
+            self.target.c,
+            relation_zipf_exponent=relation_zipf_exponent,
+            seed=seed,
+        )
+        g = instantiate(
+            schema,
+            v_noise=v_noise,
+            e_noise=e_noise,
+            pa_exponent=pa_exponent,
+            seed=seed + 1,
+        )
+        return refine(
+            g,
+            self.target.e,
+            budget=rewire_budget,
+            initial_temp=initial_temp,
+            cooling_rate=cooling_rate,
+            seed=seed + 2,
+        )
