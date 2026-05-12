@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from generator import Generator, Signature
 from kg_io import load_kg
+from signature import block_b, block_d, block_f
 
 _RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 
@@ -134,8 +135,13 @@ def main():
         rewire_budget=args.rewire_budget,
     )
 
-    # ── Step 3: measure synthetic signature ─────────────────────────────────
+    # ── Step 3: measure full signatures (all six blocks) for both graphs ────
     synth = Signature.from_graph(g_synth)
+
+    print("Measuring blocks B, D, F …")
+    tb = block_b(g_orig);   sb = block_b(g_synth)
+    td = block_d(g_orig);   sd = block_d(g_synth)
+    tf = block_f(g_orig);   sf = block_f(g_synth)
 
     # ── Step 4: print full signature comparison ─────────────────────────────
     def _row(label, tv, sv):
@@ -181,14 +187,55 @@ def main():
     for i in range(len(target.c.obj_singular_values)):
         print(_row(f"obj_sv[{i}]",  target.c.obj_singular_values[i],  synth.c.obj_singular_values[i]))
 
+    # Block B
+    print(_header("Block B — degree structure"))
+    print(_row("out_degree_fit.alpha",       tb.out_degree_fit.alpha,       sb.out_degree_fit.alpha))
+    print(_row("out_degree_fit.xmin",        tb.out_degree_fit.xmin,        sb.out_degree_fit.xmin))
+    print(_row("out_degree_fit.ks",          tb.out_degree_fit.ks,          sb.out_degree_fit.ks))
+    print(_row("in_degree_fit.alpha",        tb.in_degree_fit.alpha,        sb.in_degree_fit.alpha))
+    print(_row("in_degree_fit.xmin",         tb.in_degree_fit.xmin,         sb.in_degree_fit.xmin))
+    print(_row("in_degree_fit.ks",           tb.in_degree_fit.ks,           sb.in_degree_fit.ks))
+    t_func = list(tb.functionality.values())
+    s_func = list(sb.functionality.values())
+    print(_row("functionality (mean)",       float(np.mean(t_func))  if t_func else float("nan"),
+                                             float(np.mean(s_func))  if s_func else float("nan")))
+    print(_row("functionality (min)",        float(np.min(t_func))   if t_func else float("nan"),
+                                             float(np.min(s_func))   if s_func else float("nan")))
+    print(_row("functionality (max)",        float(np.max(t_func))   if t_func else float("nan"),
+                                             float(np.max(s_func))   if s_func else float("nan")))
+    t_ifunc = list(tb.inverse_functionality.values())
+    s_ifunc = list(sb.inverse_functionality.values())
+    print(_row("inv_functionality (mean)",   float(np.mean(t_ifunc)) if t_ifunc else float("nan"),
+                                             float(np.mean(s_ifunc)) if s_ifunc else float("nan")))
+    print(_row("inv_functionality (min)",    float(np.min(t_ifunc))  if t_ifunc else float("nan"),
+                                             float(np.min(s_ifunc))  if s_ifunc else float("nan")))
+    print(_row("inv_functionality (max)",    float(np.max(t_ifunc))  if t_ifunc else float("nan"),
+                                             float(np.max(s_ifunc))  if s_ifunc else float("nan")))
+
+    # Block D
+    print(_header("Block D — characteristic sets"))
+    print(_row("num_distinct_cs",      td.num_distinct_cs,       sd.num_distinct_cs))
+    print(_row("cs_freq_stats.alpha",  td.cs_freq_stats.alpha,   sd.cs_freq_stats.alpha))
+    print(_row("cs_size_mean",         td.cs_size_mean,          sd.cs_size_mean))
+    print(_row("cs_size_median",       td.cs_size_median,        sd.cs_size_median))
+    print(_row("cs_size_p90",          td.cs_size_p90,           sd.cs_size_p90))
+    print(_row("inv_num_distinct_cs",  td.inv_num_distinct_cs,   sd.inv_num_distinct_cs))
+    print(_row("inv_cs_freq_alpha",    td.inv_cs_freq_stats.alpha, sd.inv_cs_freq_stats.alpha))
+    print(_row("inv_cs_size_mean",     td.inv_cs_size_mean,      sd.inv_cs_size_mean))
+    print(_row("inv_cs_size_median",   td.inv_cs_size_median,    sd.inv_cs_size_median))
+    print(_row("inv_cs_size_p90",      td.inv_cs_size_p90,       sd.inv_cs_size_p90))
+    print(_row("pair_freq_alpha",      td.pair_freq_stats.alpha, sd.pair_freq_stats.alpha))
+    for i, (tv_pf, sv_pf) in enumerate(zip(td.top_pair_freqs, sd.top_pair_freqs)):
+        print(_row(f"top_pair_freq[{i}]", float(tv_pf), float(sv_pf)))
+
     # Block E
     print(_header("Block E — motifs & structural patterns"))
-    print(_row("triangle_count",      target.e.triangle_count,       synth.e.triangle_count))
-    print(_row("four_cycle_count",    target.e.four_cycle_count,     synth.e.four_cycle_count))
-    print(_row("five_cycle_count",    target.e.five_cycle_count,     synth.e.five_cycle_count))
-    print(_row("six_cycle_count",     target.e.six_cycle_count,      synth.e.six_cycle_count))
-    print(_row("diamond_count",       target.e.diamond_count,        synth.e.diamond_count))
-    print(_row("k4_count",            target.e.k4_count,             synth.e.k4_count))
+    print(_row("triangle_count",      target.e.triangle_count,        synth.e.triangle_count))
+    print(_row("four_cycle_count",    target.e.four_cycle_count,      synth.e.four_cycle_count))
+    print(_row("five_cycle_count",    target.e.five_cycle_count,      synth.e.five_cycle_count))
+    print(_row("six_cycle_count",     target.e.six_cycle_count,       synth.e.six_cycle_count))
+    print(_row("diamond_count",       target.e.diamond_count,         synth.e.diamond_count))
+    print(_row("k4_count",            target.e.k4_count,              synth.e.k4_count))
     print(_row("tailed_triangle",     target.e.tailed_triangle_count, synth.e.tailed_triangle_count))
     for k in range(2, 11):
         print(_row(f"star[{k}]", target.e.star_counts.get(k, 0), synth.e.star_counts.get(k, 0)))
@@ -203,10 +250,23 @@ def main():
     print(_row("tree_template_zipf",    target.e.tree_template_zipf,    synth.e.tree_template_zipf))
     print(_row("tree_template_entropy", target.e.tree_template_entropy, synth.e.tree_template_entropy))
 
-    # Aggregate error over combined A+C+E vector
+    # Block F
+    print(_header("Block F — connectivity"))
+    print(_row("num_components",             tf.num_components,              sf.num_components))
+    print(_row("largest_component_fraction", tf.largest_component_fraction,  sf.largest_component_fraction))
+    print(_row("avg_shortest_path_length",   tf.avg_shortest_path_length,    sf.avg_shortest_path_length))
+    print(_row("avg_spl_se",                 tf.avg_shortest_path_length_se, sf.avg_shortest_path_length_se))
+    print(_row("clustering_coefficient",     tf.clustering_coefficient,      sf.clustering_coefficient))
+    print(_row("degree_assortativity",       tf.degree_assortativity,        sf.degree_assortativity))
+
+    # Aggregate error over full A+B+C+D+E+F vector
     print()
-    tv_vec = np.array(target.a.as_vector() + target.c.as_vector() + target.e.as_vector(), dtype=float)
-    sv_vec = np.array(synth.a.as_vector() + synth.c.as_vector() + synth.e.as_vector(), dtype=float)
+    tv_vec = np.array(
+        target.a.as_vector() + tb.as_vector() + target.c.as_vector()
+        + td.as_vector() + target.e.as_vector() + tf.as_vector(), dtype=float)
+    sv_vec = np.array(
+        synth.a.as_vector() + sb.as_vector() + synth.c.as_vector()
+        + sd.as_vector() + synth.e.as_vector() + sf.as_vector(), dtype=float)
     with np.errstate(divide="ignore", invalid="ignore"):
         rel_err = np.abs(tv_vec - sv_vec) / np.maximum(np.abs(tv_vec), 1e-9)
     print(f"  Vector length   : {len(tv_vec)}")
