@@ -1,8 +1,19 @@
-"""kgsynth Stage 1 — Schema sampler.
+"""kgsynth Stages 1 & 2 — Schema sampler and graph instantiation.
 
-Builds the abstract schema (relations, types, type-relation probability table)
-from a measured BlockA + BlockC target signature.  The schema is the
-deterministic seed for Stage 2 (CS-aware graph instantiation).
+Stage 1 (sample_schema): builds the abstract schema (relations, types,
+type-relation probability table) from a measured BlockA + BlockC target.
+
+Stage 2 (instantiate): turns a Schema into an igraph.Graph by
+  - sampling actual |V| and |E| from Gaussian distributions centred on the
+    Schema targets (so two calls with different seeds produce different graphs
+    even for the same target signature),
+  - assigning types to entities via the Schema's type_weights,
+  - sampling each entity's characteristic set from P(r | type) so the
+    co-occurrence structure matches the target,
+  - wiring edges with preferential attachment to reproduce heavy-tailed
+    in-degree distributions,
+  - adding rdf:type edges for all typed entities,
+  - throttling content edges down to the sampled |E| budget if needed.
 
 Design decisions:
   - Relation frequency weights are sampled from a Zipf distribution whose
@@ -12,14 +23,17 @@ Design decisions:
     random factorisation whose singular values match the Block C target, so
     the co-occurrence structure of the generated schema resembles the real KG.
   - All randomness goes through a single np.random.Generator seeded at call
-    time, making the schema fully reproducible.
+    time, making every output fully reproducible.
 """
 
 from dataclasses import dataclass
 
+import igraph
 import numpy as np
 
 from signature import BlockA, BlockC
+
+_RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 
 
 # ---------------------------------------------------------------------------
@@ -211,3 +225,179 @@ def sample_schema(
         num_entities=a.num_entities,
         num_triples=a.num_triples,
     )
+
+
+# ---------------------------------------------------------------------------
+# Stage 2 — CS-aware graph instantiation
+# ---------------------------------------------------------------------------
+
+
+def instantiate(
+    schema: Schema,
+    *,
+    v_noise: float = 0.05,
+    e_noise: float = 0.05,
+    pa_exponent: float = 0.5,
+    seed: int = 0,
+) -> igraph.Graph:
+    """Stage 2: instantiate a KG from a Schema.
+
+    Parameters
+    ----------
+    schema : Schema
+        Output of Stage 1 (sample_schema).
+    v_noise : float
+        Relative standard deviation for sampling actual |V| around the Schema
+        target.  0.05 = 5 % noise.  Set to 0 to reproduce the exact target.
+    e_noise : float
+        Same for |E|.
+    pa_exponent : float
+        Preferential-attachment exponent for object selection.  0 = uniform
+        random; 1 = linear PA (rich-get-richer); 0.5 is a good default that
+        produces moderate hubs without full scale-free extremes.
+    seed : int
+        RNG seed — fully determines the output given the same schema and
+        parameters.  Pass different seeds to get structurally different graphs
+        from the same target signature.
+
+    Returns
+    -------
+    igraph.Graph
+        Directed graph with vertex attributes (name, is_literal, …) and edge
+        attribute (predicate) matching the kg_io.load_kg contract, so it can
+        be passed directly to compute_signature().
+
+    Notes
+    -----
+    Vertex layout::
+
+        0 .. actual_V − 1          entity nodes  (is_literal = False)
+        actual_V .. actual_V + |T| type-class nodes (is_literal = False)
+
+    Content edges (schema.relations) and rdf:type edges are both included;
+    their combined count approximates the sampled |E| target.
+    """
+    rng = np.random.default_rng(seed)
+    num_relations = len(schema.relations)
+    num_types = len(schema.types)
+
+    # ------------------------------------------------------------------
+    # 1. Sample actual |V| and |E| with Gaussian noise
+    # ------------------------------------------------------------------
+    actual_V = max(2, int(round(
+        rng.normal(schema.num_entities, max(1.0, schema.num_entities * v_noise))
+    )))
+    actual_E_target = max(1, int(round(
+        rng.normal(schema.num_triples, max(1.0, schema.num_triples * e_noise))
+    )))
+
+    # rdf:type edges (one per entity when types exist) come out of the budget
+    n_type_edges = actual_V if num_types > 0 else 0
+    content_E_target = max(0, actual_E_target - n_type_edges)
+
+    # CS size mean derived so expected content edges ≈ content_E_target
+    cs_size_mean = content_E_target / actual_V if actual_V > 0 else 1.0
+
+    # ------------------------------------------------------------------
+    # 2. Assign a type to every entity
+    # ------------------------------------------------------------------
+    if num_types > 0:
+        entity_types = rng.choice(num_types, size=actual_V, p=schema.type_weights)
+    else:
+        entity_types = np.full(actual_V, -1, dtype=int)
+
+    # ------------------------------------------------------------------
+    # 3. Sample a characteristic set (CS) for each entity
+    #    CS = subset of relations drawn from P(r | type), size ~ Poisson
+    # ------------------------------------------------------------------
+    entity_cs: list[np.ndarray] = []
+    for v in range(actual_V):
+        if num_relations == 0:
+            entity_cs.append(np.array([], dtype=int))
+            continue
+
+        t = int(entity_types[v])
+        if t >= 0:
+            probs = schema.type_relation_probs[t].copy()
+        else:
+            probs = schema.relation_weights.copy()
+
+        # Guard: renormalise in case of floating-point drift
+        s = probs.sum()
+        if s <= 0:
+            probs = schema.relation_weights.copy()
+            s = probs.sum()
+        probs /= s
+
+        nonzero = int((probs > 0).sum())
+        k = min(nonzero, max(0, int(rng.poisson(max(0.1, cs_size_mean)))))
+        if k == 0:
+            entity_cs.append(np.array([], dtype=int))
+            continue
+
+        entity_cs.append(rng.choice(num_relations, size=k, replace=False, p=probs))
+
+    # ------------------------------------------------------------------
+    # 4. Wire content edges with preferential attachment
+    #    Object picked proportional to current in_degree ^ pa_exponent;
+    #    Laplace smoothing (start at 1) ensures every vertex is reachable.
+    # ------------------------------------------------------------------
+    in_degrees = np.ones(actual_V, dtype=float)
+    seen: set[tuple[int, int, str]] = set()
+    content_edges: list[tuple[int, int, str]] = []
+
+    for v, cs in enumerate(entity_cs):
+        for rel_idx in cs:
+            predicate = schema.relations[int(rel_idx)]
+            weights = in_degrees ** pa_exponent
+            weights[v] = 0.0        # no self-loops
+            total = weights.sum()
+            if total == 0.0:
+                continue
+            weights /= total
+            obj = int(rng.choice(actual_V, p=weights))
+            triple = (v, obj, predicate)
+            if triple not in seen:
+                seen.add(triple)
+                content_edges.append(triple)
+                in_degrees[obj] += 1.0
+
+    # ------------------------------------------------------------------
+    # 5. Throttle content edges down to budget if over target
+    # ------------------------------------------------------------------
+    if len(content_edges) > content_E_target > 0:
+        keep = rng.choice(len(content_edges), size=content_E_target, replace=False)
+        keep_set = set(keep.tolist())
+        content_edges = [e for i, e in enumerate(content_edges) if i in keep_set]
+
+    # ------------------------------------------------------------------
+    # 6. Build rdf:type edges
+    #    Type-class nodes sit at indices actual_V .. actual_V + num_types - 1
+    # ------------------------------------------------------------------
+    type_edges: list[tuple[int, int, str]] = []
+    for v in range(actual_V):
+        t = int(entity_types[v])
+        if t >= 0:
+            type_edges.append((v, actual_V + t, _RDF_TYPE))
+
+    # ------------------------------------------------------------------
+    # 7. Assemble igraph.Graph
+    # ------------------------------------------------------------------
+    total_V = actual_V + num_types
+    g = igraph.Graph(n=total_V, directed=True)
+
+    g.vs["name"] = (
+        [f"http://kgsynth.org/entity/{i}" for i in range(actual_V)]
+        + list(schema.types)
+    )
+    g.vs["is_literal"] = [False] * total_V
+    g.vs["literal_value"] = [None] * total_V
+    g.vs["literal_datatype"] = [None] * total_V
+    g.vs["literal_lang"] = [None] * total_V
+
+    all_edges = content_edges + type_edges
+    if all_edges:
+        g.add_edges([(s, o) for s, o, _ in all_edges])
+        g.es["predicate"] = [p for _, _, p in all_edges]
+
+    return g
