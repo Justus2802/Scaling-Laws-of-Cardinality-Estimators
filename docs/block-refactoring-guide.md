@@ -19,8 +19,9 @@ Three public methods form the full lifecycle:
 | Method | Role |
 |--------|------|
 | `calculate(g)` | Runs all computation, stores results internally, returns `self` |
-| `as_vector()` | Unchanged logic — projects stored results to a fixed-length float list |
-| `visualize(mode, path)` | New — CLI text summary or matplotlib figure; saves to file if `path` given |
+| `as_vector()` | Projects stored results to a fixed-length float list |
+| `get_na_vec()` | Classmethod — returns a same-length list of `float("nan")`; used when a block is skipped |
+| `visualize(mode, path)` | CLI text summary or matplotlib figure; saves to file if `path` given |
 
 ---
 
@@ -37,6 +38,8 @@ Three public methods form the full lifecycle:
 **Private helpers → `@staticmethod`** — module-level helpers that are only called by this class move inside as `@staticmethod`, keeping the module namespace clean.
 
 **`visualize()` split** — the method dispatches to `_visualize_text()` and `_visualize_plot()`. Plot-specific geometry (histogram helpers, axis setup) goes into further `@staticmethod`s.
+
+**Only plot distributions, not unrelated scalars** — `_visualize_plot()` should only produce output when there is meaningful distribution data (histograms, violin plots, multi-point profiles). If all features for a block are unrelated scalars (e.g. Block A's size/density counts), `_visualize_plot()` is a no-op and the text mode is the primary output. Related scalar profiles where the shape across a parameter matters (e.g. k-star counts vs k, motif counts across motif types) are still worth plotting.
 
 ---
 
@@ -93,6 +96,11 @@ class BlockX:
         self._result_a = ...
         # store visualization-only arrays if needed
         return self
+
+    @classmethod
+    def get_na_vec(cls) -> list[float]:
+        """Return a N-element NaN vector (same length as as_vector())."""
+        return [float("nan")] * N
 
     def as_vector(self) -> list[float]:
         """Flatten to a fixed-length N-vector for cross-KG comparison."""
@@ -168,6 +176,25 @@ Log levels used across the package:
 | `INFO` | Block start/end, key scalar results (mean path length, component count, …) |
 | `WARNING` | Degenerate inputs: empty graph, too few samples for a reliable estimate |
 | `ERROR` | Unexpected failures that fall back to NaN / default values |
+
+---
+
+## Selective Block Computation
+
+`compute_signature()` accepts an optional `blocks` list that controls which blocks are run:
+
+```python
+# compute only blocks A and F
+sig = compute_signature("graph.ttl", blocks=["a", "f"])
+
+# sig.b, sig.c, sig.d, sig.e are None
+# sig.as_vector() still returns the full-length vector — skipped positions are NaN
+vec = sig.as_vector()
+```
+
+`GraphSignature` fields are `Optional[BlockX]` (default `None`). `as_vector()` calls
+`BlockX.get_na_vec()` for each `None` field, keeping the vector length fixed regardless
+of which blocks were computed.
 
 ---
 

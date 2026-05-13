@@ -18,6 +18,8 @@ from ._utils import (
 
 log = get_logger(__name__)
 
+_DEGREE_HIST_LOG_SCALE: bool = False  # set False for linear axes on degree histograms
+
 _NOT_CALCULATED = object()
 
 
@@ -157,6 +159,11 @@ class BlockB:
             inv_func.mean, inv_func.std, inv_func.median,
         ]
 
+    @classmethod
+    def get_na_vec(cls) -> list[float]:
+        """Return a 22-element NaN vector (same length as as_vector())."""
+        return [float("nan")] * 22
+
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
         """Display or save diagnostics for this block's computed features.
 
@@ -226,8 +233,8 @@ class BlockB:
         try:
             fig, axes = plt.subplots(2, 2, figsize=(12, 9))
 
-            self._plot_degree_hist(axes[0, 0], self.out_degrees, self.out_degree_fit, "Out-degree distribution")
-            self._plot_degree_hist(axes[0, 1], self.in_degrees,  self.in_degree_fit,  "In-degree distribution")
+            self._plot_degree_hist(axes[0, 0], self.out_degrees, self.out_degree_fit, "Out-degree distribution", _DEGREE_HIST_LOG_SCALE)
+            self._plot_degree_hist(axes[0, 1], self.in_degrees,  self.in_degree_fit,  "In-degree distribution",  _DEGREE_HIST_LOG_SCALE)
 
             # violin of powerlaw alpha values across all relations
             ax = axes[1, 0]
@@ -273,16 +280,20 @@ class BlockB:
             plt.close("all")
 
     @staticmethod
-    def _plot_degree_hist(ax, degrees: np.ndarray, fit: PowerLawStats, title: str) -> None:
+    def _plot_degree_hist(ax, degrees: np.ndarray, fit: PowerLawStats, title: str, log_scale: bool) -> None:
         pos = degrees[degrees > 0]
         if pos.size == 0:
             ax.set_title(f"{title} (no data)")
             return
 
-        bins = np.logspace(np.log10(pos.min()), np.log10(pos.max() + 1), 30)
+        if log_scale:
+            bins = np.logspace(np.log10(pos.min()), np.log10(pos.max() + 1), 30)
+        else:
+            bins = np.linspace(pos.min(), pos.max() + 1, 30)
         counts, edges = np.histogram(pos, bins=bins)
         centers = (edges[:-1] + edges[1:]) / 2
-        ax.loglog(centers[counts > 0], counts[counts > 0], "o", markersize=4, label="data")
+        plot_fn = ax.loglog if log_scale else ax.plot
+        plot_fn(centers[counts > 0], counts[counts > 0], "o", markersize=4, label="data")
 
         if not np.isnan(fit.alpha) and not np.isnan(fit.xmin):
             xmin = max(int(fit.xmin), 1)
@@ -293,8 +304,8 @@ class BlockB:
             total = tail_counts.sum()
             if total > 0:
                 y_fit = y_fit / y_fit.sum() * total
-            ax.loglog(x_fit, y_fit, "-", color="red", linewidth=1.5,
-                      label=f"powerlaw α={fit.alpha:.2f}")
+            plot_fn(x_fit, y_fit, "-", color="red", linewidth=1.5,
+                    label=f"powerlaw α={fit.alpha:.2f}")
 
         ax.set_xlabel("degree")
         ax.set_ylabel("count")

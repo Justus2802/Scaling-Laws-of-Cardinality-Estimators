@@ -211,6 +211,11 @@ class BlockE:
         vec.extend([self.tree_template_zipf, self.tree_template_entropy])
         return vec  # length 7 + 9 + 9 + 9 + 2 = 36
 
+    @classmethod
+    def get_na_vec(cls) -> list[float]:
+        """Return a 36-element NaN vector (same length as as_vector())."""
+        return [float("nan")] * 36
+
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
         """Display or save diagnostics for this block's computed features.
 
@@ -263,10 +268,10 @@ class BlockE:
 
     def _visualize_plot(self, path: str | None) -> None:
         try:
-            fig, axes = plt.subplots(2, 2, figsize=(12, 9))
+            fig, axes = plt.subplots(1, 3, figsize=(16, 5))
 
             # Motif / cycle counts
-            ax = axes[0, 0]
+            ax = axes[0]
             labels = ["triangles", "4-cycles", "5-cycles\n(est)", "6-cycles\n(est)",
                       "diamonds", "K4", "tailed\ntriangles"]
             values = [
@@ -280,7 +285,7 @@ class BlockE:
             ax.tick_params(axis="x", labelsize=8)
 
             # Star counts by k
-            ax = axes[0, 1]
+            ax = axes[1]
             ks = list(range(2, 11))
             star_vals = [self.star_counts.get(k, 0) for k in ks]
             ax.bar([str(k) for k in ks], star_vals, color="darkorange")
@@ -289,7 +294,7 @@ class BlockE:
             ax.set_title("k-star counts (exact)")
 
             # Path template zipf alpha and entropy vs k
-            ax = axes[1, 0]
+            ax = axes[2]
             zipf_vals = [self.path_template_zipf.get(k, float("nan")) for k in ks]
             ent_vals = [self.path_template_entropy.get(k, float("nan")) for k in ks]
             ax.plot(ks, zipf_vals, "o-", label="zipf alpha", color="steelblue")
@@ -302,19 +307,6 @@ class BlockE:
             lines1, labels1 = ax.get_legend_handles_labels()
             lines2, labels2 = ax2.get_legend_handles_labels()
             ax.legend(lines1 + lines2, labels1 + labels2, fontsize=8)
-
-            # Tree template stats
-            ax = axes[1, 1]
-            tree_labels = ["zipf alpha", "entropy"]
-            tree_vals = [self.tree_template_zipf, self.tree_template_entropy]
-            finite_mask = [not math.isnan(v) for v in tree_vals]
-            ax.bar(
-                [l for l, m in zip(tree_labels, finite_mask) if m],
-                [v for v, m in zip(tree_vals, finite_mask) if m],
-                color=["steelblue", "darkorange"][:sum(finite_mask)],
-            )
-            ax.set_title("Depth-2 tree template statistics")
-            ax.set_ylabel("value")
 
             plt.tight_layout()
             if path is None:

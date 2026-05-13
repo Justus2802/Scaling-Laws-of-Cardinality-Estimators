@@ -1,3 +1,7 @@
+# custom
+sig_out/
+
+
 # Python
 __pycache__/
 *.py[cod]

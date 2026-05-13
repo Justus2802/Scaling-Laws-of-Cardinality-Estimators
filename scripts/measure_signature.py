@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from signature import compute_signature
+from signature import compute_signature, _ALL_BLOCKS
 
 logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(name)s: %(message)s")
 
@@ -28,19 +28,27 @@ def main() -> None:
         "--format", choices=["png", "pdf", "svg"], default="png", dest="fmt",
         help="Image format for block plots (default: png)",
     )
+    parser.add_argument(
+        "--blocks", default=",".join(_ALL_BLOCKS),
+        help=f"Comma-separated list of blocks to compute (default: all). "
+             f"Example: --blocks a,b,f",
+    )
     args = parser.parse_args()
+
+    selected_blocks = [b.strip() for b in args.blocks.split(",") if b.strip()]
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Loading  : {args.kg_file}")
-    sig = compute_signature(args.kg_file, verbose=True)
+    sig = compute_signature(args.kg_file, verbose=True, blocks=selected_blocks)
 
-    blocks = [("a", sig.a), ("b", sig.b), ("c", sig.c), ("d", sig.d), ("e", sig.e), ("f", sig.f)]
+    all_blocks = [("a", sig.a), ("b", sig.b), ("c", sig.c), ("d", sig.d), ("e", sig.e), ("f", sig.f)]
+    computed_blocks = [(label, block) for label, block in all_blocks if block is not None]
     written: list[Path] = []
 
-    # Save one plot per block
-    for label, block in blocks:
+    # Save one plot per computed block
+    for label, block in computed_blocks:
         plot_path = out_dir / f"block_{label}.{args.fmt}"
         block.visualize(mode="plot", path=str(plot_path))
         written.append(plot_path)
@@ -51,7 +59,7 @@ def main() -> None:
     # Write combined text summary
     summary_path = out_dir / "summary.txt"
     sections: list[str] = []
-    for _label, block in blocks:
+    for _label, block in computed_blocks:
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             block.visualize(mode="text", path=None)

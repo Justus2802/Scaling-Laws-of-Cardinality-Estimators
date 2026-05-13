@@ -1,0 +1,202 @@
+=== Block A: Size and Density ===
+  num_entities      : 2835
+  num_triples       : 29226
+  num_relations     : 47
+  density           : 0.00363633
+  triples_per_entity: 10.3090
+  relation_reuse    : 621.8298
+
+=== Block B: Degree Structure ===
+
+Out-degree: n=2835  min=0  max=951  mean=10.31  median=8.0
+  fit: alpha=2.5548  xmin=31.0  ks=0.0488
+In-degree : n=2835  min=0  max=1240  mean=7.28  median=3.0
+  fit: alpha=2.1269  xmin=11.0  ks=0.0275
+
+--- Functionality (sorted desc) ---
+  name                                      func=1.000  inv_func=0.966
+  booktitle                                 func=1.000  inv_func=0.923
+  pages                                     func=1.000  inv_func=0.966
+  allValuesFrom                             func=1.000  inv_func=0.294
+  homepage                                  func=1.000  inv_func=0.971
+  title                                     func=1.000  inv_func=0.936
+  year                                      func=1.000  inv_func=0.056
+  phone                                     func=1.000  inv_func=0.718
+  volume                                    func=1.000  inv_func=0.674
+  series                                    func=1.000  inv_func=0.925
+  abstract                                  func=1.000  inv_func=0.969
+  month                                     func=1.000  inv_func=0.143
+  onProperty                                func=1.000  inv_func=0.643
+  type                                      func=1.000  inv_func=0.462
+  fax                                       func=1.000  inv_func=0.667
+  type                                      func=1.000  inv_func=0.000
+  number                                    func=1.000  inv_func=0.760
+  journal                                   func=1.000  inv_func=0.825
+  affiliation                               func=1.000  inv_func=0.200
+  note                                      func=1.000  inv_func=0.865
+  howpublished                              func=1.000  inv_func=0.957
+  photo                                     func=1.000  inv_func=1.000
+  address                                   func=1.000  inv_func=0.714
+  edition                                   func=1.000  inv_func=0.667
+  isbn                                      func=1.000  inv_func=1.000
+  chapter                                   func=1.000  inv_func=0.923
+  inverseOf                                 func=1.000  inv_func=1.000
+  range                                     func=1.000  inv_func=1.000
+  financedBy                                func=0.966  inv_func=0.571
+  carriedOutBy                              func=0.946  inv_func=0.000
+  head                                      func=0.750  inv_func=1.000
+  hasProject                                func=0.582  inv_func=0.140
+  finances                                  func=0.571  inv_func=0.967
+  type                                      func=0.542  inv_func=0.111
+  publication                               func=0.516  inv_func=0.128
+  worksAtProject                            func=0.438  inv_func=0.184
+  dealtWithIn                               func=0.364  inv_func=0.211
+  subClassOf                                func=0.352  inv_func=0.935
+  isAbout                                   func=0.348  inv_func=0.101
+  employs                                   func=0.333  inv_func=1.000
+  isWorkedOnBy                              func=0.226  inv_func=0.070
+  member                                    func=0.205  inv_func=0.255
+  projectInfo                               func=0.140  inv_func=0.582
+  author                                    func=0.133  inv_func=0.510
+  editor                                    func=0.019  inv_func=0.714
+  publishes                                 func=0.000  inv_func=0.992
+  carriesOut                                func=0.000  inv_func=0.946
+
+--- Per-relation powerlaw fits ---
+  relation                                   om_alpha  om_xmin   sm_alpha  sm_xmin
+  abstract                                        nan      nan        nan      nan
+  address                                         nan      nan     2.5531      1.0
+  affiliation                                     nan      nan        nan      nan
+  author                                       2.3837      2.0     1.9867      2.0
+  booktitle                                       nan      nan     3.0000      1.0
+  carriedOutBy                                    nan      nan        nan      nan
+  carriesOut                                      nan      nan        nan      nan
+  chapter                                         nan      nan        nan      nan
+  dealtWithIn                                  2.5430      3.0     2.2417      3.0
+  edition                                         nan      nan        nan      nan
+  editor                                       2.3693      2.0     2.4640      1.0
+  employs                                         nan      nan        nan      nan
+  fax                                             nan      nan     1.8172      1.0
+  financedBy                                      nan      nan     1.9383      1.0
+  finances                                     1.9250      1.0        nan      nan
+  hasProject                                   2.2915      1.0     1.8495      6.0
+  head                                            nan      nan        nan      nan
+  homepage                                        nan      nan     2.2807      2.0
+  howpublished                                    nan      nan        nan      nan
+  isAbout                                      2.5925      3.0     1.9691      7.0
+  isWorkedOnBy                                 2.8088      5.0     2.5699      4.0
+  isbn                                            nan      nan        nan      nan
+  journal                                         nan      nan     2.8856      1.0
+  member                                       2.3772      3.0     2.8543      3.0
+  month                                           nan      nan     2.6305     33.0
+  name                                            nan      nan        nan      nan
+  note                                            nan      nan     2.8764      2.0
+  number                                          nan      nan     2.2441      1.0
+  pages                                           nan      nan        nan      nan
+  phone                                           nan      nan     2.5280      1.0
+  photo                                           nan      nan        nan      nan
+  projectInfo                                  1.8495      6.0     2.2915      1.0
+  publication                                  2.0035      2.0     2.3815      2.0
+  publishes                                       nan      nan        nan      nan
+  series                                          nan      nan     2.1441      4.0
+  title                                           nan      nan        nan      nan
+  type                                            nan      nan     1.7460      1.0
+  volume                                          nan      nan     2.7388      2.0
+  worksAtProject                               2.5840      2.0     2.6681      3.0
+  year                                            nan      nan     1.7050     14.0
+  type                                            nan      nan        nan      nan
+  type                                            nan      nan     1.6922     28.0
+  range                                           nan      nan        nan      nan
+  subClassOf                                   2.0413      2.0     2.4886      2.0
+  allValuesFrom                                   nan      nan     1.8189      2.0
+  inverseOf                                       nan      nan        nan      nan
+  onProperty                                      nan      nan     2.1546      1.0
+
+=== Block C: Schema and Relation Correlation ===
+
+--- Subject-side co-occurrence ---
+  density:       0.2793
+  top SVs:       7788.293, 3181.675, 626.841, 525.526, 458.482, 450.929, 405.682, 362.360, 321.265, 309.150
+  row entropy:   mean=2.1523  std=0.5447
+
+--- Object-side co-occurrence ---
+  density:       0.0729
+  top SVs:       2729.163, 1257.083, 1148.099, 868.326, 691.824, 528.012, 518.006, 270.034, 268.372, 209.012
+  row entropy:   mean=0.6319  std=0.5754
+
+--- Type statistics (27 classes) ---
+  class_size_zipf_exponent: 1.6922
+  top classes by size:
+    Publication                               1222
+    Person                                    1045
+    InProceedings                             687
+    TechnicalReport                           169
+    Article                                   161
+    Restriction                               152
+    ResearchTopic                             146
+    InCollection                              87
+    Project                                   78
+    PhDStudent                                65
+
+--- P(r | type) — top relations per type ---
+  Article                         author=0.25, type=0.14, isAbout=0.12, year=0.07, journal=0.07
+  AssistantProfessor              publication=0.86, worksAtProject=0.07, type=0.02, affiliation=0.01, fax=0.01
+  Book                            isAbout=0.23, author=0.17, type=0.16, year=0.08, title=0.08
+  FullProfessor                   publication=0.85, worksAtProject=0.08, type=0.02, affiliation=0.01, fax=0.01
+  Graduate                        type=0.20, publication=0.20, affiliation=0.10, fax=0.10, worksAtProject=0.10
+  InCollection                    author=0.25, type=0.16, isAbout=0.14, title=0.08, year=0.08
+  InProceedings                   author=0.25, type=0.15, isAbout=0.12, year=0.08, title=0.08
+  Lecturer                        publication=0.42, type=0.15, phone=0.08, fax=0.08, name=0.08
+  Manager                         phone=0.17, homepage=0.17, name=0.17, photo=0.17, fax=0.17
+  Misc                            author=0.25, isAbout=0.18, type=0.15, hasProject=0.09, year=0.08
+  Organization                    finances=0.55, type=0.23, name=0.23
+  Person                          publication=0.56, type=0.15, name=0.14, phone=0.03, fax=0.03
+  PhDStudent                      publication=0.55, type=0.10, worksAtProject=0.08, fax=0.05, phone=0.05
+  Proceedings                     editor=0.28, type=0.15, isAbout=0.14, year=0.08, title=0.08
+  Project                         projectInfo=0.49, isAbout=0.19, member=0.14, carriedOutBy=0.04, type=0.04
+  Publication                     author=0.25, type=0.15, isAbout=0.13, year=0.08, title=0.08
+  ResearchGroup                   publishes=0.87, carriesOut=0.06, member=0.05, type=0.00, homepage=0.00
+  ResearchTopic                   isWorkedOnBy=0.42, dealtWithIn=0.26, type=0.11, name=0.11, type=0.10
+  TechnicalReport                 author=0.29, type=0.16, isAbout=0.15, year=0.08, title=0.08
+  TechnicalStaff                  fax=0.21, type=0.21, name=0.21, phone=0.21, photo=0.14
+  Undergraduate                   fax=0.19, type=0.19, phone=0.19, name=0.19, photo=0.19
+  Class                           subClassOf=0.78, type=0.22
+  Datatype                        type=1.00
+  DatatypeProperty                type=1.00
+  ObjectProperty                  type=0.79, inverseOf=0.19, range=0.02
+  Ontology                        type=1.00
+  Restriction                     allValuesFrom=0.33, onProperty=0.33, type=0.33
+
+=== Block D: Characteristic Set Features ===
+
+Forward CS:
+  Distinct types: 368
+  Freq fit: alpha=1.7229  ks=0.0431
+  Size stats: mean=5.71  median=5.00  p90=10.00
+Inverse CS:
+  Distinct types: 47
+  Freq fit: alpha=1.5976  ks=0.0821
+  Size stats: mean=1.87  median=2.00  p90=3.00
+
+Two-step pairs (top pairs):
+  in_pred                              out_pred                             count  freq
+  publication                          type                                  1222  0.0353
+  publication                          title                                 1217  0.0352
+  publication                          year                                  1217  0.0352
+  publishes                            title                                 1207  0.0349
+  publishes                            type                                  1207  0.0349
+  publishes                            year                                  1207  0.0349
+  publication                          author                                1165  0.0337
+  publishes                            author                                1155  0.0334
+  author                               type                                   837  0.0242
+  author                               publication                            827  0.0239
+
+Pair freq fit: alpha=1.8036  ks=0.0921
+
+Block F — Connectivity
+  num_components:              2
+  largest_component_fraction:  0.9998
+  avg_shortest_path_length:    2.6970
+  avg_shortest_path_length_se: 0.0215
+  clustering_coefficient:      0.0172
+  degree_assortativity:        -0.1381

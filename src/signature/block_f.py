@@ -12,7 +12,7 @@ from ._logging import get_logger
 
 log = get_logger(__name__)
 
-_SAMPLE_K = 0        # default exponent: 10^k independently sampled pairs
+_SAMPLE_K = 3       # default exponent: 10^k independently sampled pairs
 _N_BOOTSTRAP = 999   # default bootstrap resamples for SE estimation
 
 _NOT_CALCULATED = object()
@@ -206,6 +206,11 @@ class BlockF:
             self.degree_assortativity,
         ]
 
+    @classmethod
+    def get_na_vec(cls) -> list[float]:
+        """Return a 6-element NaN vector (same length as as_vector())."""
+        return [float("nan")] * 6
+
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
         """Display or save diagnostics.
 
@@ -239,13 +244,14 @@ class BlockF:
 
     def _visualize_plot(self, path: str | None) -> None:
         try:
-            fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+            fig, ax = plt.subplots(1, 1, figsize=(6, 4))
 
-            # Shortest-path length histogram
-            ax = axes[0]
             finite = self._pair_dists_finite
             if finite is not None and finite.size > 0:
-                ax.hist(finite, bins=20, color="steelblue", edgecolor="white")
+                # distances are integers — one bin per integer value
+                int_max = int(finite.max())
+                bins = np.arange(1, int_max + 2) - 0.5
+                ax.hist(finite, bins=bins, color="steelblue", edgecolor="white")
                 ax.axvline(self.avg_shortest_path_length, color="crimson", linestyle="--",
                            label=f"mean={self.avg_shortest_path_length:.2f}")
                 ax.legend(fontsize=8)
@@ -254,20 +260,6 @@ class BlockF:
             ax.set_title("Sampled shortest-path lengths")
             ax.set_xlabel("distance")
             ax.set_ylabel("count")
-
-            # Scalar summary bar chart
-            ax = axes[1]
-            labels = ["LCC fraction", "clustering", "assortativity"]
-            values = [
-                self.largest_component_fraction,
-                self.clustering_coefficient,
-                self.degree_assortativity,
-            ]
-            colors = ["steelblue" if v >= 0 else "tomato" for v in values]
-            ax.bar(labels, values, color=colors, edgecolor="white")
-            ax.axhline(0, color="black", linewidth=0.8)
-            ax.set_title(f"Connectivity scalars  (components={self.num_components})")
-            ax.set_ylim(-1, 1)
 
             plt.tight_layout()
             if path is None:

@@ -180,6 +180,11 @@ class BlockC:
             + [float(self.num_classes), self.class_size_zipf_exponent, mean_type_rel_ent]
         )
 
+    @classmethod
+    def get_na_vec(cls) -> list[float]:
+        """Return a 29-element NaN vector (same length as as_vector())."""
+        return [float("nan")] * 29
+
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
         """Display or save diagnostics for this block's computed features.
 

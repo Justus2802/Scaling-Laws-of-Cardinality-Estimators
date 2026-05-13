@@ -3,7 +3,6 @@
 from typing import Any
 
 import igraph
-import matplotlib.pyplot as plt  # type: ignore[import-untyped]
 
 from ._logging import get_logger
 
@@ -80,6 +79,11 @@ class BlockA:
 
         return self
 
+    @classmethod
+    def get_na_vec(cls) -> list[float]:
+        """Return a 6-element NaN vector (same length as as_vector())."""
+        return [float("nan")] * 6
+
     def as_vector(self) -> list[float]:
         """Flatten to a fixed-length 6-vector for cross-KG comparison."""
         return [
@@ -124,28 +128,6 @@ class BlockA:
                 f.write(text + "\n")
 
     def _visualize_plot(self, path: str | None) -> None:
-        try:
-            fig, (ax_counts, ax_ratios) = plt.subplots(1, 2, figsize=(10, 4))
-
-            counts = [self.num_entities, self.num_triples, self.num_relations]
-            count_labels = ["entities\n|V|", "triples\n|E|", "relations\n|R|"]
-            ax_counts.bar(count_labels, counts, color=["steelblue", "darkorange", "seagreen"])
-            ax_counts.set_yscale("symlog")
-            ax_counts.set_ylabel("count (log scale)")
-            ax_counts.set_title("Block A: size counts")
-
-            ratios = [self.density, self.triples_per_entity, self.relation_reuse]
-            ratio_labels = ["density\n|E|/|V|²", "triples/entity\n|E|/|V|", "relation reuse\n|E|/|R|"]
-            ax_ratios.bar(ratio_labels, ratios, color=["steelblue", "darkorange", "seagreen"])
-            ax_ratios.set_ylabel("value")
-            ax_ratios.set_title("Block A: density ratios")
-
-            plt.tight_layout()
-            if path is None:
-                plt.show()
-            else:
-                plt.savefig(path, dpi=150, bbox_inches="tight")
-                plt.close(fig)
-        except Exception as exc:
-            log.warning("Block A: plot failed: %s", exc, exc_info=True)
-            plt.close("all")
+        # All Block A features are unrelated scalars — no meaningful distribution to plot.
+        # Use visualize(mode="text") for a summary.
+        return

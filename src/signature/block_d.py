@@ -173,6 +173,11 @@ class BlockD:
             self.pair_freq_stats.ks,
         ]
 
+    @classmethod
+    def get_na_vec(cls) -> list[float]:
+        """Return a 34-element NaN vector (same length as as_vector())."""
+        return [float("nan")] * (12 + _TOP_K_PAIRS + 2)
+
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
         """Display or save diagnostics for this block's computed features.
 
