@@ -8,7 +8,7 @@ import igraph
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from kg_io import load_kg
-from signature import block_f
+from signature import BlockF
 
 _VECTOR_LEN = 6
 
@@ -24,7 +24,7 @@ class TestBlockFEdgeCases(unittest.TestCase):
     def test_empty_graph(self):
         g = igraph.Graph(directed=True)
         g.vs["is_literal"] = []
-        f = block_f(g)
+        f = BlockF().calculate(g)
         self.assertEqual(f.num_components, 0)
         self.assertTrue(math.isnan(f.largest_component_fraction))
         self.assertTrue(math.isnan(f.avg_shortest_path_length))
@@ -35,7 +35,7 @@ class TestBlockFEdgeCases(unittest.TestCase):
     def test_single_vertex_no_edges(self):
         # 1 non-literal vertex, no edges → can't form a pair → avg_sp NaN
         g = _make_g(1, [])
-        f = block_f(g)
+        f = BlockF().calculate(g)
         self.assertEqual(f.num_components, 1)
         self.assertAlmostEqual(f.largest_component_fraction, 1.0)
         self.assertTrue(math.isnan(f.avg_shortest_path_length))
@@ -44,7 +44,7 @@ class TestBlockFEdgeCases(unittest.TestCase):
     def test_all_literal_vertices(self):
         # non_lit pool is empty → avg_sp NaN, other stats still computed
         g = _make_g(3, [(0, 1), (1, 2)], literals=[True, True, True])
-        f = block_f(g)
+        f = BlockF().calculate(g)
         self.assertEqual(f.num_components, 1)
         self.assertTrue(math.isnan(f.avg_shortest_path_length))
         self.assertEqual(len(f.as_vector()), _VECTOR_LEN)
@@ -52,7 +52,7 @@ class TestBlockFEdgeCases(unittest.TestCase):
     def test_one_literal_one_non_literal(self):
         # Only 1 non-literal → pool size < 2 → avg_sp NaN
         g = _make_g(2, [(0, 1)], literals=[False, True])
-        f = block_f(g)
+        f = BlockF().calculate(g)
         self.assertTrue(math.isnan(f.avg_shortest_path_length))
         self.assertEqual(len(f.as_vector()), _VECTOR_LEN)
 
@@ -73,7 +73,7 @@ class TestBlockFConnectivity(unittest.TestCase):
             "@prefix ex: <http://example.org/> .\n"
             "ex:s ex:p ex:o .\n"
         )
-        f = block_f(g)
+        f = BlockF().calculate(g)
         self.assertEqual(f.num_components, 1)
         self.assertAlmostEqual(f.largest_component_fraction, 1.0)
         self.assertAlmostEqual(f.avg_shortest_path_length, 1.0)
@@ -91,7 +91,7 @@ class TestBlockFConnectivity(unittest.TestCase):
             "ex:b ex:q ex:c .\n"
             "ex:c ex:r ex:a .\n"
         )
-        f = block_f(g)
+        f = BlockF().calculate(g)
         self.assertEqual(f.num_components, 1)
         self.assertAlmostEqual(f.largest_component_fraction, 1.0)
         self.assertAlmostEqual(f.avg_shortest_path_length, 1.0)
@@ -107,7 +107,7 @@ class TestBlockFConnectivity(unittest.TestCase):
             "ex:d ex:p ex:e .\n"
         )
         g = self._load_ttl(ttl)
-        f = block_f(g)
+        f = BlockF().calculate(g)
         self.assertEqual(f.num_components, 2)
         self.assertAlmostEqual(f.largest_component_fraction, 3 / 5)
         # avg_sp sampled within LCC (c-d-e chain); distances are 1 or 2
@@ -124,7 +124,7 @@ class TestBlockFConnectivity(unittest.TestCase):
             "ex:a ex:p ex:b .\n"
             'ex:b ex:label "hello" .\n'
         )
-        f = block_f(g)
+        f = BlockF().calculate(g)
         self.assertEqual(f.num_components, 1)
         self.assertAlmostEqual(f.largest_component_fraction, 1.0)
         # Only non-literal vertices (ex:a, ex:b) sampled → avg_sp = 1.0
@@ -135,14 +135,14 @@ class TestBlockFConnectivity(unittest.TestCase):
         # Star: hub (deg 4) connected to 4 leaves (deg 1) → hub-leaf pairs
         # → Pearson r(deg_src, deg_tgt) is negative
         g = _make_g(5, [(0, 1), (0, 2), (0, 3), (0, 4)])
-        f = block_f(g)
+        f = BlockF().calculate(g)
         self.assertFalse(math.isnan(f.degree_assortativity))
         self.assertLess(f.degree_assortativity, 0.0)
 
     def test_chain_no_clustering(self):
         # Linear chain: a→b→c→d — no triangles → clustering = 0
         g = _make_g(4, [(0, 1), (1, 2), (2, 3)])
-        f = block_f(g)
+        f = BlockF().calculate(g)
         self.assertAlmostEqual(f.clustering_coefficient, 0.0)
 
     def test_avg_sp_on_isolated_pairs_equals_one(self):
@@ -153,8 +153,8 @@ class TestBlockFConnectivity(unittest.TestCase):
             + "".join(f"ex:s{i} ex:p ex:o{i} .\n" for i in range(10))
         )
         g = self._load_ttl(ttl)
-        f1 = block_f(g, sample_k=1)
-        f2 = block_f(g, sample_k=2)
+        f1 = BlockF().calculate(g, sample_k=1)
+        f2 = BlockF().calculate(g, sample_k=2)
         self.assertAlmostEqual(f1.avg_shortest_path_length, 1.0)
         self.assertAlmostEqual(f2.avg_shortest_path_length, 1.0)
 
@@ -162,7 +162,7 @@ class TestBlockFConnectivity(unittest.TestCase):
         # Empty graph → avg_sp NaN → SE must also be NaN
         g = igraph.Graph(directed=True)
         g.vs["is_literal"] = []
-        f = block_f(g)
+        f = BlockF().calculate(g)
         self.assertTrue(math.isnan(f.avg_shortest_path_length_se))
 
     def test_se_finite_and_non_negative_on_chain(self):
@@ -172,7 +172,7 @@ class TestBlockFConnectivity(unittest.TestCase):
             "ex:a ex:p ex:b .\n"
             "ex:b ex:q ex:c .\n"
         )
-        f = block_f(g, sample_k=2)
+        f = BlockF().calculate(g, sample_k=2)
         self.assertFalse(math.isnan(f.avg_shortest_path_length_se))
         self.assertGreater(f.avg_shortest_path_length_se, 0.0)
 
@@ -184,7 +184,7 @@ class TestBlockFConnectivity(unittest.TestCase):
             "ex:b ex:q ex:c .\n"
             "ex:c ex:r ex:a .\n"
         )
-        f = block_f(g, sample_k=2)
+        f = BlockF().calculate(g, sample_k=2)
         self.assertAlmostEqual(f.avg_shortest_path_length_se, 0.0)
 
     def test_sample_k_larger_gives_finite_result(self):
@@ -195,7 +195,7 @@ class TestBlockFConnectivity(unittest.TestCase):
             "ex:b ex:q ex:c .\n"
             "ex:c ex:r ex:a .\n"
         )
-        f = block_f(g, sample_k=3)
+        f = BlockF().calculate(g, sample_k=3)
         self.assertFalse(math.isnan(f.avg_shortest_path_length))
         self.assertEqual(len(f.as_vector()), _VECTOR_LEN)
 
@@ -209,7 +209,7 @@ class TestBlockFConnectivity(unittest.TestCase):
         for ttl in graphs:
             with self.subTest(ttl=ttl[:60]):
                 g = self._load_ttl(ttl)
-                self.assertEqual(len(block_f(g).as_vector()), _VECTOR_LEN)
+                self.assertEqual(len(BlockF().calculate(g).as_vector()), _VECTOR_LEN)
 
 
 if __name__ == "__main__":

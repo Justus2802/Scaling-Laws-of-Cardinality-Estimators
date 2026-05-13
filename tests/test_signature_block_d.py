@@ -9,9 +9,9 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from kg_io import load_kg
-from signature import BlockD, PowerLawStats, _TOP_K_PAIRS, block_d
+from signature import BlockD, PowerLawStats, _TOP_K_PAIRS
 
-_VECTOR_LEN = 5 + 5 + _TOP_K_PAIRS + 1  # 31 with default _TOP_K_PAIRS=20
+_VECTOR_LEN = 6 + 6 + _TOP_K_PAIRS + 2  # 34 with default _TOP_K_PAIRS=20
 
 
 def _isnan_stats(stats: PowerLawStats) -> bool:
@@ -31,7 +31,7 @@ class TestBlockDSmallFixtures(unittest.TestCase):
     def test_empty_graph(self):
         g = igraph.Graph(directed=True)
         g.vs["is_literal"] = []
-        d = block_d(g)
+        d = BlockD().calculate(g)
         self.assertEqual(d.num_distinct_cs, 0)
         self.assertTrue(_isnan_stats(d.cs_freq_stats))
         self.assertTrue(math.isnan(d.cs_size_mean))
@@ -45,7 +45,7 @@ class TestBlockDSmallFixtures(unittest.TestCase):
 
     def test_single_triple(self):
         # ex:s ex:p ex:o — one entity with one outgoing predicate
-        d = block_d(self._load_ttl(
+        d = BlockD().calculate(self._load_ttl(
             "@prefix ex: <http://example.org/> .\n"
             "ex:s ex:p ex:o .\n"
         ))
@@ -65,7 +65,7 @@ class TestBlockDSmallFixtures(unittest.TestCase):
             "ex:b ex:p ex:y .\n"
             "ex:b ex:q ex:z .\n"
         )
-        d = block_d(self._load_ttl(ttl))
+        d = BlockD().calculate(self._load_ttl(ttl))
         self.assertEqual(d.num_distinct_cs, 2)
         # sizes: a→1, b→2 → mean=1.5, median=1.5, p90=1.9
         self.assertAlmostEqual(d.cs_size_mean, 1.5)
@@ -77,7 +77,7 @@ class TestBlockDSmallFixtures(unittest.TestCase):
         ttl = "@prefix ex: <http://example.org/> .\n"
         for i in range(3):
             ttl += f"ex:s{i} ex:p ex:hub .\n"
-        d = block_d(self._load_ttl(ttl))
+        d = BlockD().calculate(self._load_ttl(ttl))
         # Forward: each sX has CS={p}, hub has CS={}
         self.assertEqual(d.num_distinct_cs, 1)  # only {p}; hub has no outgoing
         # Inverse: hub has inv_CS={p}, sX have inv_CS={}
@@ -87,7 +87,7 @@ class TestBlockDSmallFixtures(unittest.TestCase):
     def test_two_step_pairs_detected(self):
         # Chain: ex:s -[p1]-> ex:mid -[p2]-> ex:o
         # mid has in_pred={p1}, out_pred={p2} → pair (p1, p2)
-        d = block_d(self._load_ttl(
+        d = BlockD().calculate(self._load_ttl(
             "@prefix ex: <http://example.org/> .\n"
             "ex:s ex:p1 ex:mid .\n"
             "ex:mid ex:p2 ex:o .\n"
@@ -107,7 +107,7 @@ class TestBlockDSmallFixtures(unittest.TestCase):
         for i in range(3):
             ttl += f"ex:src{i} ex:in{i} ex:mid{i} .\n"
             ttl += f"ex:mid{i} ex:out{i} ex:dst{i} .\n"
-        d = block_d(self._load_ttl(ttl))
+        d = BlockD().calculate(self._load_ttl(ttl))
         self.assertEqual(len(d.top_pairs), 3)
         # All pairs have equal count → freqs sum to 1
         self.assertAlmostEqual(d.top_pair_freqs[:3].sum(), 1.0)
@@ -124,7 +124,7 @@ class TestBlockDSmallFixtures(unittest.TestCase):
             ttl += f"ex:b{i} ex:q ex:y{i} .\n"
         # Group 3: {p, q} — 1 entity
         ttl += "ex:c0 ex:p ex:z0 .\nex:c0 ex:q ex:z1 .\n"
-        d = block_d(self._load_ttl(ttl))
+        d = BlockD().calculate(self._load_ttl(ttl))
         # 3 distinct CS with freq counts [8,3,1] → 3 samples, likely still NaN
         # (below MIN_SAMPLES_FOR_FIT=10). Verify vector length regardless.
         self.assertEqual(len(d.as_vector()), _VECTOR_LEN)
@@ -138,7 +138,19 @@ class TestBlockDSmallFixtures(unittest.TestCase):
         ]
         for ttl in graphs:
             with self.subTest(ttl=ttl[:60]):
-                self.assertEqual(len(block_d(self._load_ttl(ttl)).as_vector()), _VECTOR_LEN)
+                self.assertEqual(len(BlockD().calculate(self._load_ttl(ttl)).as_vector()), _VECTOR_LEN)
+
+    def test_not_calculated_raises(self):
+        d = BlockD()
+        with self.assertRaises(RuntimeError):
+            _ = d.num_distinct_cs
+
+    def test_calculate_returns_self(self):
+        g = igraph.Graph(directed=True)
+        g.vs["is_literal"] = []
+        d = BlockD()
+        result = d.calculate(g)
+        self.assertIs(result, d)
 
 
 if __name__ == "__main__":

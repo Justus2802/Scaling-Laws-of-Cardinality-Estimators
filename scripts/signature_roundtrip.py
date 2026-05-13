@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from generator import Generator, Signature
 from kg_io import load_kg
-from signature import block_b, block_d, block_f
+from signature import BlockB, block_d, block_f
 
 
 def _fmt(v):
@@ -49,7 +49,7 @@ def main():
     synth = Signature.from_graph(g_synth)
 
     print("Measuring blocks B, D, F …")
-    tb = block_b(g_orig);   sb = block_b(g_synth)
+    tb = BlockB().calculate(g_orig);   sb = BlockB().calculate(g_synth)
     td = block_d(g_orig);   sd = block_d(g_synth)
     tf = block_f(g_orig);   sf = block_f(g_synth)
 

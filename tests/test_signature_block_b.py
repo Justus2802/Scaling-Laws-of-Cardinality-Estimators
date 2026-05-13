@@ -8,7 +8,7 @@ import igraph
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from kg_io import load_kg
-from signature import BlockB, PowerLawStats, block_b
+from signature import BlockB, PowerLawStats
 
 
 def _isnan_stats(stats: PowerLawStats) -> bool:
@@ -28,17 +28,17 @@ class TestBlockBSmallFixtures(unittest.TestCase):
     def test_empty_graph(self):
         g = igraph.Graph(directed=True)
         g.vs["is_literal"] = []  # ensure attribute exists for empty vertex set
-        b = block_b(g)
+        b = BlockB().calculate(g)
         self.assertTrue(_isnan_stats(b.out_degree_fit))
         self.assertTrue(_isnan_stats(b.in_degree_fit))
         self.assertEqual(b.object_multiplicity, {})
         self.assertEqual(b.subject_multiplicity, {})
         self.assertEqual(b.functionality, {})
         self.assertEqual(b.inverse_functionality, {})
-        self.assertEqual(len(b.as_vector()), 68)
+        self.assertEqual(len(b.as_vector()), 22)
 
     def test_single_triple_short_circuits(self):
-        b = block_b(self._load_ttl(
+        b = BlockB().calculate(self._load_ttl(
             "@prefix ex: <http://example.org/> .\n"
             "ex:a ex:p ex:b .\n"
         ))
@@ -50,21 +50,21 @@ class TestBlockBSmallFixtures(unittest.TestCase):
         self.assertEqual(b.inverse_functionality["http://example.org/p"], 1.0)
         # multiplicity fit short-circuits to NaN (only 1 subject)
         self.assertTrue(_isnan_stats(b.object_multiplicity["http://example.org/p"]))
-        self.assertEqual(len(b.as_vector()), 68)
+        self.assertEqual(len(b.as_vector()), 22)
 
     def test_functional_relation(self):
         # Each subject has exactly one object → functionality = 1.0
         ttl = "@prefix ex: <http://example.org/> .\n"
         for i in range(5):
             ttl += f"ex:a{i} ex:bornIn ex:c{i} .\n"
-        b = block_b(self._load_ttl(ttl))
+        b = BlockB().calculate(self._load_ttl(ttl))
         self.assertEqual(b.functionality["http://example.org/bornIn"], 1.0)
         self.assertEqual(b.inverse_functionality["http://example.org/bornIn"], 1.0)
 
     def test_many_to_many_relation(self):
         # ex:a1 ex:knows ex:a2, ex:a3 ; ex:a2 ex:knows ex:a1
         # subjects: a1 has 2 objects, a2 has 1 → functionality = 0.5
-        b = block_b(self._load_ttl(
+        b = BlockB().calculate(self._load_ttl(
             "@prefix ex: <http://example.org/> .\n"
             "ex:a1 ex:knows ex:a2 .\n"
             "ex:a1 ex:knows ex:a3 .\n"
@@ -74,14 +74,15 @@ class TestBlockBSmallFixtures(unittest.TestCase):
         self.assertEqual(b.functionality["http://example.org/knows"], 0.5)
 
     def test_vector_length_invariant(self):
-        # Any graph → vector length is exactly 68
+        # Any graph → vector length is exactly 22
+        # 2+2 aggregate + 6+6 per-relation (alpha/ks mean+std+median each) + 3+3 functionality
         for ttl in [
             "@prefix ex: <http://example.org/> .\nex:a ex:p ex:b .\n",
             "@prefix ex: <http://example.org/> .\nex:a ex:p ex:b . ex:c ex:p ex:d .\n",
             "@prefix ex: <http://example.org/> .\nex:a ex:p ex:b . ex:a ex:q ex:c .\n",
         ]:
             with self.subTest(ttl=ttl):
-                self.assertEqual(len(block_b(self._load_ttl(ttl)).as_vector()), 68)
+                self.assertEqual(len(BlockB().calculate(self._load_ttl(ttl)).as_vector()), 22)
 
 
 class TestBlockBPowerLawFit(unittest.TestCase):
@@ -103,7 +104,7 @@ class TestBlockBPowerLawFit(unittest.TestCase):
         path = os.path.join(self.tmp, "heavy.ttl")
         with open(path, "w") as f:
             f.write(ttl)
-        b = block_b(load_kg(path))
+        b = BlockB().calculate(load_kg(path))
         # 15 positive in-degree samples with real variance → fit should converge
         self.assertFalse(math.isnan(b.in_degree_fit.alpha))
         self.assertFalse(math.isnan(b.in_degree_fit.ks))

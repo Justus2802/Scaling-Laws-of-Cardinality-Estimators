@@ -8,7 +8,7 @@ import igraph
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from kg_io import load_kg
-from signature import BlockA, block_a
+from signature import BlockA
 
 _VECTOR_LEN = 6
 
@@ -26,7 +26,7 @@ class TestBlockASmallFixtures(unittest.TestCase):
     def test_empty_graph(self):
         g = igraph.Graph(directed=True)
         g.vs["is_literal"] = []
-        a = block_a(g)
+        a = BlockA().calculate(g)
         self.assertEqual(a.num_entities, 0)
         self.assertEqual(a.num_triples, 0)
         self.assertEqual(a.num_relations, 0)
@@ -37,7 +37,7 @@ class TestBlockASmallFixtures(unittest.TestCase):
 
     def test_single_triple_values(self):
         # ex:s ex:p ex:o — 2 non-literal entities, 1 triple, 1 relation
-        a = block_a(self._load_ttl(
+        a = BlockA().calculate(self._load_ttl(
             "@prefix ex: <http://example.org/> .\n"
             "ex:s ex:p ex:o .\n"
         ))
@@ -51,7 +51,7 @@ class TestBlockASmallFixtures(unittest.TestCase):
 
     def test_literals_excluded_from_entity_count(self):
         # Literal object "hello" must NOT count toward |V|
-        a = block_a(self._load_ttl(
+        a = BlockA().calculate(self._load_ttl(
             "@prefix ex: <http://example.org/> .\n"
             'ex:s ex:label "hello" .\n'
         ))
@@ -61,7 +61,7 @@ class TestBlockASmallFixtures(unittest.TestCase):
 
     def test_density_uses_v_squared_denominator(self):
         # 3 non-literal entities, 2 triples → density = 2/9, not 2/6
-        a = block_a(self._load_ttl(
+        a = BlockA().calculate(self._load_ttl(
             "@prefix ex: <http://example.org/> .\n"
             "ex:a ex:p ex:b .\n"
             "ex:b ex:q ex:c .\n"
@@ -72,7 +72,7 @@ class TestBlockASmallFixtures(unittest.TestCase):
 
     def test_relation_count_distinct(self):
         # Two triples sharing the same predicate → |R| = 1, not 2
-        a = block_a(self._load_ttl(
+        a = BlockA().calculate(self._load_ttl(
             "@prefix ex: <http://example.org/> .\n"
             "ex:a ex:p ex:b .\n"
             "ex:c ex:p ex:d .\n"
@@ -82,7 +82,7 @@ class TestBlockASmallFixtures(unittest.TestCase):
 
     def test_relation_reuse_multiple_predicates(self):
         # 3 triples using 2 distinct predicates → relation_reuse = 1.5
-        a = block_a(self._load_ttl(
+        a = BlockA().calculate(self._load_ttl(
             "@prefix ex: <http://example.org/> .\n"
             "ex:a ex:p ex:b .\n"
             "ex:a ex:p ex:c .\n"
@@ -99,13 +99,13 @@ class TestBlockASmallFixtures(unittest.TestCase):
             "ex:s rdf:type ex:Person .\n"
             "ex:s ex:name ex:n .\n"
         )
-        a = block_a(self._load_ttl(ttl))
+        a = BlockA().calculate(self._load_ttl(ttl))
         self.assertEqual(a.num_triples, 2)
         self.assertEqual(a.num_relations, 2)
 
     def test_multiple_literals_only_one_entity(self):
         # One subject with two literal objects; only the subject is an entity
-        a = block_a(self._load_ttl(
+        a = BlockA().calculate(self._load_ttl(
             "@prefix ex: <http://example.org/> .\n"
             'ex:s ex:label "hello" .\n'
             'ex:s ex:age "42"^^<http://www.w3.org/2001/XMLSchema#integer> .\n'
@@ -121,7 +121,7 @@ class TestBlockASmallFixtures(unittest.TestCase):
             + "".join(f"ex:s{i} ex:p ex:o{i} .\n" for i in range(20)),
         ]:
             with self.subTest(ttl=ttl[:60]):
-                self.assertEqual(len(block_a(self._load_ttl(ttl)).as_vector()), _VECTOR_LEN)
+                self.assertEqual(len(BlockA().calculate(self._load_ttl(ttl)).as_vector()), _VECTOR_LEN)
 
 
 if __name__ == "__main__":

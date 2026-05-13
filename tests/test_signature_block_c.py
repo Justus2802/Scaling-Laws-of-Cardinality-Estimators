@@ -9,7 +9,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from kg_io import load_kg
-from signature import BlockC, block_c
+from signature import BlockC
 
 _VECTOR_LEN = 29   # 10 subj_SVs + 3 subj_stats + 10 obj_SVs + 3 obj_stats + 3 type_stats
 _RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
@@ -29,7 +29,7 @@ class TestBlockCSmallFixtures(unittest.TestCase):
     def test_empty_graph(self):
         g = igraph.Graph(directed=True)
         g.vs["is_literal"] = []
-        c = block_c(g)
+        c = BlockC().calculate(g)
         self.assertEqual(c.num_classes, 0)
         self.assertTrue(math.isnan(c.class_size_zipf_exponent))
         self.assertEqual(c.class_sizes, {})
@@ -42,7 +42,7 @@ class TestBlockCSmallFixtures(unittest.TestCase):
 
     def test_single_triple_no_type(self):
         # One predicate → 1×1 co-occurrence matrix, no type info
-        c = block_c(self._load_ttl(
+        c = BlockC().calculate(self._load_ttl(
             "@prefix ex: <http://example.org/> .\n"
             "ex:s ex:p ex:o .\n"
         ))
@@ -53,7 +53,7 @@ class TestBlockCSmallFixtures(unittest.TestCase):
 
     def test_cooc_subject_side_full_density_when_subject_uses_both(self):
         # ex:a uses both ex:p and ex:q → all 4 entries of 2×2 M_subj are nonzero
-        c = block_c(self._load_ttl(
+        c = BlockC().calculate(self._load_ttl(
             "@prefix ex: <http://example.org/> .\n"
             "ex:a ex:p ex:x .\n"
             "ex:a ex:q ex:y .\n"
@@ -64,7 +64,7 @@ class TestBlockCSmallFixtures(unittest.TestCase):
     def test_cooc_subject_side_half_density_when_subjects_disjoint(self):
         # ex:a uses ex:p only; ex:b uses ex:q only → off-diagonal of M_subj is 0
         # nnz = 2 (diagonal), total_cells = 4 → density = 0.5
-        c = block_c(self._load_ttl(
+        c = BlockC().calculate(self._load_ttl(
             "@prefix ex: <http://example.org/> .\n"
             "ex:a ex:p ex:x .\n"
             "ex:b ex:q ex:y .\n"
@@ -80,7 +80,7 @@ class TestBlockCSmallFixtures(unittest.TestCase):
             "ex:a rdf:type ex:Person .\n"
             "ex:b rdf:type ex:Animal .\n"
         )
-        c = block_c(self._load_ttl(ttl))
+        c = BlockC().calculate(self._load_ttl(ttl))
         self.assertEqual(c.num_classes, 2)
         self.assertIn(_EX + "Person", c.class_sizes)
         self.assertIn(_EX + "Animal", c.class_sizes)
@@ -95,7 +95,7 @@ class TestBlockCSmallFixtures(unittest.TestCase):
             "ex:a rdf:type ex:Person .\n"
             "ex:b rdf:type ex:Person .\n"
         )
-        c = block_c(self._load_ttl(ttl))
+        c = BlockC().calculate(self._load_ttl(ttl))
         self.assertEqual(c.num_classes, 1)
         self.assertEqual(c.class_sizes[_EX + "Person"], 2)
 
@@ -108,7 +108,7 @@ class TestBlockCSmallFixtures(unittest.TestCase):
             "ex:a ex:p ex:x .\n"
             "ex:a ex:q ex:y .\n"
         )
-        c = block_c(self._load_ttl(ttl))
+        c = BlockC().calculate(self._load_ttl(ttl))
         dist = c.type_relation_conditional.get(_EX + "Person")
         self.assertIsNotNone(dist)
         self.assertAlmostEqual(sum(dist.values()), 1.0)
@@ -118,7 +118,7 @@ class TestBlockCSmallFixtures(unittest.TestCase):
 
     def test_literal_target_included_in_obj_cooc(self):
         # Object-side co-occurrence is built over all targets, including literals
-        c = block_c(self._load_ttl(
+        c = BlockC().calculate(self._load_ttl(
             "@prefix ex: <http://example.org/> .\n"
             'ex:s ex:label "hello" .\n'
         ))
@@ -133,7 +133,7 @@ class TestBlockCSmallFixtures(unittest.TestCase):
             "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n"
             "ex:a rdf:type ex:T .\n"
         )
-        c = block_c(self._load_ttl(ttl))
+        c = BlockC().calculate(self._load_ttl(ttl))
         self.assertEqual(c.num_classes, 1)
         self.assertTrue(math.isnan(c.class_size_zipf_exponent))
 
@@ -146,7 +146,7 @@ class TestBlockCSmallFixtures(unittest.TestCase):
             + "".join(f"ex:s{i} ex:p{i} ex:o{i} .\n" for i in range(15)),
         ]:
             with self.subTest(ttl=ttl[:60]):
-                c = block_c(self._load_ttl(ttl))
+                c = BlockC().calculate(self._load_ttl(ttl))
                 self.assertEqual(len(c.subj_singular_values), 10)
                 self.assertEqual(len(c.obj_singular_values), 10)
 
@@ -158,7 +158,7 @@ class TestBlockCSmallFixtures(unittest.TestCase):
             + "".join(f"ex:s{i} ex:p ex:o{i} .\n" for i in range(20)),
         ]:
             with self.subTest(ttl=ttl[:60]):
-                self.assertEqual(len(block_c(self._load_ttl(ttl)).as_vector()), _VECTOR_LEN)
+                self.assertEqual(len(BlockC().calculate(self._load_ttl(ttl)).as_vector()), _VECTOR_LEN)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ import igraph
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from kg_io import load_kg
-from signature import BlockE, block_e
+from signature import BlockE
 
 _VECTOR_LEN = 36   # 7 motifs + 9 stars + 9 path_zipf + 9 path_entropy + 2 tree
 
@@ -26,7 +26,7 @@ class TestBlockEEdgeCases(unittest.TestCase):
     def test_empty_graph(self):
         g = igraph.Graph(directed=True)
         g.vs["is_literal"] = []
-        e = block_e(g)
+        e = BlockE().calculate(g)
         self.assertEqual(e.triangle_count, 0)
         self.assertEqual(e.four_cycle_count, 0)
         self.assertEqual(e.five_cycle_count, 0)
@@ -43,7 +43,7 @@ class TestBlockEEdgeCases(unittest.TestCase):
     def test_single_edge_all_zeros(self):
         # No cycles or multi-hop paths possible with one edge
         g = _make_g(2, [(0, 1)])
-        e = block_e(g)
+        e = BlockE().calculate(g)
         self.assertEqual(e.triangle_count, 0)
         self.assertEqual(e.four_cycle_count, 0)
         self.assertEqual(len(e.as_vector()), _VECTOR_LEN)
@@ -67,7 +67,7 @@ class TestBlockETriangleCount(unittest.TestCase):
             "ex:b ex:q ex:c .\n"
             "ex:c ex:r ex:a .\n"
         )
-        self.assertEqual(block_e(g).triangle_count, 1)
+        self.assertEqual(BlockE().calculate(g).triangle_count, 1)
 
     def test_chain_has_no_triangles(self):
         # a→b→c→d: no closing edge → triangle_count = 0
@@ -77,25 +77,25 @@ class TestBlockETriangleCount(unittest.TestCase):
             "ex:b ex:p ex:c .\n"
             "ex:c ex:p ex:d .\n"
         )
-        self.assertEqual(block_e(g).triangle_count, 0)
+        self.assertEqual(BlockE().calculate(g).triangle_count, 0)
 
     def test_two_triangles_sharing_an_edge(self):
         # Diamond: a-b-c-a plus a-b-d-a → 2 triangles
         g = _make_g(4, [(0, 1), (1, 2), (2, 0), (1, 3), (3, 0)])
-        self.assertEqual(block_e(g).triangle_count, 2)
+        self.assertEqual(BlockE().calculate(g).triangle_count, 2)
 
 
 class TestBlockEStarCounts(unittest.TestCase):
     def test_star_counts_keys_cover_k2_to_k10(self):
         g = _make_g(3, [(0, 1), (0, 2)])
-        e = block_e(g)
+        e = BlockE().calculate(g)
         self.assertEqual(set(e.star_counts.keys()), set(range(2, 11)))
 
     def test_3_spoke_hub_star(self):
         # Hub (vertex 0) connected to 3 leaves → hub undirected degree = 3
         # 2-stars: C(3,2) = 3; 3-stars: C(3,3) = 1; k≥4: 0
         g = _make_g(4, [(0, 1), (0, 2), (0, 3)])
-        e = block_e(g)
+        e = BlockE().calculate(g)
         self.assertEqual(e.star_counts[2], 3)
         self.assertEqual(e.star_counts[3], 1)
         for k in range(4, 11):
@@ -106,7 +106,7 @@ class TestBlockEStarCounts(unittest.TestCase):
         # interior vertex has degree 2 → C(2,2) = 1 two-star per interior vertex
         # chain 0-1-2-3: interior vertices 1 and 2 each have degree 2
         g = _make_g(4, [(0, 1), (1, 2), (2, 3)])
-        e = block_e(g)
+        e = BlockE().calculate(g)
         self.assertEqual(e.star_counts[2], 2)   # vertices 1 and 2 each contribute 1
         self.assertEqual(e.star_counts[3], 0)
 
@@ -129,20 +129,20 @@ class TestBlockEFourNodeMotifs(unittest.TestCase):
             "ex:c ex:p ex:d .\n"
             "ex:d ex:p ex:a .\n"
         )
-        e = block_e(g)
+        e = BlockE().calculate(g)
         self.assertEqual(e.four_cycle_count, 1)
         self.assertEqual(e.k4_count, 0)
 
     def test_k4_graph_has_k4_motif(self):
         # Complete graph on 4 vertices → k4_count = 1
         g = _make_g(4, [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)])
-        e = block_e(g)
+        e = BlockE().calculate(g)
         self.assertEqual(e.k4_count, 1)
 
     def test_tailed_triangle_detected(self):
         # Triangle 0-1-2 plus pendant edge 2-3 → tailed_triangle_count = 1
         g = _make_g(4, [(0, 1), (1, 2), (0, 2), (2, 3)])
-        e = block_e(g)
+        e = BlockE().calculate(g)
         self.assertEqual(e.tailed_triangle_count, 1)
 
 
@@ -150,14 +150,14 @@ class TestBlockECycleCounts(unittest.TestCase):
     def test_five_six_cycle_nonnegative(self):
         # Estimates must always be non-negative integers
         g = _make_g(6, [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 0)])
-        e = block_e(g, sample_budget=10_000)
+        e = BlockE().calculate(g, sample_budget=10_000)
         self.assertGreaterEqual(e.five_cycle_count, 0)
         self.assertGreaterEqual(e.six_cycle_count, 0)
 
     def test_small_graph_below_k_returns_zero(self):
         # 4 vertices → no 5-cycle or 6-cycle is possible
         g = _make_g(4, [(0, 1), (1, 2), (2, 3), (3, 0)])
-        e = block_e(g)
+        e = BlockE().calculate(g)
         self.assertEqual(e.five_cycle_count, 0)
         self.assertEqual(e.six_cycle_count, 0)
 
@@ -178,7 +178,7 @@ class TestBlockEPathTemplates(unittest.TestCase):
             "@prefix ex: <http://example.org/> .\n"
             'ex:s ex:p "hello" .\n'
         )
-        e = block_e(g, sample_budget=1_000)
+        e = BlockE().calculate(g, sample_budget=1_000)
         for k in range(2, 11):
             self.assertTrue(math.isnan(e.path_template_zipf.get(k, float("nan"))))
 
@@ -189,7 +189,7 @@ class TestBlockEPathTemplates(unittest.TestCase):
             "ex:a ex:p ex:b .\n"
             "ex:b ex:q ex:c .\n"
         )
-        e = block_e(g, sample_budget=10_000)
+        e = BlockE().calculate(g, sample_budget=10_000)
         self.assertFalse(math.isnan(e.path_template_entropy.get(2, float("nan"))))
 
     def test_tree_template_populated_on_branching_graph(self):
@@ -201,7 +201,7 @@ class TestBlockEPathTemplates(unittest.TestCase):
             "ex:c1 ex:q ex:g1 .\n"
             "ex:c2 ex:q ex:g2 .\n"
         )
-        e = block_e(g, sample_budget=10_000)
+        e = BlockE().calculate(g, sample_budget=10_000)
         self.assertFalse(math.isnan(e.tree_template_entropy))
 
 
@@ -226,12 +226,12 @@ class TestBlockEVectorLength(unittest.TestCase):
         for ttl in graphs:
             with self.subTest(ttl=ttl[:60]):
                 g = self._load_ttl(ttl)
-                self.assertEqual(len(block_e(g, sample_budget=1_000).as_vector()), _VECTOR_LEN)
+                self.assertEqual(len(BlockE().calculate(g, sample_budget=1_000).as_vector()), _VECTOR_LEN)
 
     def test_vector_length_empty_graph(self):
         g = igraph.Graph(directed=True)
         g.vs["is_literal"] = []
-        self.assertEqual(len(block_e(g).as_vector()), _VECTOR_LEN)
+        self.assertEqual(len(BlockE().calculate(g).as_vector()), _VECTOR_LEN)
 
 
 if __name__ == "__main__":
