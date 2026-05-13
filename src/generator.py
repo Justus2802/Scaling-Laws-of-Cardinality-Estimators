@@ -33,7 +33,7 @@ from pathlib import Path
 import igraph
 import numpy as np
 
-from signature import BlockA, BlockC, BlockE, block_e as _measure_block_e
+from signature import BlockA, BlockB, BlockC, BlockD, BlockE, block_e as _measure_block_e
 
 _RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 
@@ -77,6 +77,12 @@ class Schema:
     type_relation_probs: np.ndarray
     num_entities: int
     num_triples: int
+    # Block D-derived CS structure (defaults = legacy behaviour)
+    cs_size_mean: float = 0.0       # 0 → derive from E/V budget at instantiate time
+    cs_num_templates: int = 0       # 0 → per-entity independent sampling
+    cs_template_zipf: float = 2.0   # Zipf exponent for template frequency
+    # Block B-derived edge multiplicity
+    mean_functionality: float = 1.0  # 1.0 → single object per (s,p) pair
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +166,8 @@ def sample_schema(
     a: BlockA,
     c: BlockC,
     *,
+    d: BlockD = None,
+    b: BlockB = None,
     relation_zipf_exponent: float = 2.0,
     seed: int = 0,
 ) -> Schema:
@@ -174,11 +182,18 @@ def sample_schema(
         Measured schema/correlation signature of the target KG.
         num_classes, class_size_zipf_exponent, and subj_singular_values
         guide the type structure and co-occurrence reconstruction.
+    d : BlockD, optional
+        Characteristic-set statistics.  When provided, Stage 2 will use
+        d.cs_size_mean and d.num_distinct_cs to build a realistic pool of
+        reusable CS templates instead of sampling every entity independently.
+        This fixes the co-occurrence density and num_distinct_cs deviations.
+    b : BlockB, optional
+        Degree-structure statistics.  When provided, the mean relation
+        functionality is used to sample more than one object per (s,p) pair,
+        matching the target's edge multiplicity.
     relation_zipf_exponent : float
         Zipf exponent for relation frequency weights.  Controls how skewed
-        relation usage is; real KGs typically fall in [1.5, 2.5].  Block B
-        (per-relation multiplicity fits) would supply this in a full pipeline;
-        here it is an explicit tuning knob.
+        relation usage is; real KGs typically fall in [1.5, 2.5].
     seed : int
         RNG seed; the same seed + inputs always produce the same schema.
 
@@ -218,6 +233,25 @@ def sample_schema(
         rng,
     )
 
+    # --- CS structure from Block D ---
+    if d is not None and d.cs_size_mean > 0:
+        cs_size_mean = float(d.cs_size_mean)
+        cs_num_templates = max(1, int(d.num_distinct_cs))
+        cs_template_zipf = (
+            float(d.cs_freq_stats.alpha)
+            if not math.isnan(d.cs_freq_stats.alpha) else 2.0
+        )
+    else:
+        cs_size_mean = 0.0   # signal instantiate to derive from E/V budget
+        cs_num_templates = 0
+        cs_template_zipf = 2.0
+
+    # --- Edge multiplicity from Block B ---
+    if b is not None and b.functionality:
+        mean_functionality = float(np.clip(np.mean(list(b.functionality.values())), 0.1, 1.0))
+    else:
+        mean_functionality = 1.0
+
     return Schema(
         relations=relations,
         relation_weights=relation_weights,
@@ -226,6 +260,10 @@ def sample_schema(
         type_relation_probs=type_relation_probs,
         num_entities=a.num_entities,
         num_triples=a.num_triples,
+        cs_size_mean=cs_size_mean,
+        cs_num_templates=cs_num_templates,
+        cs_template_zipf=cs_template_zipf,
+        mean_functionality=mean_functionality,
     )
 
 
@@ -297,8 +335,11 @@ def instantiate(
     n_type_edges = actual_V if num_types > 0 else 0
     content_E_target = max(0, actual_E_target - n_type_edges)
 
-    # CS size mean derived so expected content edges ≈ content_E_target
-    cs_size_mean = content_E_target / actual_V if actual_V > 0 else 1.0
+    # CS size: use Block D target if available, else derive from edge budget
+    effective_cs_size = (
+        schema.cs_size_mean if schema.cs_size_mean > 0
+        else (content_E_target / actual_V if actual_V > 0 else 1.0)
+    )
 
     # ------------------------------------------------------------------
     # 2. Assign a type to every entity
@@ -309,40 +350,79 @@ def instantiate(
         entity_types = np.full(actual_V, -1, dtype=int)
 
     # ------------------------------------------------------------------
-    # 3. Sample a characteristic set (CS) for each entity
-    #    CS = subset of relations drawn from P(r | type), size ~ Poisson
+    # 3. Sample characteristic sets (CS) for all entities
+    #
+    #  Template mode (Block D available):
+    #    Build schema.cs_num_templates reusable CS templates per type,
+    #    then assign each entity to a template via Zipf weights.  This
+    #    reproduces the target num_distinct_cs and co-occurrence sparsity.
+    #
+    #  Legacy mode (no Block D):
+    #    Sample each entity's CS independently (original behaviour).
     # ------------------------------------------------------------------
-    entity_cs: list[np.ndarray] = []
-    for v in range(actual_V):
-        if num_relations == 0:
-            entity_cs.append(np.array([], dtype=int))
-            continue
 
-        t = int(entity_types[v])
+    def _sample_cs_for_type(t: int, size: float) -> np.ndarray:
+        """Draw one CS from the distribution appropriate for type t."""
+        if num_relations == 0:
+            return np.array([], dtype=int)
         if t >= 0:
             probs = schema.type_relation_probs[t].copy()
         else:
             probs = schema.relation_weights.copy()
-
-        # Guard: renormalise in case of floating-point drift
         s = probs.sum()
         if s <= 0:
             probs = schema.relation_weights.copy()
             s = probs.sum()
         probs /= s
-
         nonzero = int((probs > 0).sum())
-        k = min(nonzero, max(0, int(rng.poisson(max(0.1, cs_size_mean)))))
+        k = min(nonzero, max(0, int(rng.poisson(max(0.1, size)))))
         if k == 0:
-            entity_cs.append(np.array([], dtype=int))
-            continue
+            return np.array([], dtype=int)
+        return rng.choice(num_relations, size=k, replace=False, p=probs)
 
-        entity_cs.append(rng.choice(num_relations, size=k, replace=False, p=probs))
+    entity_cs: list[np.ndarray] = []
+
+    if schema.cs_num_templates > 0 and num_relations > 0:
+        # --- Template-based CS sampling ---
+        # Generate a pool of templates per type, sized proportionally.
+        type_templates: list[list[np.ndarray]] = []
+        for t in range(num_types):
+            n_t = max(1, round(schema.cs_num_templates * float(schema.type_weights[t])))
+            type_templates.append([
+                _sample_cs_for_type(t, effective_cs_size) for _ in range(n_t)
+            ])
+        # Template pool for untyped entities (or when num_types == 0)
+        untyped_templates = [
+            _sample_cs_for_type(-1, effective_cs_size)
+            for _ in range(max(1, schema.cs_num_templates))
+        ]
+
+        # Zipf weights for selecting a template (popular templates reused more)
+        def _zipf_pick(pool: list[np.ndarray]) -> np.ndarray:
+            n = len(pool)
+            if n == 1:
+                return pool[0]
+            ranks = np.arange(1, n + 1, dtype=float)
+            w = ranks ** (-schema.cs_template_zipf)
+            w /= w.sum()
+            return pool[int(rng.choice(n, p=w))]
+
+        for v in range(actual_V):
+            t = int(entity_types[v])
+            pool = type_templates[t] if (t >= 0 and num_types > 0) else untyped_templates
+            entity_cs.append(_zipf_pick(pool))
+    else:
+        # --- Legacy: per-entity independent sampling ---
+        for v in range(actual_V):
+            entity_cs.append(_sample_cs_for_type(int(entity_types[v]), effective_cs_size))
 
     # ------------------------------------------------------------------
     # 4. Wire content edges with preferential attachment
     #    Object picked proportional to current in_degree ^ pa_exponent;
     #    Laplace smoothing (start at 1) ensures every vertex is reachable.
+    #
+    #    When mean_functionality < 1, each (s, p) slot produces more than
+    #    one object on average — matching Block B's edge multiplicity.
     # ------------------------------------------------------------------
     in_degrees = np.ones(actual_V, dtype=float)
     seen: set[tuple[int, int, str]] = set()
@@ -351,18 +431,23 @@ def instantiate(
     for v, cs in enumerate(entity_cs):
         for rel_idx in cs:
             predicate = schema.relations[int(rel_idx)]
-            weights = in_degrees ** pa_exponent
-            weights[v] = 0.0        # no self-loops
-            total = weights.sum()
-            if total == 0.0:
-                continue
-            weights /= total
-            obj = int(rng.choice(actual_V, p=weights))
-            triple = (v, obj, predicate)
-            if triple not in seen:
-                seen.add(triple)
-                content_edges.append(triple)
-                in_degrees[obj] += 1.0
+            # Number of objects for this (subject, predicate) slot.
+            # Geometric(p) has mean 1/p, so p = mean_functionality gives
+            # mean 1/mean_functionality objects — matching real KG multiplicity.
+            n_obj = int(rng.geometric(schema.mean_functionality)) if schema.mean_functionality < 1.0 else 1
+            for _ in range(n_obj):
+                weights = in_degrees ** pa_exponent
+                weights[v] = 0.0
+                total = weights.sum()
+                if total == 0.0:
+                    break
+                weights /= total
+                obj = int(rng.choice(actual_V, p=weights))
+                triple = (v, obj, predicate)
+                if triple not in seen:
+                    seen.add(triple)
+                    content_edges.append(triple)
+                    in_degrees[obj] += 1.0
 
     # ------------------------------------------------------------------
     # 5. Throttle content edges down to budget if over target
@@ -596,22 +681,28 @@ def refine(
 
 @dataclass
 class Signature:
-    """Compact target signature used by Generator (Blocks A, C, E only).
+    """Target signature used by Generator (Blocks A, B, C, D, E).
 
-    Block A supplies size/density targets; Block C supplies schema/class
-    structure; Block E supplies motif counts that Stage 3 optimises toward.
+    Block A supplies size/density targets; Block B supplies edge multiplicity;
+    Block C supplies schema/class structure; Block D supplies CS statistics
+    that enable template-based CS reuse; Block E supplies motif counts that
+    Stage 3 optimises toward.
     """
 
     a: "BlockA"
     c: "BlockC"
     e: "BlockE"
+    b: "BlockB | None" = None   # optional: enables multi-object edges
+    d: "BlockD | None" = None   # optional: enables CS template reuse
 
     @classmethod
     def from_graph(cls, g: igraph.Graph) -> "Signature":
-        from signature import block_a, block_c
+        from signature import block_a, block_b, block_c, block_d
         return cls(
             a=block_a(g),
+            b=block_b(g),
             c=block_c(g),
+            d=block_d(g),
             e=_measure_block_e(g),
         )
 
@@ -679,6 +770,8 @@ class Generator:
         schema = sample_schema(
             self.target.a,
             self.target.c,
+            d=self.target.d,
+            b=self.target.b,
             relation_zipf_exponent=relation_zipf_exponent,
             seed=seed,
         )
