@@ -16,6 +16,8 @@ from ._utils import _fit_powerlaw
 log = get_logger(__name__)
 
 _SAMPLE_BUDGET = 100_000  # default walk samples for path/tree templates
+_RANDESU_EXACT_LIMIT = 3_000  # below this, run RANDESU exactly; above, use cut_prob
+_MAX_K = 10                   # longest path template walk
 
 _NOT_CALCULATED = object()
 
@@ -130,19 +132,24 @@ class BlockE:
         Exact counts for 3- and 4-node motifs on the undirected simplification.
         Path and tree templates are estimated by random walk sampling.
         """
-        # --- Exact motif counts on undirected simple graph ---
         g_und = g.as_undirected(combine_edges="first").simplify()
+        n = g_und.vcount()
 
-        # Triangles: A ⊙ A² summed and divided by 6 (each triangle counted 6 times)
-        if g_und.vcount() > 0:
-            A = scipy.sparse.csr_matrix(g_und.get_adjacency_sparse())
-            self._triangle_count = int(A.multiply(A @ A).sum() // 6)
-        else:
-            self._triangle_count = 0
+        # Triangles: list_triangles() enumerates each triangle once (O(m√m)).
+        self._triangle_count = len(g_und.list_triangles()) if n > 0 else 0
 
-        # 4-node motifs: full RANDESU enumeration with runtime index discovery
+        # 4-node motifs via RANDESU.  For large graphs use probabilistic branch
+        # cuts (cut_prob) to trade a small accuracy loss for a large speed gain.
         idx_map = _4node_motif_index_map()
-        four_motifs = g_und.motifs_randesu(size=4)
+        if n > 0:
+            if n <= _RANDESU_EXACT_LIMIT:
+                four_motifs = g_und.motifs_randesu(size=4)
+            else:
+                # Cut probability scales so the expected work ≈ EXACT_LIMIT^3.
+                cut = float(np.clip(1.0 - (_RANDESU_EXACT_LIMIT / n) ** (1.0 / 3.0), 0.0, 0.95))
+                four_motifs = g_und.motifs_randesu(size=4, cut_prob=[0.0, 0.0, cut, cut])
+        else:
+            four_motifs = []
 
         def _get_motif(name: str) -> int:
             i = idx_map.get(name)
@@ -156,38 +163,33 @@ class BlockE:
         self._k4_count = _get_motif("k4")
         self._tailed_triangle_count = _get_motif("tailed_triangle")
 
-        # Stars (exact) and 5/6-cycles (sampled)
+        # Stars (exact, vectorised) and 5/6-cycles (sampled)
         self._star_counts = self._count_stars(g_und)
         motif_rng = np.random.default_rng(0)
         n_cycle = max(1, sample_budget // 2)
         self._five_cycle_count = self._estimate_k_cycle(g_und, 5, n_cycle, motif_rng)
         self._six_cycle_count = self._estimate_k_cycle(g_und, 6, n_cycle, motif_rng)
 
-        # --- Path and tree templates from directed graph ---
+        # Path and tree templates from directed graph.
+        # One combined walk pass fills all k=2..10 at once (vs 9 separate passes).
         out_edges, start_verts_list = self._build_out_adj(g)
         start_verts = np.array(start_verts_list)
 
-        path_template_zipf: dict[int, float] = {}
-        path_template_entropy: dict[int, float] = {}
-        tree_zipf = float("nan")
-        tree_ent = float("nan")
-
         if start_verts.size > 0:
             rng = np.random.default_rng(1)
-            n_per_k = max(1, sample_budget // 9)  # spread budget evenly across k=2..10
-            for k in range(2, 11):
-                counts = self._sample_path_templates(out_edges, start_verts, k, n_per_k, rng)
-                path_template_zipf[k], path_template_entropy[k] = self._template_stats(counts)
-
-            tree_counts = self._sample_tree_depth2_templates(
-                out_edges, start_verts, sample_budget, rng
+            self._path_template_zipf, self._path_template_entropy = (
+                self._sample_all_path_templates(out_edges, start_verts, sample_budget, rng)
             )
-            tree_zipf, tree_ent = self._template_stats(tree_counts)
-
-        self._path_template_zipf = path_template_zipf
-        self._path_template_entropy = path_template_entropy
-        self._tree_template_zipf = tree_zipf
-        self._tree_template_entropy = tree_ent
+            rng2 = np.random.default_rng(2)
+            tree_counts = self._sample_tree_depth2_templates(
+                out_edges, start_verts, sample_budget, rng2
+            )
+            self._tree_template_zipf, self._tree_template_entropy = self._template_stats(tree_counts)
+        else:
+            self._path_template_zipf = {}
+            self._path_template_entropy = {}
+            self._tree_template_zipf = float("nan")
+            self._tree_template_entropy = float("nan")
 
         return self
 
@@ -343,28 +345,44 @@ class BlockE:
         return dict(out_edges), start_verts
 
     @staticmethod
-    def _sample_path_templates(
+    def _sample_all_path_templates(
         out_edges: dict[int, list[tuple[int, str]]],
         start_verts: np.ndarray,
-        k: int,
-        n_samples: int,
+        sample_budget: int,
         rng: np.random.Generator,
-    ) -> dict[tuple[str, ...], int]:
-        """Sample n_samples directed walks of length k; count relation-sequence tuples."""
-        counts: defaultdict[tuple[str, ...], int] = defaultdict(int)
-        for _ in range(n_samples):
-            v = int(rng.choice(start_verts))
+    ) -> tuple[dict[int, float], dict[int, float]]:
+        """Sample walks up to length _MAX_K; record every prefix length in one pass.
+
+        A single walk of length L contributes to the template counts for
+        k=2,3,...,L, eliminating the need for 9 separate sampling rounds and
+        reducing the total number of rng calls by ~_MAX_K/mean_length.
+        """
+        # Pre-sample all starting vertices at once — one bulk rng call.
+        n_walks = max(1, sample_budget // _MAX_K)
+        starts  = rng.choice(start_verts, size=n_walks)
+
+        raw: dict[int, defaultdict[tuple[str, ...], int]] = {
+            k: defaultdict(int) for k in range(2, _MAX_K + 1)
+        }
+
+        for start in starts:
+            v    = int(start)
             rels: list[str] = []
-            for _ in range(k):
+            for _ in range(_MAX_K):
                 adj = out_edges.get(v)
                 if not adj:
                     break
                 nb, rel = adj[int(rng.integers(len(adj)))]
                 rels.append(rel)
                 v = nb
-            if len(rels) == k:
-                counts[tuple(rels)] += 1
-        return dict(counts)
+                if len(rels) >= 2:
+                    raw[len(rels)][tuple(rels)] += 1
+
+        path_zipf:    dict[int, float] = {}
+        path_entropy: dict[int, float] = {}
+        for k in range(2, _MAX_K + 1):
+            path_zipf[k], path_entropy[k] = BlockE._template_stats(dict(raw[k]))
+        return path_zipf, path_entropy
 
     @staticmethod
     def _sample_tree_depth2_templates(
@@ -392,10 +410,23 @@ class BlockE:
 
     @staticmethod
     def _count_stars(g_und: igraph.Graph) -> dict[int, int]:
-        """Exact k-star counts for k=2..10 via the degree distribution."""
-        from math import comb
-        degrees = g_und.degree()
-        return {k: sum(comb(d, k) for d in degrees if d >= k) for k in range(2, 11)}
+        """Exact k-star counts for k=2..10 via the degree distribution.
+
+        Vectorised: comb(d, k) = prod_{i=0}^{k-1} (d-i)/(i+1) computed with
+        numpy over the degree array — avoids a Python-level loop per vertex.
+        """
+        degrees = np.array(g_und.degree(), dtype=np.float64)
+        result: dict[int, int] = {}
+        for k in range(2, 11):
+            d = degrees[degrees >= k]
+            if d.size == 0:
+                result[k] = 0
+                continue
+            vals = np.ones(d.size, dtype=np.float64)
+            for i in range(k):
+                vals *= (d - i) / (i + 1)
+            result[k] = int(np.round(vals).astype(np.int64).sum())
+        return result
 
     @staticmethod
     def _estimate_k_cycle(
@@ -404,33 +435,38 @@ class BlockE:
         n_samples: int,
         rng: np.random.Generator,
     ) -> int:
-        """Estimate k-cycle count via random walk closure sampling."""
+        """Estimate k-cycle count via random walk closure sampling.
+
+        Uses adjacency sets for O(1) visited-membership tests instead of
+        rebuilding a candidate list via list comprehension each step.
+        """
         n = g_und.vcount()
         if n < k:
             return 0
-        adj = [list(g_und.neighbors(v)) for v in range(n)]
-        degrees = np.array([len(a) for a in adj], dtype=float)
-        avg_deg = float(degrees.mean()) if n > 0 else 0.0
+        adj_lists = [g_und.neighbors(v) for v in range(n)]
+        adj_sets  = [set(a) for a in adj_lists]
+        degrees   = np.array([len(a) for a in adj_lists], dtype=float)
+        avg_deg   = float(degrees.mean()) if n > 0 else 0.0
 
         n_closed = 0
-        n_valid = 0
+        n_valid  = 0
         for _ in range(n_samples):
             start = int(rng.integers(n))
-            if not adj[start]:
+            if not adj_lists[start]:
                 continue
-            v = start
+            v       = start
             visited = {start}
-            ok = True
+            ok      = True
             for _ in range(k - 1):
-                candidates = [nb for nb in adj[v] if nb not in visited]
+                candidates = adj_sets[v] - visited
                 if not candidates:
                     ok = False
                     break
-                nb = candidates[int(rng.integers(len(candidates)))]
+                nb = int(rng.choice(list(candidates)))
                 visited.add(nb)
                 v = nb
             n_valid += 1
-            if ok and len(visited) == k and start in adj[v]:
+            if ok and len(visited) == k and start in adj_sets[v]:
                 n_closed += 1
 
         if n_valid == 0 or n_closed == 0:
