@@ -86,44 +86,32 @@ class BlockF:
         Clustering and assortativity both use the undirected simplification of g
         (same pattern as Block E).
         """
-        log.info("Block F: starting calculation (vertices=%d, edges=%d)", g.vcount(), g.ecount())
-
         if g.vcount() == 0:
-            log.warning("Block F: empty graph — all metrics set to NaN")
             self._num_components = 0
             self._largest_component_fraction = float("nan")
             self._avg_shortest_path_length = float("nan")
             self._avg_shortest_path_length_se = float("nan")
             self._clustering_coefficient = float("nan")
             self._degree_assortativity = float("nan")
+            log.info("Block F: empty graph — all features set to NaN/0")
             return self
 
         cc = g.connected_components(mode="weak")
         self._num_components = len(cc)
+        log.info("Block F: computed num_components (%d)", self._num_components)
         lcc = cc.giant()
         self._largest_component_fraction = lcc.vcount() / g.vcount()
         log.info(
-            "Block F: %d weakly connected component(s); LCC fraction=%.4f (%d/%d vertices)",
-            self._num_components,
-            self._largest_component_fraction,
-            lcc.vcount(),
-            g.vcount(),
+            "Block F: computed largest_component_fraction (%.4f, %d/%d vertices)",
+            self._largest_component_fraction, lcc.vcount(), g.vcount(),
         )
 
         # --- Sampled avg shortest-path length ---
         non_lit: list[int] = [v.index for v in lcc.vs if not v["is_literal"]]
         avg_sp = float("nan")
         sp_se = float("nan")
-        log.debug("Block F: %d non-literal vertices in LCC available for path sampling", len(non_lit))
-        if len(non_lit) < 2:
-            log.warning(
-                "Block F: only %d non-literal vertex/vertices in LCC — "
-                "skipping shortest-path estimation",
-                len(non_lit),
-            )
-        else:
+        if len(non_lit) >= 2:
             n_samples: int = 10 ** sample_k
-            log.debug("Block F: sampling %d (src, tgt) pairs (sample_k=%d)", n_samples, sample_k)
             rng = np.random.default_rng(42)
             src_idx = rng.choice(len(non_lit), size=n_samples, replace=True)
             tgt_idx = rng.choice(len(non_lit), size=n_samples, replace=True)
@@ -132,11 +120,6 @@ class BlockF:
 
             unique_srcs: list[int] = list(dict.fromkeys(srcs))
             unique_tgts: list[int] = list(dict.fromkeys(tgts))
-            log.debug(
-                "Block F: BFS distance matrix — %d unique sources × %d unique targets",
-                len(unique_srcs),
-                len(unique_tgts),
-            )
             mat = np.array(
                 lcc.distances(source=unique_srcs, target=unique_tgts, mode="all"),
                 dtype=float,
@@ -150,49 +133,36 @@ class BlockF:
             pair_dists[pair_dists == np.inf] = np.nan
             finite = pair_dists[pair_dists > 0]  # exclude self-pairs (distance == 0)
             self._pair_dists_finite = finite
-            n_inf = int(np.sum(np.isnan(pair_dists)))
-            log.debug(
-                "Block F: %d finite path(s), %d unreachable pair(s) out of %d sampled",
-                finite.size,
-                n_inf,
-                n_samples,
-            )
             if finite.size >= 2:
                 avg_sp = float(np.mean(finite))
-                log.debug(
-                    "Block F: bootstrapping SE with n_resamples=%d", n_bootstrap
-                )
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     res = scipy.stats.bootstrap(
                         (finite,), np.mean, n_resamples=n_bootstrap, rng=42
                     )
                 sp_se = float(res.standard_error)
-                log.info(
-                    "Block F: avg shortest-path length=%.4f ± %.4f (SE)",
-                    avg_sp,
-                    sp_se,
-                )
             elif finite.size == 1:
                 avg_sp = float(finite[0])
                 sp_se = float("nan")
-                log.warning("Block F: only 1 finite path found; SE is NaN")
 
         self._avg_shortest_path_length = avg_sp
         self._avg_shortest_path_length_se = sp_se
-
-        # --- Clustering coefficient and assortativity (undirected simplification) ---
-        log.debug("Block F: computing clustering coefficient and degree assortativity")
-        g_und = g.as_undirected(combine_edges="first").simplify()
-        self._clustering_coefficient = float(g_und.transitivity_avglocal_undirected(mode="zero"))
-        self._degree_assortativity = float(g_und.assortativity_degree(directed=False))
         log.info(
-            "Block F: clustering_coefficient=%.4f, degree_assortativity=%.4f",
-            self._clustering_coefficient,
-            self._degree_assortativity,
+            "Block F: computed avg_shortest_path_length (%.4f ± %.4f SE)",
+            avg_sp, sp_se,
         )
 
-        log.info("Block F: calculation complete")
+        # --- Clustering coefficient and assortativity (undirected simplification) ---
+        g_und = g.as_undirected(combine_edges="first").simplify()
+        self._clustering_coefficient = float(g_und.transitivity_avglocal_undirected(mode="zero"))
+        log.info(
+            "Block F: computed clustering_coefficient (%.4f)", self._clustering_coefficient
+        )
+        self._degree_assortativity = float(g_und.assortativity_degree(directed=False))
+        log.info(
+            "Block F: computed degree_assortativity (%.4f)", self._degree_assortativity
+        )
+
         return self
 
     def as_vector(self) -> list[float]:

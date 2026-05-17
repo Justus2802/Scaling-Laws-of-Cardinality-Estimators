@@ -172,10 +172,18 @@ Log levels used across the package:
 
 | Level | When to use |
 |-------|-------------|
-| `DEBUG` | Per-step intermediates: sample counts, matrix sizes, loop indices |
-| `INFO` | Block start/end, key scalar results (mean path length, component count, …) |
-| `WARNING` | Degenerate inputs: empty graph, too few samples for a reliable estimate |
+| `INFO` | Emit one line per computed signature/sub-feature inside `calculate()`, including headline result values. No start/end markers. |
+| `WARNING` | Plot-failure fallback inside `_visualize_plot()`; otherwise reserved for genuine fallback paths. |
 | `ERROR` | Unexpected failures that fall back to NaN / default values |
+
+The per-signature `INFO` convention means each named feature in a block's signature vector (e.g. `out_degree_fit`, `cs_freq_stats`, `path_template_zipf`) produces a single `log.info(...)` line at the point it is assigned, with the feature's key values formatted into the message. Block B is the orientation reference for this style. Example output:
+
+```
+INFO signature.block_b: Block B: computed out_degree_fit (alpha=2.3147, xmin=3, ks=0.0421, n=12034)
+INFO signature.block_b: Block B: computed in_degree_fit (alpha=2.1985, xmin=2, ks=0.0387, n=12034)
+INFO signature.block_b: Block B: computed object_multiplicity (n_relations=47)
+...
+```
 
 ---
 

@@ -115,7 +115,19 @@ class BlockC:
         M_obj = self._build_cooc_matrix(obj_to_rels, num_relations)
 
         self._subj_singular_values, self._subj_cooc_density, self._subj_row_entropies = self._cooc_stats(M_subj)
+        log.info(
+            "Block C: computed subj_cooc stats (density=%.4f, top_sv=%.3f, n_rows=%d)",
+            self._subj_cooc_density,
+            float(self._subj_singular_values[0]) if self._subj_singular_values.size else 0.0,
+            self._subj_row_entropies.size,
+        )
         self._obj_singular_values, self._obj_cooc_density, self._obj_row_entropies = self._cooc_stats(M_obj)
+        log.info(
+            "Block C: computed obj_cooc stats (density=%.4f, top_sv=%.3f, n_rows=%d)",
+            self._obj_cooc_density,
+            float(self._obj_singular_values[0]) if self._obj_singular_values.size else 0.0,
+            self._obj_row_entropies.size,
+        )
 
         subj_types: defaultdict[int, set[str]] = defaultdict(set)
         for e in g.es:
@@ -130,9 +142,16 @@ class BlockC:
 
         self._class_sizes = dict(class_counts)
         self._num_classes = len(self._class_sizes)
+        log.info(
+            "Block C: computed class_sizes (num_classes=%d)", self._num_classes
+        )
         self._class_size_zipf_exponent = _fit_powerlaw(
             np.array(list(self._class_sizes.values()), dtype=float)
         ).alpha
+        log.info(
+            "Block C: computed class_size_zipf_exponent (alpha=%.4f)",
+            self._class_size_zipf_exponent,
+        )
 
         type_rel_counts: defaultdict[str, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int))
         for subj_vid, types in subj_types.items():
@@ -146,6 +165,10 @@ class BlockC:
             total = sum(rel_counts.values())
             type_relation_conditional[t] = {r: cnt / total for r, cnt in rel_counts.items()}
         self._type_relation_conditional = type_relation_conditional
+        log.info(
+            "Block C: computed type_relation_conditional (n_types=%d)",
+            len(type_relation_conditional),
+        )
 
         return self
 

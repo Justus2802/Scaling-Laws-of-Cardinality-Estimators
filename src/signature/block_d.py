@@ -122,22 +122,35 @@ class BlockD:
         inv_cs_of = self._compute_inv_cs(g)
 
         n_cs, cs_freq, cs_mean, cs_med, cs_p90 = self._cs_scalar_stats(cs_of)
-        n_inv, inv_freq, inv_mean, inv_med, inv_p90 = self._cs_scalar_stats(inv_cs_of)
-        top_freqs, pair_freq, top_pairs = self._two_step_pair_stats(g)
-
         self._num_distinct_cs = n_cs
         self._cs_freq_stats = cs_freq
         self._cs_size_mean = cs_mean
         self._cs_size_median = cs_med
         self._cs_size_p90 = cs_p90
+        log.info(
+            "Block D: computed forward CS stats (num_distinct=%d, alpha=%.4f, mean=%.2f, p90=%.2f)",
+            n_cs, cs_freq.alpha, cs_mean, cs_p90,
+        )
+
+        n_inv, inv_freq, inv_mean, inv_med, inv_p90 = self._cs_scalar_stats(inv_cs_of)
         self._inv_num_distinct_cs = n_inv
         self._inv_cs_freq_stats = inv_freq
         self._inv_cs_size_mean = inv_mean
         self._inv_cs_size_median = inv_med
         self._inv_cs_size_p90 = inv_p90
+        log.info(
+            "Block D: computed inverse CS stats (num_distinct=%d, alpha=%.4f, mean=%.2f, p90=%.2f)",
+            n_inv, inv_freq.alpha, inv_mean, inv_p90,
+        )
+
+        top_freqs, pair_freq, top_pairs = self._two_step_pair_stats(g)
         self._top_pair_freqs = top_freqs
         self._pair_freq_stats = pair_freq
         self._top_pairs = top_pairs
+        log.info(
+            "Block D: computed two-step pair stats (n_distinct_pairs=%d, alpha=%.4f)",
+            len(top_pairs), pair_freq.alpha,
+        )
 
         self._cs_sizes = (
             np.fromiter((len(cs) for cs in cs_of.values()), dtype=float, count=len(cs_of))

@@ -112,13 +112,35 @@ class BlockB:
         self._out_degrees = out_degrees
         self._in_degrees = in_degrees
         self._out_degree_fit = _fit_powerlaw(out_degrees)
+        log.info(
+            "Block B: computed out_degree_fit (alpha=%.4f, xmin=%s, ks=%.4f, n=%d)",
+            self._out_degree_fit.alpha, self._out_degree_fit.xmin,
+            self._out_degree_fit.ks, out_degrees.size,
+        )
         self._in_degree_fit = _fit_powerlaw(in_degrees)
+        log.info(
+            "Block B: computed in_degree_fit (alpha=%.4f, xmin=%s, ks=%.4f, n=%d)",
+            self._in_degree_fit.alpha, self._in_degree_fit.xmin,
+            self._in_degree_fit.ks, in_degrees.size,
+        )
 
         obj_mult, subj_mult, func, inv_func = self._per_relation_features(g)
         self._object_multiplicity = obj_mult
+        log.info(
+            "Block B: computed object_multiplicity (n_relations=%d)", len(obj_mult)
+        )
         self._subject_multiplicity = subj_mult
+        log.info(
+            "Block B: computed subject_multiplicity (n_relations=%d)", len(subj_mult)
+        )
         self._functionality = func
+        log.info(
+            "Block B: computed functionality (n_relations=%d)", len(func)
+        )
         self._inverse_functionality = inv_func
+        log.info(
+            "Block B: computed inverse_functionality (n_relations=%d)", len(inv_func)
+        )
 
         return self
 

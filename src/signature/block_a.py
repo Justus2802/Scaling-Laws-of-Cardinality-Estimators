@@ -66,16 +66,19 @@ class BlockA:
         Literals are excluded from the entity count, matching the definition
         |V| = distinct subjects ∪ objects excluding RDF literals.
         """
-        num_entities: int = len(g.vs.select(is_literal_eq=False))
-        num_triples: int = g.ecount()
-        num_relations: int = len(set(g.es["predicate"])) if num_triples > 0 else 0
+        self._num_entities = len(g.vs.select(is_literal_eq=False))
+        log.info("Block A: computed num_entities (%d)", self._num_entities)
+        self._num_triples = g.ecount()
+        log.info("Block A: computed num_triples (%d)", self._num_triples)
+        self._num_relations = len(set(g.es["predicate"])) if self._num_triples > 0 else 0
+        log.info("Block A: computed num_relations (%d)", self._num_relations)
 
-        self._num_entities = num_entities
-        self._num_triples = num_triples
-        self._num_relations = num_relations
-        self._density = num_triples / (num_entities ** 2) if num_entities > 0 else 0.0
-        self._triples_per_entity = num_triples / num_entities if num_entities > 0 else 0.0
-        self._relation_reuse = num_triples / num_relations if num_relations > 0 else 0.0
+        self._density = self._num_triples / (self._num_entities ** 2) if self._num_entities > 0 else 0.0
+        log.info("Block A: computed density (%.6g)", self._density)
+        self._triples_per_entity = self._num_triples / self._num_entities if self._num_entities > 0 else 0.0
+        log.info("Block A: computed triples_per_entity (%.4f)", self._triples_per_entity)
+        self._relation_reuse = self._num_triples / self._num_relations if self._num_relations > 0 else 0.0
+        log.info("Block A: computed relation_reuse (%.4f)", self._relation_reuse)
 
         return self
 

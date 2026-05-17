@@ -13,9 +13,10 @@ Consumers configure verbosity via standard :mod:`logging`::
 
 Log levels used across the package:
 
-* **DEBUG** — per-step intermediate values, sampling details, loop counts.
-* **INFO**  — start/end of each block computation, key results.
-* **WARNING** — degenerate inputs (empty graph, too few samples).
+* **INFO**  — one line per computed signature/sub-feature inside ``calculate()``,
+  with headline result values (see ``block_b.py`` as the orientation example).
+* **WARNING** — plot-failure fallback inside ``_visualize_plot()`` and other
+  genuine fallback paths.
 * **ERROR** — unexpected failures that fall back to NaN / default values.
 """
 

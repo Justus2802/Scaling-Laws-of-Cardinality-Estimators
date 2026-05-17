@@ -137,6 +137,7 @@ class BlockE:
 
         # Triangles: list_triangles() enumerates each triangle once (O(m√m)).
         self._triangle_count = len(g_und.list_triangles()) if n > 0 else 0
+        log.info("Block E: computed triangle_count (%d)", self._triangle_count)
 
         # 4-node motifs via RANDESU.  For large graphs use probabilistic branch
         # cuts (cut_prob) to trade a small accuracy loss for a large speed gain.
@@ -159,16 +160,26 @@ class BlockE:
             return 0 if math.isnan(v) else int(v)
 
         self._four_cycle_count = _get_motif("four_cycle")
+        log.info("Block E: computed four_cycle_count (%d)", self._four_cycle_count)
         self._diamond_count = _get_motif("diamond")
+        log.info("Block E: computed diamond_count (%d)", self._diamond_count)
         self._k4_count = _get_motif("k4")
+        log.info("Block E: computed k4_count (%d)", self._k4_count)
         self._tailed_triangle_count = _get_motif("tailed_triangle")
+        log.info("Block E: computed tailed_triangle_count (%d)", self._tailed_triangle_count)
 
         # Stars (exact, vectorised) and 5/6-cycles (sampled)
         self._star_counts = self._count_stars(g_und)
+        log.info(
+            "Block E: computed star_counts (k=2..10 totals=%s)",
+            [self._star_counts.get(k, 0) for k in range(2, 11)],
+        )
         motif_rng = np.random.default_rng(0)
         n_cycle = max(1, sample_budget // 2)
         self._five_cycle_count = self._estimate_k_cycle(g_und, 5, n_cycle, motif_rng)
+        log.info("Block E: computed five_cycle_count (~%d, sampled)", self._five_cycle_count)
         self._six_cycle_count = self._estimate_k_cycle(g_und, 6, n_cycle, motif_rng)
+        log.info("Block E: computed six_cycle_count (~%d, sampled)", self._six_cycle_count)
 
         # Path and tree templates from directed graph.
         # One combined walk pass fills all k=2..10 at once (vs 9 separate passes).
@@ -180,16 +191,31 @@ class BlockE:
             self._path_template_zipf, self._path_template_entropy = (
                 self._sample_all_path_templates(out_edges, start_verts, sample_budget, rng)
             )
+            log.info(
+                "Block E: computed path_template_zipf (k=2..10 alphas=%s)",
+                [round(self._path_template_zipf.get(k, float("nan")), 4) for k in range(2, 11)],
+            )
+            log.info(
+                "Block E: computed path_template_entropy (k=2..10 entropies=%s)",
+                [round(self._path_template_entropy.get(k, float("nan")), 4) for k in range(2, 11)],
+            )
             rng2 = np.random.default_rng(2)
             tree_counts = self._sample_tree_depth2_templates(
                 out_edges, start_verts, sample_budget, rng2
             )
             self._tree_template_zipf, self._tree_template_entropy = self._template_stats(tree_counts)
+            log.info(
+                "Block E: computed tree_template stats (zipf_alpha=%.4f, entropy=%.4f)",
+                self._tree_template_zipf, self._tree_template_entropy,
+            )
         else:
             self._path_template_zipf = {}
             self._path_template_entropy = {}
             self._tree_template_zipf = float("nan")
             self._tree_template_entropy = float("nan")
+            log.info(
+                "Block E: computed path/tree template stats (no start vertices, all NaN/empty)"
+            )
 
         return self
 
