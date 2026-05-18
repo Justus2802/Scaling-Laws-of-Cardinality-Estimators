@@ -12,14 +12,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from signature import compute_signature, _ALL_BLOCKS
 
-logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(name)s: %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("kg_file", help="Path to the input KG (.ttl or .nt)")
     parser.add_argument(
-        "--output-dir", default="output", help="Directory to write results into (default: output/)"
+        "--output-dir", default=None,
+        help="Directory to write results into (default: sig_out/<graph name>_signature/)",
     )
     parser.add_argument(
         "--show", action="store_true", help="Show each block's plot interactively after saving"
@@ -37,7 +38,8 @@ def main() -> None:
 
     selected_blocks = [b.strip() for b in args.blocks.split(",") if b.strip()]
 
-    out_dir = Path(args.output_dir)
+    graph_name = Path(args.kg_file).stem
+    out_dir = Path(args.output_dir) if args.output_dir else Path("sig_out") / f"{graph_name}_signature"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Loading  : {args.kg_file}")
