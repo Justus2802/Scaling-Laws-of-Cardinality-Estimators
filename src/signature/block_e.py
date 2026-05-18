@@ -1,6 +1,5 @@
 """Block E — Motif shape distribution features."""
 
-import functools
 import math
 from collections import defaultdict
 from typing import Any
@@ -11,37 +10,13 @@ import numpy as np
 import scipy.sparse
 
 from ._logging import get_logger
-from ._utils import _fit_powerlaw
 
 log = get_logger(__name__)
 
 _SAMPLE_BUDGET = 100_000  # default walk samples for path/tree templates
-_RANDESU_EXACT_LIMIT = 3_000  # below this, run RANDESU exactly; above, use cut_prob
-_MAX_K = 10                   # longest path template walk
+_MAX_K = 10                # longest path template walk
 
 _NOT_CALCULATED = object()
-
-
-@functools.lru_cache(maxsize=1)
-def _4node_motif_index_map() -> dict[str, int]:
-    """Discover which index in motifs_randesu(size=4) maps to each named 4-node motif.
-
-    Creates a canonical 4-node example for each motif, runs full RANDESU enumeration,
-    and finds the unique index with count == 1.  Cached so it runs only once per process.
-    """
-    specs: dict[str, igraph.Graph] = {
-        "four_cycle":      igraph.Graph(n=4, edges=[(0,1),(1,2),(2,3),(3,0)]),
-        "diamond":         igraph.Graph(n=4, edges=[(0,1),(0,2),(0,3),(1,2),(1,3)]),
-        "k4":              igraph.Graph(n=4, edges=[(0,1),(0,2),(0,3),(1,2),(1,3),(2,3)]),
-        "tailed_triangle": igraph.Graph(n=4, edges=[(0,1),(1,2),(0,2),(2,3)]),
-    }
-    index_map: dict[str, int] = {}
-    for name, pattern in specs.items():
-        for i, count in enumerate(pattern.motifs_randesu(size=4)):
-            if not math.isnan(count) and int(count) == 1:
-                index_map[name] = i
-                break
-    return index_map
 
 
 class BlockE:
@@ -139,33 +114,15 @@ class BlockE:
         self._triangle_count = len(g_und.list_triangles()) if n > 0 else 0
         log.info("Block E: computed triangle_count (%d)", self._triangle_count)
 
-        # 4-node motifs via RANDESU.  For large graphs use probabilistic branch
-        # cuts (cut_prob) to trade a small accuracy loss for a large speed gain.
-        idx_map = _4node_motif_index_map()
-        if n > 0:
-            if n <= _RANDESU_EXACT_LIMIT:
-                four_motifs = g_und.motifs_randesu(size=4)
-            else:
-                # Cut probability scales so the expected work ≈ EXACT_LIMIT^3.
-                cut = float(np.clip(1.0 - (_RANDESU_EXACT_LIMIT / n) ** (1.0 / 3.0), 0.0, 0.95))
-                four_motifs = g_und.motifs_randesu(size=4, cut_prob=[0.0, 0.0, cut, cut])
-        else:
-            four_motifs = []
-
-        def _get_motif(name: str) -> int:
-            i = idx_map.get(name)
-            if i is None or i >= len(four_motifs):
-                return 0
-            v = four_motifs[i]
-            return 0 if math.isnan(v) else int(v)
-
-        self._four_cycle_count = _get_motif("four_cycle")
+        # 4-node motifs: triangle-intersection for k4/diamond/tailed + A² for four_cycle.
+        # Avoids RANDESU entirely; scales with O(T·d) + O(m·d) instead of O(n·d³).
+        (self._four_cycle_count, self._diamond_count,
+         self._k4_count, self._tailed_triangle_count) = (
+            self._count_4node_motifs(g_und) if n >= 4 else (0, 0, 0, 0)
+        )
         log.info("Block E: computed four_cycle_count (%d)", self._four_cycle_count)
-        self._diamond_count = _get_motif("diamond")
         log.info("Block E: computed diamond_count (%d)", self._diamond_count)
-        self._k4_count = _get_motif("k4")
         log.info("Block E: computed k4_count (%d)", self._k4_count)
-        self._tailed_triangle_count = _get_motif("tailed_triangle")
         log.info("Block E: computed tailed_triangle_count (%d)", self._tailed_triangle_count)
 
         # Stars (exact, vectorised) and 5/6-cycles (sampled)
@@ -175,7 +132,7 @@ class BlockE:
             [self._star_counts.get(k, 0) for k in range(2, 11)],
         )
         motif_rng = np.random.default_rng(0)
-        n_cycle = max(1, sample_budget // 2)
+        n_cycle = max(1, sample_budget // 10)
         self._five_cycle_count = self._estimate_k_cycle(g_und, 5, n_cycle, motif_rng)
         log.info("Block E: computed five_cycle_count (~%d, sampled)", self._five_cycle_count)
         self._six_cycle_count = self._estimate_k_cycle(g_und, 6, n_cycle, motif_rng)
@@ -348,11 +305,25 @@ class BlockE:
 
     @staticmethod
     def _template_stats(counts: dict[tuple, int]) -> tuple[float, float]:
-        """Return (Zipf exponent, Shannon entropy) from a {template: count} dict."""
+        """Return (Zipf exponent, Shannon entropy) from a {template: count} dict.
+
+        Zipf exponent uses the continuous-MLE estimator (Clauset et al. 2009 §B.2):
+          α = 1 + n / Σ ln(xᵢ / xmin)
+        This avoids the powerlaw library's discrete normaliser (mpmath + Nelder-Mead),
+        which is ~2s per call, while producing essentially the same estimate for the
+        frequency counts seen in practice.
+        """
         if not counts:
             return float("nan"), float("nan")
         freqs = np.array(list(counts.values()), dtype=float)
-        zipf = _fit_powerlaw(freqs).alpha
+        pos = freqs[freqs >= 1.0]
+        if pos.size < 2:
+            zipf = float("nan")
+        else:
+            xmin  = float(np.min(pos))
+            tail  = pos[pos >= xmin]
+            denom = float(np.sum(np.log(tail / xmin)))
+            zipf  = float(np.clip(1.0 + tail.size / denom, 1.01, 50.0)) if denom > 0 else float("nan")
         p = freqs / freqs.sum()
         p = p[p > 0]
         entropy = -float(np.sum(p * np.log(p)))
@@ -412,27 +383,88 @@ class BlockE:
 
     @staticmethod
     def _sample_tree_depth2_templates(
-        out_edges: dict[int, list[tuple[int, str]]],
+        out_edges: dict[int, list[tuple[int, Any]]],
         start_verts: np.ndarray,
         n_samples: int,
         rng: np.random.Generator,
-    ) -> dict[tuple[tuple[str, str], ...], int]:
-        """Sample depth-2 rooted trees; template = sorted tuple of (r1, r2) pairs."""
-        counts: defaultdict[tuple[tuple[str, str], ...], int] = defaultdict(int)
-        for _ in range(n_samples):
-            root = int(rng.choice(start_verts))
-            adj1 = out_edges.get(root)
+    ) -> dict[tuple[tuple[Any, Any], ...], int]:
+        """Sample depth-2 rooted trees; template = sorted tuple of (r1, r2) pairs.
+
+        Caps at 10k samples and at most 10 children / 5 grandchildren per root
+        so hub nodes (degree 900+) don't dominate runtime.
+        """
+        n_samples = min(n_samples, 10_000)
+        roots = start_verts[rng.integers(len(start_verts), size=n_samples)]
+        counts: defaultdict[tuple, int] = defaultdict(int)
+        for root in roots:
+            adj1 = out_edges.get(int(root))
             if not adj1:
                 continue
-            pairs: list[tuple[str, str]] = []
-            for child, r1 in adj1:
+            pairs: list[tuple] = []
+            for child, r1 in adj1[:10]:  # at most 10 children
                 adj2 = out_edges.get(child)
                 if adj2:
-                    for _, r2 in adj2:
+                    for _, r2 in adj2[:5]:  # at most 5 grandchildren per child
                         pairs.append((r1, r2))
             if pairs:
                 counts[tuple(sorted(pairs))] += 1
         return dict(counts)
+
+    @staticmethod
+    def _count_4node_motifs(g_und: igraph.Graph) -> tuple[int, int, int, int]:
+        """Count (four_cycle, diamond, k4, tailed_triangle) without RANDESU.
+
+        k4 / diamond / tailed_triangle are derived from triangle list + neighbour
+        set intersections.  four_cycle uses a single sparse A² multiply:
+
+            C4 = ( Σ_{non-edge (u,v)} C(A²[u,v], 2) − diamond ) / 2
+
+        Each K4 spans 4 triangles (÷4), each diamond spans 2 triangles (÷2),
+        each tailed_triangle spans exactly 1 triangle (no correction needed).
+        """
+        adj = [set(g_und.neighbors(v)) for v in range(g_und.vcount())]
+        triangles = g_und.list_triangles()
+
+        k4 = diamond = tailed = 0
+        for (a, b, c) in triangles:
+            Na, Nb, Nc = adj[a], adj[b], adj[c]
+            abc = {a, b, c}
+
+            all3 = (Na & Nb & Nc) - abc
+            ab   = (Na & Nb) - abc - all3
+            ac   = (Na & Nc) - abc - all3
+            bc   = (Nb & Nc) - abc - all3
+
+            k4      += len(all3)
+            diamond += len(ab) + len(ac) + len(bc)
+            # Nodes connected to exactly one triangle vertex (the "tail")
+            tailed += (
+                (len(Na) - 2 - len(all3) - len(ab) - len(ac))
+                + (len(Nb) - 2 - len(all3) - len(ab) - len(bc))
+                + (len(Nc) - 2 - len(all3) - len(ac) - len(bc))
+            )
+
+        k4      //= 4  # each K4 has 4 triangles
+        diamond //= 2  # each diamond has 2 triangles
+
+        # four_cycle via sparse A²: C4 = (total_C - edge_C - diamond) / 2
+        # total_C = Σ_{p<q} C(A²[p,q], 2) = (tr(A⁴) - Σd² - Σd(d-1)) / 4
+        A = scipy.sparse.csr_matrix(g_und.get_adjacency_sparse())
+        A2 = (A @ A).astype(np.float64)
+        degrees = np.array(g_und.degree(), dtype=np.float64)
+        sum_sq  = float(A2.multiply(A2).sum()) - float(np.sum(degrees ** 2))
+        sum_a2  = float(np.sum(degrees * (degrees - 1)))
+        total_C = (sum_sq - sum_a2) / 4.0
+
+        edges_arr = np.array(g_und.get_edgelist())
+        if edges_arr.shape[0] > 0:
+            t_e    = np.asarray(A2[edges_arr[:, 0], edges_arr[:, 1]]).flatten()
+            edge_C = float(np.sum(t_e * (t_e - 1)) / 2.0)
+        else:
+            edge_C = 0.0
+
+        four_cycle = max(0, int(round((total_C - edge_C - diamond) / 2.0)))
+        return four_cycle, diamond, k4, max(0, tailed)
 
     @staticmethod
     def _count_stars(g_und: igraph.Graph) -> dict[int, int]:
