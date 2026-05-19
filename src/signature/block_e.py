@@ -13,11 +13,8 @@ from ._logging import get_logger
 
 log = get_logger(__name__)
 
-_SAMPLE_BUDGET   = 100_000  # default walk samples for path/tree templates
-_MAX_K           = 10       # longest path template walk
-_TRI_SAMPLE_CAP  = 5_000    # max triangles in the Python set-intersection loop
-_LARGE_N         = 50_000   # above this, skip A² and use wedge sampling for C4
-_C4_WEDGE_SAMPLES = 2_000   # wedge samples for the large-graph C4 estimator
+_SAMPLE_BUDGET = 100_000  # default walk samples for path/tree templates
+_MAX_K         = 10       # longest path template walk
 
 _NOT_CALCULATED = object()
 
@@ -421,151 +418,58 @@ class BlockE:
         g_und: igraph.Graph,
         triangles: list,
     ) -> tuple[int, int, int, int]:
-        """Count (four_cycle, diamond, k4, tailed_triangle) without RANDESU.
+        """Count (four_cycle, diamond, k4, tailed_triangle) using three independent methods.
 
-        Two tiers, chosen by vertex count:
+        k4      — igraph clique enumeration (exact, no custom math)
+        diamond — derived from A²: edge_C − 6·k4
+                  where edge_C = Σ_{edges (u,v)} C(A²[u,v], 2)
+        C4      — from A²: (total_C − edge_C − diamond) / 2
+                  where total_C = Σ_{i<j} C(A²[i,j], 2)
+        tailed  — for each triangle, count nodes adjacent to exactly one
+                  triangle vertex (exclusive-neighbour set subtraction)
 
-        n ≤ _LARGE_N — exact
-            Full triangle loop + sparse A² for C4.  The A² formula
-            C4 = (total_C − edge_C − diamond) / 2 requires exact diamond,
-            so the two computations must stay on the same path.
-
-        n > _LARGE_N — approximate
-            Triangle loop capped at _TRI_SAMPLE_CAP (scaled up) for
-            k4/diamond/tailed; importance-weighted wedge sampling for C4.
-            Both are approximate, so the approximations are consistent.
+        The three identities used:
+            total_C = 2·C4 + 2·diamond + 6·K4
+            edge_C  =        diamond   + 6·K4
+            → diamond = edge_C − 6·K4
+            → C4     = (total_C − edge_C − diamond) / 2
         """
         n = g_und.vcount()
 
-        if n > _LARGE_N:
-            # ── approximate path ─────────────────────────────────────────────
-            T   = len(triangles)
-            rng = np.random.default_rng(3)
-            if T > _TRI_SAMPLE_CAP:
-                idx     = rng.choice(T, size=_TRI_SAMPLE_CAP, replace=False)
-                sampled = [triangles[i] for i in idx]
-                scale   = T / _TRI_SAMPLE_CAP
-            else:
-                sampled, scale = triangles, 1.0
+        # K4: igraph's Bron-Kerbosch clique finder, exact
+        k4 = len(g_und.cliques(min=4, max=4))
 
-            adj = [set(g_und.neighbors(v)) for v in range(n)]
-            k4_r = diamond_r = tailed_r = 0
-            for (a, b, c) in sampled:
-                Na, Nb, Nc = adj[a], adj[b], adj[c]
-                abc  = {a, b, c}
-                all3 = (Na & Nb & Nc) - abc
-                ab   = (Na & Nb) - abc - all3
-                ac   = (Na & Nc) - abc - all3
-                bc   = (Nb & Nc) - abc - all3
-                k4_r      += len(all3)
-                diamond_r += len(ab) + len(ac) + len(bc)
-                tailed_r  += (
-                    (len(Na) - 2 - len(all3) - len(ab) - len(ac))
-                    + (len(Nb) - 2 - len(all3) - len(ab) - len(bc))
-                    + (len(Nc) - 2 - len(all3) - len(ac) - len(bc))
-                )
+        # A²: (A²)_{ij} = |N(i) ∩ N(j)|; diagonal = degree
+        A  = scipy.sparse.csr_matrix(g_und.get_adjacency_sparse())
+        A2 = (A @ A).astype(np.float64)
 
-            k4      = max(0, int(round(k4_r      * scale)) // 4)
-            diamond = max(0, int(round(diamond_r * scale)) // 2)
-            tailed  = max(0, int(round(tailed_r  * scale)))
-            # C4 also approximate — must use the same approximate diamond
-            four_cycle = BlockE._estimate_four_cycle_wedge(g_und, diamond, rng)
-
+        degrees   = np.array(g_und.degree(), dtype=np.float64)
+        edges_arr = np.array(g_und.get_edgelist())
+        if edges_arr.shape[0] > 0:
+            c_e    = np.asarray(A2[edges_arr[:, 0], edges_arr[:, 1]]).flatten()
+            edge_C = float(np.sum(c_e * (c_e - 1)) / 2.0)
         else:
-            # ── exact path ───────────────────────────────────────────────────
-            adj = [set(g_und.neighbors(v)) for v in range(n)]
-            k4 = diamond = tailed = 0
-            for (a, b, c) in triangles:
-                Na, Nb, Nc = adj[a], adj[b], adj[c]
-                abc  = {a, b, c}
-                all3 = (Na & Nb & Nc) - abc
-                ab   = (Na & Nb) - abc - all3
-                ac   = (Na & Nc) - abc - all3
-                bc   = (Nb & Nc) - abc - all3
-                k4      += len(all3)
-                diamond += len(ab) + len(ac) + len(bc)
-                tailed  += (
-                    (len(Na) - 2 - len(all3) - len(ab) - len(ac))
-                    + (len(Nb) - 2 - len(all3) - len(ab) - len(bc))
-                    + (len(Nc) - 2 - len(all3) - len(ac) - len(bc))
-                )
-            k4      //= 4
-            diamond //= 2
-            tailed   = max(0, tailed)
+            edge_C = 0.0
 
-            # C4 via sparse A²: requires exact diamond (computed above)
-            A  = scipy.sparse.csr_matrix(g_und.get_adjacency_sparse())
-            A2 = (A @ A).astype(np.float64)
-            degrees = np.array(g_und.degree(), dtype=np.float64)
-            sum_sq  = float(A2.multiply(A2).sum()) - float(np.sum(degrees ** 2))
-            sum_a2  = float(np.sum(degrees * (degrees - 1)))
-            total_C = (sum_sq - sum_a2) / 4.0
-            edges_arr = np.array(g_und.get_edgelist())
-            if edges_arr.shape[0] > 0:
-                t_e    = np.asarray(A2[edges_arr[:, 0], edges_arr[:, 1]]).flatten()
-                edge_C = float(np.sum(t_e * (t_e - 1)) / 2.0)
-            else:
-                edge_C = 0.0
-            four_cycle = max(0, int(round((total_C - edge_C - diamond) / 2.0)))
+        sum_sq  = float(A2.multiply(A2).sum()) - float(np.sum(degrees ** 2))
+        sum_a2  = float(np.sum(degrees * (degrees - 1)))
+        total_C = (sum_sq - sum_a2) / 4.0
+
+        diamond    = max(0, int(round(edge_C - 6.0 * k4)))
+        four_cycle = max(0, int(round((total_C - edge_C - diamond) / 2.0)))
+
+        # Tailed triangle: for each triangle vertex, count nodes adjacent to
+        # that vertex only (not the other two).  Each such node contributes one
+        # tailed-triangle motif, counted exactly once.
+        adj    = [set(g_und.neighbors(v)) for v in range(n)]
+        tailed = 0
+        for a, b, c in triangles:
+            abc = {a, b, c}
+            tailed += len(adj[a] - adj[b] - adj[c] - abc)
+            tailed += len(adj[b] - adj[a] - adj[c] - abc)
+            tailed += len(adj[c] - adj[a] - adj[b] - abc)
 
         return four_cycle, diamond, k4, tailed
-
-    @staticmethod
-    def _estimate_four_cycle_wedge(
-        g_und: igraph.Graph,
-        diamond: int,
-        rng: np.random.Generator,
-        n_samples: int = _C4_WEDGE_SAMPLES,
-    ) -> int:
-        """Estimate four_cycle count via importance-weighted wedge sampling.
-
-        Samples B wedges (centre w, endpoints u, v) uniformly at random by
-        choosing the centre proportional to C(d_w, 2).  For each non-adjacent
-        pair (u, v), counts c = |N(u) ∩ N(v)| via a sorted-merge walk.
-
-        Unbiased estimator — each non-edge pair is sampled ∝ c, so each sample
-        contributes W · (c − 1) / 2 rather than C(c, 2) directly:
-
-            non_edge_C ≈ (W / 2B) · Σ_{non-edge samples} (c − 1)
-            C4         ≈ (non_edge_C − diamond) / 2
-
-        O(n_samples · d_avg) time, O(n + m) memory — no matrix materialisation.
-        """
-        n       = g_und.vcount()
-        degrees = np.array(g_und.degree(), dtype=np.float64)
-        W       = float(np.sum(degrees * (degrees - 1)) / 2.0)
-        if W < 1.0:
-            return 0
-
-        # sorted adjacency lists (igraph returns them sorted for undirected graphs)
-        adj      = [list(g_und.neighbors(v)) for v in range(n)]
-        adj_sets = [set(a) for a in adj]
-
-        weights = degrees * (degrees - 1)
-        if weights.sum() == 0:
-            return 0
-        centres = rng.choice(n, size=n_samples, p=weights / weights.sum())
-
-        correction_sum = 0.0
-        for w in centres:
-            nb = adj[int(w)]
-            if len(nb) < 2:
-                continue
-            i, j   = rng.choice(len(nb), size=2, replace=False)
-            u, v   = nb[int(i)], nb[int(j)]
-            if v in adj_sets[u]:
-                continue  # (u,v) is an edge — skip
-            # |N(u) ∩ N(v)| via sorted-merge; c ≥ 1 (w is a guaranteed member)
-            nu, nv = adj[u], adj[v]
-            c = ii = jj = 0
-            while ii < len(nu) and jj < len(nv):
-                if   nu[ii] == nv[jj]: c += 1; ii += 1; jj += 1
-                elif nu[ii] <  nv[jj]: ii += 1
-                else:                  jj += 1
-            correction_sum += c - 1  # subtract the known-common neighbour w
-
-        non_edge_C = W * correction_sum / (2.0 * n_samples)
-        return max(0, int(round((non_edge_C - diamond) / 2.0)))
 
     @staticmethod
     def _count_stars(g_und: igraph.Graph) -> dict[int, int]:
