@@ -134,9 +134,9 @@ class BlockE:
 
         nm = g_motif.vcount()
 
-        # Triangles: list_triangles() enumerates each once (O(m√m) on g_motif).
-        _tris = g_motif.list_triangles() if nm >= 3 else []
-        self._triangle_count = int(round(len(_tris) * _scale ** 3))
+        # Triangles: exact count on the full undirected graph (no sampling).
+        _tris = g_und.list_triangles() if n >= 3 else []
+        self._triangle_count = len(_tris)
         log.info("Block E: computed triangle_count (%d)", self._triangle_count)
 
         # 4-node motifs.
