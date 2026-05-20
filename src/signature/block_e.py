@@ -112,18 +112,27 @@ class BlockE:
         g_und = g.as_undirected(combine_edges="first").simplify()
         n = g_und.vcount()
 
-        # For large graphs, work on a random node-induced subgraph so that
-        # list_triangles() O(m√m) and cliques() remain tractable.
-        # Counts on the sample are rescaled by (n/s)^k for k-node motifs.
+        # For large graphs, sample _SAMPLE_N seed nodes then expand each seed to
+        # include ALL of its actual neighbors from the full graph.  This ensures
+        # that when we check whether a seed participates in a 4-node motif, the
+        # motif can involve any real neighbor of that node — not only the nodes
+        # that happen to land in the random sample.
         if n > _LARGE_N:
             _rng_s = np.random.default_rng(42)
-            _ids   = _rng_s.choice(n, size=min(n, _SAMPLE_N), replace=False)
-            g_motif = g_und.induced_subgraph(_ids)
-            _scale  = float(n) / len(_ids)
+            _seeds = _rng_s.choice(n, size=min(n, _SAMPLE_N), replace=False)
+
+            # Expand: add every actual neighbor of each seed.
+            _expanded: set[int] = set(_seeds.tolist())
+            for _v in _seeds:
+                _expanded.update(g_und.neighbors(_v))
+
+            _exp_list = list(_expanded)
+            g_motif   = g_und.induced_subgraph(_exp_list)
+            _scale    = float(n) / len(_exp_list)
             log.info(
-                "Block E: large graph (%d nodes) — sampling %d for structural counts"
-                " (scale=%.2f)",
-                n, len(_ids), _scale,
+                "Block E: large graph (%d nodes) — seeds %d → expanded %d nodes"
+                " for structural counts (scale=%.2f)",
+                n, len(_seeds), len(_exp_list), _scale,
             )
         else:
             g_motif = g_und
