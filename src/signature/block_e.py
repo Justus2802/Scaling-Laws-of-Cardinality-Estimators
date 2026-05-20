@@ -16,7 +16,7 @@ log = get_logger(__name__)
 _SAMPLE_BUDGET = 100_000  # default walk samples for path/tree templates
 _MAX_K         = 10       # longest path template walk
 _LARGE_N       = 50_000   # above this, sample an induced subgraph for structural counts
-_SAMPLE_N      = 100_000  # induced-subgraph size when n > _LARGE_N
+_SAMPLE_N      = 10_000   # seed nodes when n > _LARGE_N (expanded to full neighborhoods)
 
 _NOT_CALCULATED = object()
 
