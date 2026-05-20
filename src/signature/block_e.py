@@ -15,6 +15,8 @@ log = get_logger(__name__)
 
 _SAMPLE_BUDGET = 100_000  # default walk samples for path/tree templates
 _MAX_K         = 10       # longest path template walk
+_LARGE_N       = 50_000   # above this, sample an induced subgraph for structural counts
+_SAMPLE_N      = 100_000  # induced-subgraph size when n > _LARGE_N
 
 _NOT_CALCULATED = object()
 
@@ -110,26 +112,54 @@ class BlockE:
         g_und = g.as_undirected(combine_edges="first").simplify()
         n = g_und.vcount()
 
-        # Triangles: list_triangles() enumerates each triangle once (O(m√m)).
-        # Computed once here and reused by _count_4node_motifs to avoid a second
-        # O(m√m) pass.
-        _tris = g_und.list_triangles() if n > 0 else []
-        self._triangle_count = len(_tris)
+        # For large graphs, work on a random node-induced subgraph so that
+        # list_triangles() O(m√m) and cliques() remain tractable.
+        # Counts on the sample are rescaled by (n/s)^k for k-node motifs.
+        if n > _LARGE_N:
+            _rng_s = np.random.default_rng(42)
+            _ids   = _rng_s.choice(n, size=min(n, _SAMPLE_N), replace=False)
+            g_motif = g_und.induced_subgraph(_ids)
+            _scale  = float(n) / len(_ids)
+            log.info(
+                "Block E: large graph (%d nodes) — sampling %d for structural counts"
+                " (scale=%.2f)",
+                n, len(_ids), _scale,
+            )
+        else:
+            g_motif = g_und
+            _scale  = 1.0
+
+        nm = g_motif.vcount()
+
+        # Triangles: list_triangles() enumerates each once (O(m√m) on g_motif).
+        _tris = g_motif.list_triangles() if nm >= 3 else []
+        self._triangle_count = int(round(len(_tris) * _scale ** 3))
         log.info("Block E: computed triangle_count (%d)", self._triangle_count)
 
-        # 4-node motifs: triangle-intersection for k4/diamond/tailed + A² (or wedge
-        # sampling for large graphs) for four_cycle.  Tiered by graph size.
-        (self._four_cycle_count, self._diamond_count,
-         self._k4_count, self._tailed_triangle_count) = (
-            self._count_4node_motifs(g_und, _tris) if n >= 4 else (0, 0, 0, 0)
-        )
+        # 4-node motifs on the (possibly sampled) subgraph, then scale by s^4.
+        if nm >= 4:
+            _c4, _dia, _k4, _tail = self._count_4node_motifs(g_motif, _tris)
+            s4 = _scale ** 4
+            self._four_cycle_count       = int(round(_c4  * s4))
+            self._diamond_count          = int(round(_dia  * s4))
+            self._k4_count               = int(round(_k4   * s4))
+            self._tailed_triangle_count  = int(round(_tail * s4))
+        else:
+            self._four_cycle_count = self._diamond_count = 0
+            self._k4_count = self._tailed_triangle_count = 0
         log.info("Block E: computed four_cycle_count (%d)", self._four_cycle_count)
         log.info("Block E: computed diamond_count (%d)", self._diamond_count)
         log.info("Block E: computed k4_count (%d)", self._k4_count)
         log.info("Block E: computed tailed_triangle_count (%d)", self._tailed_triangle_count)
 
-        # Stars (exact, vectorised) and 5/6-cycles (sampled)
-        self._star_counts = self._count_stars(g_und)
+        # Stars: exact on g_motif, each k-star (k+1 nodes) scaled by s^(k+1).
+        _raw_stars = self._count_stars(g_motif)
+        if _scale > 1.0:
+            self._star_counts = {
+                k: int(round(v * _scale ** (k + 1))) for k, v in _raw_stars.items()
+            }
+        else:
+            self._star_counts = _raw_stars
         log.info(
             "Block E: computed star_counts (k=2..10 totals=%s)",
             [self._star_counts.get(k, 0) for k in range(2, 11)],
@@ -418,17 +448,21 @@ class BlockE:
         g_und: igraph.Graph,
         triangles: list,
     ) -> tuple[int, int, int, int]:
-        """Count (four_cycle, diamond, k4, tailed_triangle) using three independent methods.
+        """Count (four_cycle, diamond, k4, tailed_triangle).
 
-        k4      — igraph clique enumeration (exact, no custom math)
-        diamond — derived from A²: edge_C − 6·k4
+        K4 counts use triangle-set-intersection (O(T·d)), not cliques().
+        cliques(min=4,max=4) runs Bron-Kerbosch over all vertices even when
+        the graph is very sparse, costing 40+ s on 100k-node samples.
+
+        k4      — triangle loop: d ∈ N(a)∩N(b)∩N(c), raw÷4
+        diamond — from A²: edge_C − 6·k4
                   where edge_C = Σ_{edges (u,v)} C(A²[u,v], 2)
         C4      — from A²: (total_C − edge_C − diamond) / 2
                   where total_C = Σ_{i<j} C(A²[i,j], 2)
-        tailed  — for each triangle, count nodes adjacent to exactly one
-                  triangle vertex (exclusive-neighbour set subtraction)
+        tailed  — for each triangle vertex, count nodes adjacent only to
+                  that vertex (exclusive-neighbour set subtraction)
 
-        The three identities used:
+        Identities:
             total_C = 2·C4 + 2·diamond + 6·K4
             edge_C  =        diamond   + 6·K4
             → diamond = edge_C − 6·K4
@@ -436,8 +470,15 @@ class BlockE:
         """
         n = g_und.vcount()
 
-        # K4: igraph's Bron-Kerbosch clique finder, exact
-        k4 = len(g_und.cliques(min=4, max=4))
+        # K4 via triangle intersection: for each triangle find the 4th node
+        # adjacent to all three vertices.  Each K4 spans 4 triangles → ÷4.
+        adj = [set(g_und.neighbors(v)) for v in range(n)]
+        k4_raw = 0
+        for a, b, c in triangles:
+            abc  = {a, b, c}
+            all3 = (adj[a] & adj[b] & adj[c]) - abc
+            k4_raw += len(all3)
+        k4 = k4_raw // 4
 
         # A²: (A²)_{ij} = |N(i) ∩ N(j)|; diagonal = degree
         A  = scipy.sparse.csr_matrix(g_und.get_adjacency_sparse())
@@ -461,7 +502,6 @@ class BlockE:
         # Tailed triangle: for each triangle vertex, count nodes adjacent to
         # that vertex only (not the other two).  Each such node contributes one
         # tailed-triangle motif, counted exactly once.
-        adj    = [set(g_und.neighbors(v)) for v in range(n)]
         tailed = 0
         for a, b, c in triangles:
             abc = {a, b, c}
@@ -488,7 +528,7 @@ class BlockE:
             vals = np.ones(d.size, dtype=np.float64)
             for i in range(k):
                 vals *= (d - i) / (i + 1)
-            result[k] = int(np.round(vals).astype(np.int64).sum())
+            result[k] = int(float(np.sum(vals)))
         return result
 
     @staticmethod
@@ -500,37 +540,58 @@ class BlockE:
     ) -> int:
         """Estimate k-cycle count via random walk closure sampling.
 
-        Uses adjacency sets for O(1) visited-membership tests instead of
-        rebuilding a candidate list via list comprehension each step.
+        Hub nodes (degree > _HUB_THRESH) are handled with rejection sampling
+        and pre-built sets, avoiding O(d) scans for d = 225k-degree nodes.
         """
+        _HUB_THRESH  = 200   # degree above which full scan would be too slow
+        _MAX_REJECT  = 50    # rejection attempts at hubs (prob failure < 1e-40)
+
         n = g_und.vcount()
         if n < k:
             return 0
-        adj_lists = [g_und.neighbors(v) for v in range(n)]
-        adj_sets  = [set(a) for a in adj_lists]
-        degrees   = np.array([len(a) for a in adj_lists], dtype=float)
-        avg_deg   = float(degrees.mean()) if n > 0 else 0.0
+
+        adj     = [g_und.neighbors(v) for v in range(n)]
+        avg_deg = float(sum(len(a) for a in adj)) / n if n > 0 else 0.0
+        # Pre-build sets only for the rare high-degree hubs (O(m) total)
+        hub_sets = {v: set(nb) for v, nb in enumerate(adj) if len(nb) > _HUB_THRESH}
 
         n_closed = 0
         n_valid  = 0
         for _ in range(n_samples):
             start = int(rng.integers(n))
-            if not adj_lists[start]:
+            if not adj[start]:
                 continue
             v       = start
             visited = {start}
             ok      = True
             for _ in range(k - 1):
-                candidates = adj_sets[v] - visited
-                if not candidates:
-                    ok = False
-                    break
-                nb = int(rng.choice(list(candidates)))
-                visited.add(nb)
-                v = nb
+                nb_v = adj[v]
+                dv   = len(nb_v)
+                if dv <= _HUB_THRESH:
+                    cands = [u for u in nb_v if u not in visited]
+                    if not cands:
+                        ok = False
+                        break
+                    v = cands[int(rng.integers(len(cands)))]
+                else:
+                    # Rejection sampling: pick random neighbor, retry if visited
+                    found = False
+                    for _ in range(_MAX_REJECT):
+                        u = nb_v[int(rng.integers(dv))]
+                        if u not in visited:
+                            v = u
+                            found = True
+                            break
+                    if not found:
+                        ok = False
+                        break
+                visited.add(v)
             n_valid += 1
-            if ok and len(visited) == k and start in adj_sets[v]:
-                n_closed += 1
+            if ok and len(visited) == k:
+                nb_v = adj[v]
+                closed = (start in hub_sets[v]) if v in hub_sets else (start in nb_v)
+                if closed:
+                    n_closed += 1
 
         if n_valid == 0 or n_closed == 0:
             return 0
