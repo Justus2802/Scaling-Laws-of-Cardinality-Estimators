@@ -112,29 +112,23 @@ class BlockE:
         g_und = g.as_undirected(combine_edges="first").simplify()
         n = g_und.vcount()
 
-        # For large graphs, sample _SAMPLE_N seed nodes then expand each seed to
-        # include ALL of its actual neighbors from the full graph.  This ensures
-        # that when we check whether a seed participates in a 4-node motif, the
-        # motif can involve any real neighbor of that node — not only the nodes
-        # that happen to land in the random sample.
+        # For large graphs, sample _SAMPLE_N seed nodes.
+        # Triangles and stars use the simple induced subgraph of the seeds.
+        # 4-node motifs use a dedicated per-seed sampler (_count_4node_motifs_sampled)
+        # that looks up each seed's actual neighbors from the full graph, so a
+        # 4-node motif containing a seed can involve any node in the graph.
         if n > _LARGE_N:
             _rng_s = np.random.default_rng(42)
             _seeds = _rng_s.choice(n, size=min(n, _SAMPLE_N), replace=False)
-
-            # Expand: add every actual neighbor of each seed.
-            _expanded: set[int] = set(_seeds.tolist())
-            for _v in _seeds:
-                _expanded.update(g_und.neighbors(_v))
-
-            _exp_list = list(_expanded)
-            g_motif   = g_und.induced_subgraph(_exp_list)
-            _scale    = float(n) / len(_exp_list)
+            g_motif = g_und.induced_subgraph(_seeds.tolist())
+            _scale  = float(n) / len(_seeds)
             log.info(
-                "Block E: large graph (%d nodes) — seeds %d → expanded %d nodes"
+                "Block E: large graph (%d nodes) — sampling %d seeds"
                 " for structural counts (scale=%.2f)",
-                n, len(_seeds), len(_exp_list), _scale,
+                n, len(_seeds), _scale,
             )
         else:
+            _seeds  = None
             g_motif = g_und
             _scale  = 1.0
 
@@ -145,14 +139,18 @@ class BlockE:
         self._triangle_count = int(round(len(_tris) * _scale ** 3))
         log.info("Block E: computed triangle_count (%d)", self._triangle_count)
 
-        # 4-node motifs on the (possibly sampled) subgraph, then scale by s^4.
+        # 4-node motifs.
+        # Large graph: per-seed sampler with full adjacency (already scaled).
+        # Small graph: exact counts on the full graph.
         if nm >= 4:
-            _c4, _dia, _k4, _tail = self._count_4node_motifs(g_motif, _tris)
-            s4 = _scale ** 4
-            self._four_cycle_count       = int(round(_c4  * s4))
-            self._diamond_count          = int(round(_dia  * s4))
-            self._k4_count               = int(round(_k4   * s4))
-            self._tailed_triangle_count  = int(round(_tail * s4))
+            if _seeds is not None:
+                _c4, _dia, _k4, _tail = self._count_4node_motifs_sampled(g_und, _seeds)
+            else:
+                _c4, _dia, _k4, _tail = self._count_4node_motifs(g_motif, _tris)
+            self._four_cycle_count      = _c4
+            self._diamond_count         = _dia
+            self._k4_count              = _k4
+            self._tailed_triangle_count = _tail
         else:
             self._four_cycle_count = self._diamond_count = 0
             self._k4_count = self._tailed_triangle_count = 0
@@ -451,6 +449,112 @@ class BlockE:
             if pairs:
                 counts[tuple(sorted(pairs))] += 1
         return dict(counts)
+
+    @staticmethod
+    def _count_4node_motifs_sampled(
+        g_und: igraph.Graph,
+        seed_ids: np.ndarray,
+    ) -> tuple[int, int, int, int]:
+        """Estimate 4-node motif counts using seed nodes with full-graph adjacency.
+
+        For each seed v treated as the minimum-ID node, we enumerate motifs
+        {v, a, b, c} where a, b, c can be ANY node in the full graph — not just
+        other seeds.  Because each motif is counted exactly once (when its
+        minimum-ID node is a seed), scaling by n/|seeds| gives an unbiased
+        estimate.
+
+        High-degree seeds (> _DEG_CAP) are excluded from the O(deg²) K4/tailed
+        loops to keep runtime bounded; A²-based diamond/C4 still include them.
+        """
+        _DEG_CAP = 500
+
+        n   = g_und.vcount()
+        adj = [g_und.neighbors(v) for v in range(n)]
+
+        # Adjacency sets built lazily — only for nodes actually accessed.
+        _cache: dict[int, set] = {}
+
+        def aset(u: int) -> set:
+            s = _cache.get(u)
+            if s is None:
+                s = set(adj[u])
+                _cache[u] = s
+            return s
+
+        k4_raw     = 0
+        tailed_raw = 0
+        edge_C     = 0.0
+        total_C    = 0.0
+
+        for v in seed_ids:
+            adj_v = adj[v]
+            set_v = aset(v)
+
+            # A²-row: w[j] = |N(v) ∩ N(j)| via neighbour-of-neighbour counting.
+            w: dict[int, int] = {}
+            for u in adj_v:
+                for j in adj[u]:
+                    if j != v:
+                        w[j] = w.get(j, 0) + 1
+
+            # total_C contribution: C(w[j], 2) for all j > v.
+            for j, wj in w.items():
+                if j > v and wj >= 2:
+                    total_C += wj * (wj - 1) / 2.0
+
+            # edge_C contribution: C(w[j], 2) for edges (v, j) with j > v.
+            for j in adj_v:
+                if j > v:
+                    wj = w.get(j, 0)
+                    if wj >= 2:
+                        edge_C += wj * (wj - 1) / 2.0
+
+            # K4 and tailed triangle require O(deg²) pair enumeration — skip hubs.
+            if len(adj_v) > _DEG_CAP:
+                continue
+
+            N_plus = sorted(u for u in adj_v if u > v)
+
+            for i, a in enumerate(N_plus):
+                set_a = aset(a)
+                for b in N_plus[i + 1:]:
+                    if b not in set_a:
+                        continue  # no edge a-b → no triangle (v, a, b)
+                    set_b = aset(b)
+                    abc   = {v, a, b}
+
+                    # K4: find c ∈ N(v) ∩ N(a) ∩ N(b) with c > b (→ v<a<b<c).
+                    for c in N_plus:
+                        if c > b and c in set_a and c in set_b:
+                            k4_raw += 1
+
+                    # Tailed triangle: pendant from each of the three triangle vertices.
+                    # Pendant from v: c ∈ N(v), c > v, not connected to a or b.
+                    tailed_raw += sum(
+                        1 for c in adj_v
+                        if c > v and c not in abc and c not in set_a and c not in set_b
+                    )
+                    # Pendant from a: c ∈ N(a), c > v, not connected to v or b.
+                    tailed_raw += sum(
+                        1 for c in adj[a]
+                        if c > v and c not in abc and c not in set_v and c not in set_b
+                    )
+                    # Pendant from b: c ∈ N(b), c > v, not connected to v or a.
+                    tailed_raw += sum(
+                        1 for c in adj[b]
+                        if c > v and c not in abc and c not in set_v and c not in set_a
+                    )
+
+        scale         = float(n) / len(seed_ids)
+        _diamond_raw  = edge_C - 6.0 * k4_raw
+        _c4_raw       = (total_C - edge_C - _diamond_raw) / 2.0
+
+        return (
+            max(0, int(round(_c4_raw      * scale))),
+            max(0, int(round(_diamond_raw * scale))),
+            int(round(k4_raw              * scale)),
+            int(round(tailed_raw          * scale)),
+        )
 
     @staticmethod
     def _count_4node_motifs(
