@@ -70,10 +70,13 @@ def main() -> None:
     written.append(summary_path)
     print(f"  Saved  : {summary_path}")
 
-    # Write JSON vector
+    # Write JSON — named key/value pairs plus raw vector for ML pipelines.
     json_path = out_dir / "signature.json"
-    vector = sig.as_vector()
-    json_path.write_text(json.dumps({"source": str(args.kg_file), "vector": vector}, indent=2))
+    named = sig.as_dict()
+    vector = list(named.values())
+    json_path.write_text(
+        json.dumps({"source": str(args.kg_file), "features": named, "vector": vector}, indent=2)
+    )
     written.append(json_path)
     print(f"  Saved  : {json_path}")
 

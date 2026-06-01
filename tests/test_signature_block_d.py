@@ -153,5 +153,33 @@ class TestBlockDSmallFixtures(unittest.TestCase):
         self.assertIs(result, d)
 
 
+class TestBlockDSerialize(unittest.TestCase):
+    def _make(self) -> BlockD:
+        tmp = tempfile.mkdtemp()
+        path = os.path.join(tmp, "g.ttl")
+        with open(path, "w") as f:
+            f.write(
+                "@prefix ex: <http://example.org/> .\n"
+                + "".join(f"ex:s{i} ex:p ex:o{i} .\n" for i in range(10))
+            )
+        return BlockD().calculate(load_kg(path))
+
+    def test_feature_names_length(self):
+        self.assertEqual(len(BlockD.feature_names()), _VECTOR_LEN)
+
+    def test_as_dict_keys_match_feature_names(self):
+        d = self._make()
+        self.assertEqual(list(d.as_dict().keys()), BlockD.feature_names())
+
+    def test_as_dict_values_match_as_vector(self):
+        d = self._make()
+        self.assertEqual(list(d.as_dict().values()), d.as_vector())
+
+    def test_serialization_roundtrip(self):
+        d = self._make()
+        restored = BlockD.from_serializable(d.to_serializable())
+        self.assertEqual(d.as_vector(), restored.as_vector())
+
+
 if __name__ == "__main__":
     unittest.main()

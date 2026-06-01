@@ -113,5 +113,36 @@ class TestBlockBPowerLawFit(unittest.TestCase):
         self.assertGreater(b.in_degree_fit.alpha, 1.0)
 
 
+class TestBlockBSerialize(unittest.TestCase):
+    def _make(self) -> BlockB:
+        tmp = tempfile.mkdtemp()
+        path = os.path.join(tmp, "g.ttl")
+        with open(path, "w") as f:
+            f.write(
+                "@prefix ex: <http://example.org/> .\n"
+                + "".join(f"ex:s ex:p ex:o{i} .\n" for i in range(15))
+            )
+        return BlockB().calculate(load_kg(path))
+
+    def test_feature_names_length(self):
+        self.assertEqual(len(BlockB.feature_names()), 22)
+
+    def test_as_dict_keys_match_feature_names(self):
+        b = self._make()
+        self.assertEqual(list(b.as_dict().keys()), BlockB.feature_names())
+
+    def test_as_dict_values_match_as_vector(self):
+        # Use assert_array_equal so NaN == NaN.
+        import numpy as np
+        b = self._make()
+        np.testing.assert_array_equal(list(b.as_dict().values()), b.as_vector())
+
+    def test_serialization_roundtrip(self):
+        import numpy as np
+        b = self._make()
+        restored = BlockB.from_serializable(b.to_serializable())
+        np.testing.assert_array_equal(b.as_vector(), restored.as_vector())
+
+
 if __name__ == "__main__":
     unittest.main()

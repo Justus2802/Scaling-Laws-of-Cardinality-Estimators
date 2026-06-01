@@ -1,13 +1,13 @@
 """Block B — Degree structure features."""
 
 from collections import defaultdict
-from typing import Any
 
 import igraph
 import matplotlib.pyplot as plt  # type: ignore[import-untyped]
 import numpy as np
 
 from ._logging import get_logger
+from ._block_base import SignatureBlock, _NOT_CALCULATED
 from ._utils import (
     MIN_SAMPLES_FOR_FIT,
     PowerLawStats,
@@ -20,10 +20,8 @@ log = get_logger(__name__)
 
 _DEGREE_HIST_LOG_SCALE: bool = False  # set False for linear axes on degree histograms
 
-_NOT_CALCULATED = object()
 
-
-class BlockB:
+class BlockB(SignatureBlock):
     """Block B — Degree structure features of a KG.
 
     Aggregate features fit the in/out-degree distributions (over non-literal
@@ -36,6 +34,7 @@ class BlockB:
 
         b = BlockB().calculate(g)
         b.as_vector()     # fixed-length comparison vector
+        b.as_dict()       # named key-value pairs
         b.visualize()     # interactive matplotlib figure
         b.visualize(mode="text")          # CLI summary
         b.visualize(path="out.png")       # save plot to file
@@ -50,11 +49,6 @@ class BlockB:
         self._inverse_functionality = _NOT_CALCULATED
         self._out_degrees = _NOT_CALCULATED
         self._in_degrees = _NOT_CALCULATED
-
-    def _require(self, name: str, value: object) -> Any:
-        if value is _NOT_CALCULATED:
-            raise RuntimeError(f"Call calculate() before accessing {name}")
-        return value
 
     @property
     def out_degree_fit(self) -> PowerLawStats:
@@ -180,6 +174,21 @@ class BlockB:
             func.mean,     func.std,     func.median,
             inv_func.mean, inv_func.std, inv_func.median,
         ]
+
+    @classmethod
+    def feature_names(cls) -> list[str]:
+        """Return feature names in the same order as :meth:`as_vector`."""
+        names = [
+            "out_degree_alpha", "out_degree_ks",
+            "in_degree_alpha", "in_degree_ks",
+        ]
+        for prefix in (
+            "obj_multiplicity_alpha", "obj_multiplicity_ks",
+            "subj_multiplicity_alpha", "subj_multiplicity_ks",
+            "functionality", "inverse_functionality",
+        ):
+            names += [f"{prefix}_mean", f"{prefix}_std", f"{prefix}_median"]
+        return names
 
     @classmethod
     def get_na_vec(cls) -> list[float]:

@@ -47,16 +47,16 @@ If no edges carry the predicate `RDF_TYPE`, `class_sizes` is empty, `num_classes
 ## Block E — Motifs
 
 ### All motif counts use the undirected simplification of the directed KG
-`g.as_undirected(combine_edges="first").simplify()` is computed once and reused for triangle counting, 4-node RANDESU, star counting, and 5/6-cycle estimation. Multi-edges (multiple predicates between the same node pair) are collapsed to one; self-loops are removed. BGP query shapes in the spec are drawn without direction arrows, so the undirected structure is the correct substrate for motif counting.
+`g.as_undirected(combine_edges="first").simplify()` is computed once and reused for triangle counting, 4-node RANDESU (diamond, K4, tailed-triangle), star counting, and 4/5/6-cycle estimation. Multi-edges (multiple predicates between the same node pair) are collapsed to one; self-loops are removed. BGP query shapes in the spec are drawn without direction arrows, so the undirected structure is the correct substrate for motif counting.
 
 ### Triangle count uses the sparse A ⊙ A² identity
 `A.multiply(A @ A).sum() // 6` counts triangles without materialising A³. Each triangle appears exactly 6 times in trace(A³) (3 vertices × 2 traversal directions), so dividing by 6 gives the exact count. The sparse element-wise multiply avoids the O(n²) dense materialisation.
 
 ### 4-node motif indices are discovered at runtime, not hardcoded
-`_4node_motif_index_map()` creates one canonical 4-node example for each named motif (4-cycle, diamond, K4, tailed triangle) and runs `motifs_randesu(size=4)` on it to find which list position holds count = 1. The result is cached with `@lru_cache`. This avoids a dependency on igraph's internal canonical ordering, which is not guaranteed stable across versions.
+`_4node_motif_index_map()` creates one canonical 4-node example for each named motif (diamond, K4, tailed triangle) and runs `motifs_randesu(size=4)` on it to find which list position holds count = 1. The result is cached with `@lru_cache`. This avoids a dependency on igraph's internal canonical ordering, which is not guaranteed stable across versions. The 4-cycle is excluded here because it is estimated by the same random-walk closure sampler as 5- and 6-cycles (see below).
 
-### 5- and 6-cycle counts are sampled estimates, not exact values
-Exact enumeration of simple 5- and 6-cycles is intractable for large KGs. The spec explicitly endorses sampling-based estimation for 5+ node motifs. `_estimate_k_cycle` samples simple random walks of length k−1 and checks closure, then scales the closure rate by `n × avg_deg^(k−1) / (2k)`. This is accurate in order of magnitude for sparse graphs; the scaling degrades for dense or highly heterogeneous degree distributions.
+### 4-, 5-, and 6-cycle counts are sampled estimates, not exact values
+Exact enumeration of simple cycles of length ≥ 4 is intractable for large KGs, and even the RANDESU 4-cycle count must fall back to probabilistic branch cuts above `_RANDESU_EXACT_LIMIT` vertices. Using sampling for all three cycle lengths keeps their accuracy and runtime behaviour consistent. `_estimate_k_cycle` samples simple random walks of length k−1 and checks closure, then scales the closure rate by `n × avg_deg^(k−1) / (2k)`. The three calls share the per-block `sample_budget`, with each cycle length receiving `sample_budget // 3` walks. This is accurate in order of magnitude for sparse graphs; the scaling degrades for dense or highly heterogeneous degree distributions.
 
 ### Star counts use the exact combinatorial formula C(deg(v), k)
 `_count_stars` computes `Σ_v C(deg(v), k)` for k = 2..10 using `math.comb`. This is exact: every k-subset of a vertex's neighbours is a distinct k-star subgraph centred at that vertex. Degrees are taken from the undirected simplification so that multi-edges do not artificially inflate star counts.

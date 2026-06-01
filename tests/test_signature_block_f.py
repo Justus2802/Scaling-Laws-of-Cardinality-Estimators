@@ -212,5 +212,33 @@ class TestBlockFConnectivity(unittest.TestCase):
                 self.assertEqual(len(BlockF().calculate(g).as_vector()), _VECTOR_LEN)
 
 
+class TestBlockFSerialize(unittest.TestCase):
+    def _make(self) -> BlockF:
+        tmp = tempfile.mkdtemp()
+        path = os.path.join(tmp, "g.ttl")
+        with open(path, "w") as f:
+            f.write(
+                "@prefix ex: <http://example.org/> .\n"
+                + "".join(f"ex:s{i} ex:p ex:o{i} .\n" for i in range(5))
+            )
+        return BlockF().calculate(load_kg(path))
+
+    def test_feature_names_length(self):
+        self.assertEqual(len(BlockF.feature_names()), _VECTOR_LEN)
+
+    def test_as_dict_keys_match_feature_names(self):
+        f = self._make()
+        self.assertEqual(list(f.as_dict().keys()), BlockF.feature_names())
+
+    def test_as_dict_values_match_as_vector(self):
+        f = self._make()
+        self.assertEqual(list(f.as_dict().values()), f.as_vector())
+
+    def test_serialization_roundtrip(self):
+        f = self._make()
+        restored = BlockF.from_serializable(f.to_serializable())
+        self.assertEqual(f.as_vector(), restored.as_vector())
+
+
 if __name__ == "__main__":
     unittest.main()

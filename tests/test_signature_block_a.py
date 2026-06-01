@@ -124,5 +124,33 @@ class TestBlockASmallFixtures(unittest.TestCase):
                 self.assertEqual(len(BlockA().calculate(self._load_ttl(ttl)).as_vector()), _VECTOR_LEN)
 
 
+class TestBlockASerialize(unittest.TestCase):
+    def _make(self) -> BlockA:
+        g = igraph.Graph(directed=True)
+        g.add_vertices(2)
+        g.vs["name"] = ["http://example.org/s", "http://example.org/o"]
+        g.vs["is_literal"] = [False, False]
+        g.add_edges([(0, 1)])
+        g.es["predicate"] = ["http://example.org/p"]
+        return BlockA().calculate(g)
+
+    def test_feature_names_length(self):
+        self.assertEqual(len(BlockA.feature_names()), _VECTOR_LEN)
+
+    def test_as_dict_keys_match_feature_names(self):
+        a = self._make()
+        self.assertEqual(list(a.as_dict().keys()), BlockA.feature_names())
+
+    def test_as_dict_values_match_as_vector(self):
+        a = self._make()
+        self.assertEqual(list(a.as_dict().values()), a.as_vector())
+
+    def test_serialization_roundtrip(self):
+        a = self._make()
+        restored = BlockA.from_serializable(a.to_serializable())
+        self.assertEqual(a.as_vector(), restored.as_vector())
+        self.assertEqual(a.as_dict(), restored.as_dict())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,23 +1,21 @@
 """Block A — Size and density features."""
 
-from typing import Any
-
 import igraph
 
 from ._logging import get_logger
+from ._block_base import SignatureBlock, _NOT_CALCULATED
 
 log = get_logger(__name__)
 
-_NOT_CALCULATED = object()
 
-
-class BlockA:
+class BlockA(SignatureBlock):
     """Block A — Size and density features of a KG.
 
     Usage::
 
         b = BlockA().calculate(g)
         b.as_vector()                # fixed-length comparison vector
+        b.as_dict()                  # named key-value pairs
         b.visualize()                # interactive matplotlib figure
         b.visualize(mode="text")     # CLI summary
         b.visualize(path="out.png")  # save plot to file
@@ -30,11 +28,6 @@ class BlockA:
         self._density = _NOT_CALCULATED
         self._triples_per_entity = _NOT_CALCULATED
         self._relation_reuse = _NOT_CALCULATED
-
-    def _require(self, name: str, value: object) -> Any:
-        if value is _NOT_CALCULATED:
-            raise RuntimeError(f"Call calculate() before accessing {name}")
-        return value
 
     @property
     def num_entities(self) -> int:
@@ -81,6 +74,18 @@ class BlockA:
         log.info("Block A: computed relation_reuse (%.4f)", self._relation_reuse)
 
         return self
+
+    @classmethod
+    def feature_names(cls) -> list[str]:
+        """Return feature names in the same order as :meth:`as_vector`."""
+        return [
+            "num_entities",
+            "num_triples",
+            "num_relations",
+            "density",
+            "triples_per_entity",
+            "relation_reuse",
+        ]
 
     @classmethod
     def get_na_vec(cls) -> list[float]:

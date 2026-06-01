@@ -1,7 +1,6 @@
 """Block F — Connectivity features."""
 
 import warnings
-from typing import Any
 
 import igraph
 import matplotlib.pyplot as plt  # type: ignore[import-untyped]
@@ -9,22 +8,22 @@ import numpy as np
 import scipy.stats
 
 from ._logging import get_logger
+from ._block_base import SignatureBlock, _NOT_CALCULATED
 
 log = get_logger(__name__)
 
 _SAMPLE_K = 3       # default exponent: 10^k independently sampled pairs
 _N_BOOTSTRAP = 999   # default bootstrap resamples for SE estimation
 
-_NOT_CALCULATED = object()
 
-
-class BlockF:
+class BlockF(SignatureBlock):
     """Block F — Connectivity features of a KG.
 
     Usage::
 
         b = BlockF().calculate(g)
         b.as_vector()                      # fixed-length comparison vector
+        b.as_dict()                        # named key-value pairs
         b.visualize()                      # interactive matplotlib figure
         b.visualize(mode="text")           # CLI summary
         b.visualize(path="out.png")        # save plot to file
@@ -38,11 +37,6 @@ class BlockF:
         self._clustering_coefficient = _NOT_CALCULATED
         self._degree_assortativity = _NOT_CALCULATED
         self._pair_dists_finite: np.ndarray | None = None  # for histogram in visualize
-
-    def _require(self, name: str, value: object) -> Any:
-        if value is _NOT_CALCULATED:
-            raise RuntimeError(f"Call calculate() before accessing {name}")
-        return value
 
     @property
     def num_components(self) -> int:
@@ -174,6 +168,18 @@ class BlockF:
             self.avg_shortest_path_length_se,
             self.clustering_coefficient,
             self.degree_assortativity,
+        ]
+
+    @classmethod
+    def feature_names(cls) -> list[str]:
+        """Return feature names in the same order as :meth:`as_vector`."""
+        return [
+            "num_components",
+            "largest_component_fraction",
+            "avg_shortest_path_length",
+            "avg_shortest_path_length_se",
+            "clustering_coefficient",
+            "degree_assortativity",
         ]
 
     @classmethod

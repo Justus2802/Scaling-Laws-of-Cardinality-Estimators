@@ -10,16 +10,15 @@ import numpy as np
 import scipy.sparse
 
 from ._logging import get_logger
+from ._block_base import SignatureBlock, _NOT_CALCULATED
 
 log = get_logger(__name__)
 
 _SAMPLE_BUDGET = 100_000  # default walk samples for path/tree templates
 _MAX_K = 10                # longest path template walk
 
-_NOT_CALCULATED = object()
 
-
-class BlockE:
+class BlockE(SignatureBlock):
     """Block E — Motif shape distribution of a KG.
 
     Exact counts for 3- and 4-node motifs on the undirected simplification.
@@ -29,6 +28,7 @@ class BlockE:
 
         b = BlockE().calculate(g)
         b.as_vector()                      # fixed-length comparison vector
+        b.as_dict()                        # named key-value pairs
         b.visualize()                      # interactive matplotlib figure
         b.visualize(mode="text")           # CLI summary
         b.visualize(path="out.png")        # save plot to file
@@ -47,11 +47,6 @@ class BlockE:
         self._path_template_entropy = _NOT_CALCULATED
         self._tree_template_zipf = _NOT_CALCULATED
         self._tree_template_entropy = _NOT_CALCULATED
-
-    def _require(self, name: str, value: object) -> Any:
-        if value is _NOT_CALCULATED:
-            raise RuntimeError(f"Call calculate() before accessing {name}")
-        return value
 
     @property
     def triangle_count(self) -> int:
@@ -195,6 +190,19 @@ class BlockE:
             vec.append(self.path_template_entropy.get(k, float("nan")))
         vec.extend([self.tree_template_zipf, self.tree_template_entropy])
         return vec  # length 7 + 9 + 9 + 9 + 2 = 36
+
+    @classmethod
+    def feature_names(cls) -> list[str]:
+        """Return feature names in the same order as :meth:`as_vector`."""
+        names = [
+            "triangle_count", "four_cycle_count", "five_cycle_count",
+            "six_cycle_count", "diamond_count", "k4_count", "tailed_triangle_count",
+        ]
+        names += [f"star_count_k{k}" for k in range(2, _MAX_K + 1)]
+        names += [f"path_template_zipf_k{k}" for k in range(2, _MAX_K + 1)]
+        names += [f"path_template_entropy_k{k}" for k in range(2, _MAX_K + 1)]
+        names += ["tree_template_zipf", "tree_template_entropy"]
+        return names
 
     @classmethod
     def get_na_vec(cls) -> list[float]:

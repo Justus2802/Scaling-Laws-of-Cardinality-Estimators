@@ -6,6 +6,7 @@ from typing import Optional
 
 from ._logging import get_logger
 from ._utils import RDF_TYPE, MIN_SAMPLES_FOR_FIT, PowerLawStats
+from ._block_base import SignatureBlock
 from .block_a import BlockA
 from .block_b import BlockB
 from .block_c import BlockC
@@ -47,6 +48,16 @@ class GraphSignature:
             else:
                 vec.extend(block.as_vector())
         return vec
+
+    def as_dict(self) -> dict[str, float]:
+        """Return named feature→value pairs; NaN-filled for uncomputed blocks."""
+        result: dict[str, float] = {}
+        for char, block in zip(_ALL_BLOCKS, (self.a, self.b, self.c, self.d, self.e, self.f)):
+            cls = _BLOCK_NA_VEC[char]
+            names = cls.feature_names()
+            values = block.as_vector() if block is not None else cls.get_na_vec()
+            result.update(zip(names, values))
+        return result
 
 
 def compute_signature(
@@ -120,6 +131,7 @@ def compute_signature(
 __all__ = [
     "get_logger",
     "RDF_TYPE", "MIN_SAMPLES_FOR_FIT", "PowerLawStats",
+    "SignatureBlock",
     "BlockA",
     "BlockB",
     "BlockC",

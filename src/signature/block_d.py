@@ -1,23 +1,21 @@
 """Block D — Characteristic set features."""
 
 from collections import defaultdict
-from typing import Any
 
 import igraph
 import matplotlib.pyplot as plt  # type: ignore[import-untyped]
 import numpy as np
 
 from ._logging import get_logger
+from ._block_base import SignatureBlock, _NOT_CALCULATED
 from ._utils import PowerLawStats, _fit_powerlaw, _nan_power_law_stats
 
 log = get_logger(__name__)
 
 _TOP_K_PAIRS = 20  # top pair frequencies kept in as_vector(); mirrors _TOP_K_SV
 
-_NOT_CALCULATED = object()
 
-
-class BlockD:
+class BlockD(SignatureBlock):
     """Block D — Characteristic set features of a KG.
 
     A characteristic set (CS) of a subject entity is the set of predicates it
@@ -29,6 +27,7 @@ class BlockD:
 
         d = BlockD().calculate(g)
         d.as_vector()                      # fixed-length comparison vector
+        d.as_dict()                        # named key-value pairs
         d.visualize()                      # interactive matplotlib figure
         d.visualize(mode="text")           # CLI summary
         d.visualize(path="out.png")        # save plot to file
@@ -54,11 +53,6 @@ class BlockD:
         # visualization-only
         self._cs_sizes = _NOT_CALCULATED
         self._inv_cs_sizes = _NOT_CALCULATED
-
-    def _require(self, name: str, value: object) -> Any:
-        if value is _NOT_CALCULATED:
-            raise RuntimeError(f"Call calculate() before accessing {name}")
-        return value
 
     # ── properties ────────────────────────────────────────────────────────────
 
@@ -185,6 +179,19 @@ class BlockD:
             self.pair_freq_stats.alpha,
             self.pair_freq_stats.ks,
         ]
+
+    @classmethod
+    def feature_names(cls) -> list[str]:
+        """Return feature names in the same order as :meth:`as_vector`."""
+        names = [
+            "num_distinct_cs", "cs_freq_alpha", "cs_freq_ks",
+            "cs_size_mean", "cs_size_median", "cs_size_p90",
+            "inv_num_distinct_cs", "inv_cs_freq_alpha", "inv_cs_freq_ks",
+            "inv_cs_size_mean", "inv_cs_size_median", "inv_cs_size_p90",
+        ]
+        names += [f"pair_freq_top_{i:02d}" for i in range(1, _TOP_K_PAIRS + 1)]
+        names += ["pair_freq_alpha", "pair_freq_ks"]
+        return names
 
     @classmethod
     def get_na_vec(cls) -> list[float]:

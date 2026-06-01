@@ -1,7 +1,6 @@
 """Block C — Schema and relation correlation features."""
 
 from collections import defaultdict
-from typing import Any
 
 import igraph
 import matplotlib.pyplot as plt  # type: ignore[import-untyped]
@@ -10,16 +9,15 @@ import scipy.sparse
 import scipy.sparse.linalg
 
 from ._logging import get_logger
+from ._block_base import SignatureBlock, _NOT_CALCULATED
 from ._utils import RDF_TYPE, _fit_powerlaw
 
 log = get_logger(__name__)
 
 _TOP_K_SV = 10  # number of singular values to keep
 
-_NOT_CALCULATED = object()
 
-
-class BlockC:
+class BlockC(SignatureBlock):
     """Block C — Schema and relation correlation features of a KG.
 
     Captures how relations co-occur on subjects and objects (via co-occurrence
@@ -30,6 +28,7 @@ class BlockC:
 
         c = BlockC().calculate(g)
         c.as_vector()                      # fixed-length comparison vector
+        c.as_dict()                        # named key-value pairs
         c.visualize()                      # interactive matplotlib figure
         c.visualize(mode="text")           # CLI summary
         c.visualize(path="out.png")        # save plot to file
@@ -46,11 +45,6 @@ class BlockC:
         self._class_size_zipf_exponent = _NOT_CALCULATED
         self._class_sizes = _NOT_CALCULATED
         self._type_relation_conditional = _NOT_CALCULATED
-
-    def _require(self, name: str, value: object) -> Any:
-        if value is _NOT_CALCULATED:
-            raise RuntimeError(f"Call calculate() before accessing {name}")
-        return value
 
     @property
     def subj_singular_values(self) -> np.ndarray:
@@ -202,6 +196,17 @@ class BlockC:
             + [self.obj_cooc_density, obj_ent, obj_ent_std]
             + [float(self.num_classes), self.class_size_zipf_exponent, mean_type_rel_ent]
         )
+
+    @classmethod
+    def feature_names(cls) -> list[str]:
+        """Return feature names in the same order as :meth:`as_vector`."""
+        names: list[str] = []
+        names += [f"subj_singular_value_{i:02d}" for i in range(1, _TOP_K_SV + 1)]
+        names += ["subj_cooc_density", "subj_row_entropy_mean", "subj_row_entropy_std"]
+        names += [f"obj_singular_value_{i:02d}" for i in range(1, _TOP_K_SV + 1)]
+        names += ["obj_cooc_density", "obj_row_entropy_mean", "obj_row_entropy_std"]
+        names += ["num_classes", "class_size_zipf_exponent", "mean_type_relation_entropy"]
+        return names
 
     @classmethod
     def get_na_vec(cls) -> list[float]:
