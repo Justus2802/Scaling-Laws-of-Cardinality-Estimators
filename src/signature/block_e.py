@@ -132,8 +132,8 @@ class BlockE(SignatureBlock):
         log.info("Block E: computed k4_count (%d)", self._k4_count)
         log.info("Block E: computed tailed_triangle_count (%d)", self._tailed_triangle_count)
 
-        log.info("Block E: computing stars (exact degree formula, k=2..10)…")
-        self._star_counts = self._count_stars(g_und)
+        log.info("Block E: computing stars (color coding star treelet, k=2..10)…")
+        self._star_counts = self._cc_run_stars(g_und, _n_cc, _rng)
         log.info(
             "Block E: computed star_counts (k=2..10 totals=%s)",
             [self._star_counts.get(k, 0) for k in range(2, 11)],
@@ -646,24 +646,115 @@ class BlockE(SignatureBlock):
         return four_cycle, diamond, k4, tailed
 
     @staticmethod
-    def _count_stars(g_und: igraph.Graph) -> dict[int, int]:
-        """Exact k-star counts for k=2..10 via the degree distribution.
+    def _cc_run_stars(
+        g_und: igraph.Graph,
+        n_samples: int,
+        rng: np.random.Generator,
+    ) -> dict[int, int]:
+        """Color coding estimator for induced k-star counts, k=2..10.
 
-        Vectorised: comb(d, k) = prod_{i=0}^{k-1} (d-i)/(i+1) computed with
-        numpy over the degree array — avoids a Python-level loop per vertex.
+        A k-star = one center connected to k leaves with NO edges between leaves.
+
+        Star treelet DP (one run per k):
+          1. Assign k+1 random colors.
+          2. color_hist[v,c] = # neighbours of v with color c  (sparse mat-mul).
+          3. dp_star[v] = Π_{c ≠ color[v]} color_hist[v,c]
+             (# colourful star choices centred at v).
+          4. Sample n_samples centres ∝ dp_star; for each centre pick one
+             neighbour per non-own colour.
+          5. Classify the induced subgraph: accept as a k-star only if all
+             leaves have internal degree 1 (no leaf-leaf edges).
+          6. Estimate: ĝ = (raw_star/n_valid) × t / σ / p_{k+1}
+             where σ=1 (only the centre can root the star spanning tree)
+             and p_{k+1} = (k+1)!/(k+1)^{k+1}.
         """
-        degrees = np.array(g_und.degree(), dtype=np.float64)
-        result: dict[int, int] = {}
+        n = g_und.vcount()
+        if n == 0:
+            return {k: 0 for k in range(2, 11)}
+
+        A_csr = scipy.sparse.csr_matrix(g_und.get_adjacency_sparse())
+        adj   = [np.array(g_und.neighbors(v), dtype=np.int32) for v in range(n)]
+
+        results: dict[int, int] = {}
+
         for k in range(2, 11):
-            d = degrees[degrees >= k]
-            if d.size == 0:
-                result[k] = 0
+            K   = k + 1                              # total nodes (centre + k leaves)
+            p_K = math.factorial(K) / (K ** K)
+
+            colors = rng.integers(0, K, size=n, dtype=np.int32)
+
+            # color_hist[v, c] = # neighbours of v with color c via sparse mul.
+            one_hot            = np.zeros((n, K), dtype=np.float32)
+            one_hot[np.arange(n), colors] = 1.0
+            color_hist         = (A_csr @ one_hot).astype(np.float64)  # (n, K)
+
+            # dp_star[v] = Π_{c ≠ colors[v]} color_hist[v, c]
+            # Vectorised: for each colour c, multiply into dp_star only for
+            # nodes whose own colour is NOT c.
+            dp_star = np.ones(n, dtype=np.float64)
+            for c in range(K):
+                mask = (colors != c)
+                dp_star[mask] *= color_hist[mask, c]
+
+            t = float(dp_star.sum())
+            if t == 0:
+                results[k] = 0
                 continue
-            vals = np.ones(d.size, dtype=np.float64)
-            for i in range(k):
-                vals *= (d - i) / (i + 1)
-            result[k] = int(float(np.sum(vals)))
-        return result
+
+            # Pre-sample all centres at once.
+            w       = dp_star / t
+            centres = rng.choice(n, size=n_samples, p=w)
+
+            # Precompute neighbours-by-colour for every unique centre
+            # (avoids repeating the O(deg) filter for high-degree hubs).
+            unique_centres = np.unique(centres)
+            adj_by_color: dict[int, dict[int, np.ndarray]] = {}
+            for v in unique_centres:
+                v = int(v)
+                nb = adj[v]
+                adj_by_color[v] = {
+                    c: nb[colors[nb] == c] for c in range(K)
+                } if len(nb) > 0 else {c: np.array([], dtype=np.int32) for c in range(K)}
+
+            raw_star = 0
+            n_valid  = 0
+
+            for centre in centres:
+                v  = int(centre)
+                c0 = int(colors[v])
+                leaf_nodes = [v]
+                ok = True
+
+                for c in range(K):
+                    if c == c0:
+                        continue
+                    cands = adj_by_color[v][c]
+                    if len(cands) == 0:
+                        ok = False
+                        break
+                    leaf_nodes.append(int(cands[rng.integers(len(cands))]))
+
+                if not ok or len(set(leaf_nodes)) != K:
+                    continue
+                n_valid += 1
+
+                # Accept as induced k-star only if no leaf is connected to another leaf.
+                leaf_set = set(leaf_nodes)
+                leaves   = leaf_nodes[1:]
+                deg_in   = sorted(
+                    int(np.sum(np.isin(adj[u], list(leaf_set))))
+                    for u in leaf_nodes
+                )
+                if deg_in == [1] * k + [k]:
+                    raw_star += 1
+
+            if n_valid == 0:
+                results[k] = 0
+            else:
+                # σ = 1: only the centre can root the star spanning treelet.
+                results[k] = max(0, int(round((raw_star / n_valid) * t / p_K)))
+
+        return results
 
     @staticmethod
     def _estimate_k_cycle(
