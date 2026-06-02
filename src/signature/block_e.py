@@ -295,14 +295,14 @@ class BlockE(SignatureBlock):
             ax.set_title("Subgraph motif counts")
             ax.tick_params(axis="x", labelsize=8)
 
-            # Star counts by k
+            # Star counts by k — use float to avoid C-long overflow on bigints
             ax = axes[1]
             ks = list(range(2, 11))
-            star_vals = [self.star_counts.get(k, 0) for k in ks]
+            star_vals = [float(self.star_counts.get(k, 0)) for k in ks]
             ax.bar([str(k) for k in ks], star_vals, color="darkorange")
             ax.set_xlabel("k")
             ax.set_ylabel("count")
-            ax.set_title("k-star counts (exact)")
+            ax.set_title("k-star counts (CC induced)")
 
             # Path template zipf alpha and entropy vs k
             ax = axes[2]
