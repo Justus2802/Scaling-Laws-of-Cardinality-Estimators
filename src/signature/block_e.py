@@ -150,11 +150,21 @@ class BlockE(SignatureBlock):
         log.info("Block E: computed six_cycle_count (~%d)", self._six_cycle_count)
 
         # Path templates: for each k, compute Zipf + entropy of the CC graphlet-type
-        # distribution at that size.  k=2..6 reuse the runs above; k=7..10 require
-        # 2^k×n DP tables that are too large on big graphs, so they are set to NaN.
-        log.info("Block E: computing path templates (color coding k=2..6)…")
+        # distribution at that size.  k=2..6 always run.  k=7..10 are run only when
+        # the DP fits in ~1 GB: n × 2^k × k × 4 bytes ≤ 1 GB → n ≤ 1e9 / (k×2^k×4).
+        log.info("Block E: computing path templates (color coding k=2..10)…")
         motifs2 = BlockE._cc_run(g_und, 2, _n_cc, _rng)
         _cc_by_k = {2: motifs2, 3: motifs3, 4: motifs4, 5: motifs5, 6: motifs6}
+        for _k in range(7, 11):
+            _dp_bytes = n * (1 << _k) * _k * 4
+            if _dp_bytes <= 1_000_000_000:
+                log.info("Block E: computing path template k=%d (color coding)…", _k)
+                _cc_by_k[_k] = BlockE._cc_run(g_und, _k, _n_cc, _rng)
+            else:
+                log.info(
+                    "Block E: skipping path template k=%d (DP would need %.1f GB > 1 GB limit)",
+                    _k, _dp_bytes / 1e9,
+                )
 
         self._path_template_zipf    = {}
         self._path_template_entropy = {}
