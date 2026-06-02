@@ -70,19 +70,25 @@ def main() -> None:
     written.append(summary_path)
     print(f"  Saved  : {summary_path}")
 
-    # Write JSON — named key/value pairs plus raw vector for ML pipelines.
+    # Write combined named-feature JSON (key:value, no raw array).
     json_path = out_dir / "signature.json"
     named = sig.as_dict()
-    vector = list(named.values())
     json_path.write_text(
-        json.dumps({"source": str(args.kg_file), "features": named, "vector": vector}, indent=2)
+        json.dumps({"source": str(args.kg_file), "features": named}, indent=2)
     )
     written.append(json_path)
     print(f"  Saved  : {json_path}")
 
+    # Serialize each block's full internal state for later reconstruction.
+    for label, block in computed_blocks:
+        block_path = out_dir / f"block_{label}.json"
+        block_path.write_text(json.dumps(block.to_serializable(), indent=2))
+        written.append(block_path)
+        print(f"  Saved  : {block_path}")
+
     print()
     print(f"Done. {len(written)} files written to {out_dir}/")
-    print(f"Vector length: {len(vector)} features")
+    print(f"Feature count: {len(named)}")
 
 
 if __name__ == "__main__":

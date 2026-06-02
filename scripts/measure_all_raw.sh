@@ -7,7 +7,7 @@ set -u
 cd "$(dirname "$0")/.." || exit 1
 
 PY=.venv/bin/python
-BLOCKS="a,b,c,d,f"   # all blocks except 'e' (motifs)
+BLOCKS="a,b,c,d,e,f"   # all blocks except 'e' (motifs)
 
 # Temp .nt copy so the loader (which needs .nt/.ttl) accepts the extensionless file.
 FREEBASE_SRC="graphs/data/raw/59621618"

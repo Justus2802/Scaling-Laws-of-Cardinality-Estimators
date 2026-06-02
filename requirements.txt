@@ -4,3 +4,4 @@ rdflib>=7.0
 igraph>=1.0
 powerlaw>=1.5
 pytest>=7.0
+pytest-timeout>=2.1
