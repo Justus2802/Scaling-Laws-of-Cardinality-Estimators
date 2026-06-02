@@ -129,6 +129,7 @@ class BlockE:
             _scale = 1.0
 
         # Triangles: exact count on the full undirected graph (no sampling).
+        log.info("Block E: computing triangles (list_triangles)…")
         _tris = g_und.list_triangles() if n >= 3 else []
         self._triangle_count = len(_tris)
         log.info("Block E: computed triangle_count (%d)", self._triangle_count)
@@ -139,6 +140,7 @@ class BlockE:
         # 4-node motifs: color coding for large graphs, exact for small.
         if n >= 4:
             if n > _LARGE_N:
+                log.info("Block E: computing 4-node motifs (color coding k=4, %d samples)…", _n_cc)
                 motifs4 = BlockE._cc_run(g_cc, 4, _n_cc, _rng)
                 s4 = _scale ** 4
                 self._four_cycle_count      = int(round(motifs4.get((2, 2, 2, 2), 0) * s4))
@@ -146,7 +148,7 @@ class BlockE:
                 self._k4_count              = int(round(motifs4.get((3, 3, 3, 3), 0) * s4))
                 self._tailed_triangle_count = int(round(motifs4.get((1, 2, 2, 3), 0) * s4))
             else:
-                # Exact counts for small graphs (keeps tests passing).
+                log.info("Block E: computing 4-node motifs (exact)…")
                 _c4, _dia, _k4, _tail = BlockE._count_4node_motifs(g_und, _tris)
                 self._four_cycle_count      = _c4
                 self._diamond_count         = _dia
@@ -161,6 +163,7 @@ class BlockE:
         log.info("Block E: computed tailed_triangle_count (%d)", self._tailed_triangle_count)
 
         # Stars: exact on g_cc, each k-star (k+1 nodes) scaled by s^(k+1).
+        log.info("Block E: computing stars (exact degree formula, k=2..10)…")
         _raw_stars = self._count_stars(g_cc)
         if _scale > 1.0:
             self._star_counts = {
@@ -176,19 +179,23 @@ class BlockE:
         n_cycle = max(1, sample_budget // 10)
         motif_rng = np.random.default_rng(0)
         if n > _LARGE_N:
-            # Color coding for 5- and 6-cycles on large graphs.
+            log.info("Block E: computing 5-cycle (color coding k=5, %d samples)…", _n_cc)
             motifs5 = BlockE._cc_run(g_cc, 5, _n_cc, _rng)
             self._five_cycle_count = int(round(motifs5.get((2, 2, 2, 2, 2), 0) * _scale ** 5))
+            log.info("Block E: computing 6-cycle (color coding k=6, %d samples)…", _n_cc)
             motifs6 = BlockE._cc_run(g_cc, 6, _n_cc, _rng)
             self._six_cycle_count  = int(round(motifs6.get((2, 2, 2, 2, 2, 2), 0) * _scale ** 6))
         else:
+            log.info("Block E: computing 5-cycle (random walk, %d samples)…", n_cycle)
             self._five_cycle_count = self._estimate_k_cycle(g_und, 5, n_cycle, motif_rng)
+            log.info("Block E: computing 6-cycle (random walk, %d samples)…", n_cycle)
             self._six_cycle_count  = self._estimate_k_cycle(g_und, 6, n_cycle, motif_rng)
         log.info("Block E: computed five_cycle_count (~%d)", self._five_cycle_count)
         log.info("Block E: computed six_cycle_count (~%d)", self._six_cycle_count)
 
         # Path and tree templates from directed graph.
         # One combined walk pass fills all k=2..10 at once (vs 9 separate passes).
+        log.info("Block E: computing path templates (directed walk, budget=%d)…", sample_budget)
         out_edges, start_verts_list = self._build_out_adj(g)
         start_verts = np.array(start_verts_list)
 
@@ -205,6 +212,7 @@ class BlockE:
                 "Block E: computed path_template_entropy (k=2..10 entropies=%s)",
                 [round(self._path_template_entropy.get(k, float("nan")), 4) for k in range(2, 11)],
             )
+            log.info("Block E: computing tree templates (directed walk, budget=%d)…", sample_budget)
             rng2 = np.random.default_rng(2)
             tree_counts = self._sample_tree_depth2_templates(
                 out_edges, start_verts, sample_budget, rng2
