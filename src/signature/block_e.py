@@ -149,43 +149,43 @@ class BlockE(SignatureBlock):
         self._six_cycle_count = motifs6.get((2, 2, 2, 2, 2, 2), 0)
         log.info("Block E: computed six_cycle_count (~%d)", self._six_cycle_count)
 
-        # Path and tree templates from directed graph.
-        # One combined walk pass fills all k=2..10 at once (vs 9 separate passes).
-        log.info("Block E: computing path templates (directed walk, budget=%d)…", sample_budget)
-        out_edges, start_verts_list = self._build_out_adj(g)
-        start_verts = np.array(start_verts_list)
+        # Path templates: for each k, compute Zipf + entropy of the CC graphlet-type
+        # distribution at that size.  k=2..6 reuse the runs above; k=7..10 require
+        # 2^k×n DP tables that are too large on big graphs, so they are set to NaN.
+        log.info("Block E: computing path templates (color coding k=2..6)…")
+        motifs2 = BlockE._cc_run(g_und, 2, _n_cc, _rng)
+        _cc_by_k = {2: motifs2, 3: motifs3, 4: motifs4, 5: motifs5, 6: motifs6}
 
-        if start_verts.size > 0:
-            rng = np.random.default_rng(1)
-            self._path_template_zipf, self._path_template_entropy = (
-                self._sample_all_path_templates(out_edges, start_verts, sample_budget, rng)
-            )
-            log.info(
-                "Block E: computed path_template_zipf (k=2..10 alphas=%s)",
-                [round(self._path_template_zipf.get(k, float("nan")), 4) for k in range(2, 11)],
-            )
-            log.info(
-                "Block E: computed path_template_entropy (k=2..10 entropies=%s)",
-                [round(self._path_template_entropy.get(k, float("nan")), 4) for k in range(2, 11)],
-            )
-            log.info("Block E: computing tree templates (directed walk, budget=%d)…", sample_budget)
-            rng2 = np.random.default_rng(2)
-            tree_counts = self._sample_tree_depth2_templates(
-                out_edges, start_verts, sample_budget, rng2
-            )
-            self._tree_template_zipf, self._tree_template_entropy = self._template_stats(tree_counts)
-            log.info(
-                "Block E: computed tree_template stats (zipf_alpha=%.4f, entropy=%.4f)",
-                self._tree_template_zipf, self._tree_template_entropy,
-            )
-        else:
-            self._path_template_zipf = {}
-            self._path_template_entropy = {}
-            self._tree_template_zipf = float("nan")
-            self._tree_template_entropy = float("nan")
-            log.info(
-                "Block E: computed path/tree template stats (no start vertices, all NaN/empty)"
-            )
+        self._path_template_zipf    = {}
+        self._path_template_entropy = {}
+        for _k in range(2, 11):
+            if _k in _cc_by_k:
+                _z, _e = BlockE._template_stats(_cc_by_k[_k])
+            else:
+                _z, _e = float("nan"), float("nan")
+            self._path_template_zipf[_k]    = _z
+            self._path_template_entropy[_k] = _e
+        log.info(
+            "Block E: computed path_template_zipf (k=2..10 alphas=%s)",
+            [round(self._path_template_zipf.get(k, float("nan")), 4) for k in range(2, 11)],
+        )
+        log.info(
+            "Block E: computed path_template_entropy (k=2..10 entropies=%s)",
+            [round(self._path_template_entropy.get(k, float("nan")), 4) for k in range(2, 11)],
+        )
+
+        # Tree templates: Zipf + entropy of the combined graphlet-type distribution
+        # across all CC runs (k=3..6), treating each (k, deg_seq) pair as a type.
+        log.info("Block E: computing tree templates (combined CC k=3..6)…")
+        _combined: dict[tuple, int] = {}
+        for _k in range(3, 7):
+            for _ds, _cnt in _cc_by_k[_k].items():
+                _combined[(_k,) + _ds] = _combined.get((_k,) + _ds, 0) + _cnt
+        self._tree_template_zipf, self._tree_template_entropy = BlockE._template_stats(_combined)
+        log.info(
+            "Block E: computed tree_template stats (zipf_alpha=%.4f, entropy=%.4f)",
+            self._tree_template_zipf, self._tree_template_entropy,
+        )
 
         return self
 
