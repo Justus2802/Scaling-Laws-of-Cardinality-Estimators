@@ -108,49 +108,50 @@ class BlockE:
 
         Exact counts for 3- and 4-node motifs on the undirected simplification.
         Path and tree templates are estimated by random walk sampling.
+        For large graphs (n >= _LARGE_N), 4-node and 5/6-cycle counts are
+        estimated via color coding (Bressan et al. 2021) on a sampled subgraph.
         """
         g_und = g.as_undirected(combine_edges="first").simplify()
         n = g_und.vcount()
 
-        # For large graphs, sample _SAMPLE_N seed nodes.
-        # Triangles and stars use the simple induced subgraph of the seeds.
-        # 4-node motifs use a dedicated per-seed sampler (_count_4node_motifs_sampled)
-        # that looks up each seed's actual neighbors from the full graph, so a
-        # 4-node motif containing a seed can involve any node in the graph.
+        # Build color-coding subgraph (or full graph for small n).
         if n > _LARGE_N:
-            _rng_s = np.random.default_rng(42)
-            _seeds = _rng_s.choice(n, size=min(n, _SAMPLE_N), replace=False)
-            g_motif = g_und.induced_subgraph(_seeds.tolist())
-            _scale  = float(n) / len(_seeds)
+            _rng_cc = np.random.default_rng(42)
+            _ids    = _rng_cc.choice(n, size=min(n, _SAMPLE_N), replace=False)
+            g_cc    = g_und.induced_subgraph(_ids.tolist())
+            _scale  = float(n) / len(_ids)
             log.info(
-                "Block E: large graph (%d nodes) — sampling %d seeds"
-                " for structural counts (scale=%.2f)",
-                n, len(_seeds), _scale,
+                "Block E: large graph (%d nodes) — CC on %d-node subgraph (scale=%.2f)",
+                n, len(_ids), _scale,
             )
         else:
-            _seeds  = None
-            g_motif = g_und
-            _scale  = 1.0
-
-        nm = g_motif.vcount()
+            g_cc   = g_und
+            _scale = 1.0
 
         # Triangles: exact count on the full undirected graph (no sampling).
         _tris = g_und.list_triangles() if n >= 3 else []
         self._triangle_count = len(_tris)
         log.info("Block E: computed triangle_count (%d)", self._triangle_count)
 
-        # 4-node motifs.
-        # Large graph: per-seed sampler with full adjacency (already scaled).
-        # Small graph: exact counts on the full graph.
-        if nm >= 4:
-            if _seeds is not None:
-                _c4, _dia, _k4, _tail = self._count_4node_motifs_sampled(g_und, _seeds)
+        _n_cc = max(2000, sample_budget // 5)
+        _rng  = np.random.default_rng(1)
+
+        # 4-node motifs: color coding for large graphs, exact for small.
+        if n >= 4:
+            if n > _LARGE_N:
+                motifs4 = BlockE._cc_run(g_cc, 4, _n_cc, _rng)
+                s4 = _scale ** 4
+                self._four_cycle_count      = int(round(motifs4.get((2, 2, 2, 2), 0) * s4))
+                self._diamond_count         = int(round(motifs4.get((2, 2, 3, 3), 0) * s4))
+                self._k4_count              = int(round(motifs4.get((3, 3, 3, 3), 0) * s4))
+                self._tailed_triangle_count = int(round(motifs4.get((1, 2, 2, 3), 0) * s4))
             else:
-                _c4, _dia, _k4, _tail = self._count_4node_motifs(g_motif, _tris)
-            self._four_cycle_count      = _c4
-            self._diamond_count         = _dia
-            self._k4_count              = _k4
-            self._tailed_triangle_count = _tail
+                # Exact counts for small graphs (keeps tests passing).
+                _c4, _dia, _k4, _tail = BlockE._count_4node_motifs(g_und, _tris)
+                self._four_cycle_count      = _c4
+                self._diamond_count         = _dia
+                self._k4_count              = _k4
+                self._tailed_triangle_count = _tail
         else:
             self._four_cycle_count = self._diamond_count = 0
             self._k4_count = self._tailed_triangle_count = 0
@@ -159,8 +160,8 @@ class BlockE:
         log.info("Block E: computed k4_count (%d)", self._k4_count)
         log.info("Block E: computed tailed_triangle_count (%d)", self._tailed_triangle_count)
 
-        # Stars: exact on g_motif, each k-star (k+1 nodes) scaled by s^(k+1).
-        _raw_stars = self._count_stars(g_motif)
+        # Stars: exact on g_cc, each k-star (k+1 nodes) scaled by s^(k+1).
+        _raw_stars = self._count_stars(g_cc)
         if _scale > 1.0:
             self._star_counts = {
                 k: int(round(v * _scale ** (k + 1))) for k, v in _raw_stars.items()
@@ -171,12 +172,20 @@ class BlockE:
             "Block E: computed star_counts (k=2..10 totals=%s)",
             [self._star_counts.get(k, 0) for k in range(2, 11)],
         )
-        motif_rng = np.random.default_rng(0)
+
         n_cycle = max(1, sample_budget // 10)
-        self._five_cycle_count = self._estimate_k_cycle(g_und, 5, n_cycle, motif_rng)
-        log.info("Block E: computed five_cycle_count (~%d, sampled)", self._five_cycle_count)
-        self._six_cycle_count = self._estimate_k_cycle(g_und, 6, n_cycle, motif_rng)
-        log.info("Block E: computed six_cycle_count (~%d, sampled)", self._six_cycle_count)
+        motif_rng = np.random.default_rng(0)
+        if n > _LARGE_N:
+            # Color coding for 5- and 6-cycles on large graphs.
+            motifs5 = BlockE._cc_run(g_cc, 5, _n_cc, _rng)
+            self._five_cycle_count = int(round(motifs5.get((2, 2, 2, 2, 2), 0) * _scale ** 5))
+            motifs6 = BlockE._cc_run(g_cc, 6, _n_cc, _rng)
+            self._six_cycle_count  = int(round(motifs6.get((2, 2, 2, 2, 2, 2), 0) * _scale ** 6))
+        else:
+            self._five_cycle_count = self._estimate_k_cycle(g_und, 5, n_cycle, motif_rng)
+            self._six_cycle_count  = self._estimate_k_cycle(g_und, 6, n_cycle, motif_rng)
+        log.info("Block E: computed five_cycle_count (~%d)", self._five_cycle_count)
+        log.info("Block E: computed six_cycle_count (~%d)", self._six_cycle_count)
 
         # Path and tree templates from directed graph.
         # One combined walk pass fills all k=2..10 at once (vs 9 separate passes).
@@ -451,110 +460,142 @@ class BlockE:
         return dict(counts)
 
     @staticmethod
-    def _count_4node_motifs_sampled(
+    def _cc_run(
         g_und: igraph.Graph,
-        seed_ids: np.ndarray,
-    ) -> tuple[int, int, int, int]:
-        """Estimate 4-node motif counts using seed nodes with full-graph adjacency.
+        k: int,
+        n_samples: int,
+        rng: np.random.Generator,
+    ) -> dict[tuple[int, ...], int]:
+        """Color coding estimator for k-node graphlet counts (Bressan et al. 2021).
 
-        For each seed v treated as the minimum-ID node, we enumerate motifs
-        {v, a, b, c} where a, b, c can be ANY node in the full graph — not just
-        other seeds.  Because each motif is counted exactly once (when its
-        minimum-ID node is a seed), scaling by n/|seeds| gives an unbiased
-        estimate.
+        Randomly assigns k colors, builds a directed path-treelet DP via sparse
+        matrix products, samples n_samples colorful k-paths by backtracking, and
+        returns {degree_sequence_tuple: estimated_count}.
 
-        High-degree seeds (> _DEG_CAP) are excluded from the O(deg²) K4/tailed
-        loops to keep runtime bounded; A²-based diamond/C4 still include them.
+        The σ_H correction (number of directed P_k paths spanning motif H) and
+        the p_k = k!/k^k colorfulness probability are applied so the returned
+        counts estimate the true graphlet frequencies.
+
+        Args:
+            g_und: Undirected simple graph.
+            k: Motif size (number of nodes in the graphlet).
+            n_samples: Number of colorful paths to sample for classification.
+            rng: NumPy random generator.
+
+        Returns:
+            Dict mapping sorted degree-sequence tuples to estimated counts.
         """
-        _DEG_CAP = 500
+        # σ_H: number of directed spanning P_k paths for each graphlet type.
+        # Only the graphlet types relevant to k=4, 5, 6 are listed.
+        _SIGMA: dict[tuple[int, ...], int] = {
+            # k=4
+            (1, 1, 2, 2): 2,   # P4 path
+            (2, 2, 2, 2): 8,   # C4
+            (1, 2, 2, 3): 4,   # tailed triangle
+            (2, 2, 3, 3): 8,   # diamond
+            (3, 3, 3, 3): 24,  # K4
+            # k=5
+            (2, 2, 2, 2, 2): 10,  # C5
+            # k=6
+            (2, 2, 2, 2, 2, 2): 12,  # C6
+        }
+        p_k = math.factorial(k) / (k ** k)
 
-        n   = g_und.vcount()
-        adj = [g_und.neighbors(v) for v in range(n)]
+        n = g_und.vcount()
+        if n < k:
+            return {}
 
-        # Adjacency sets built lazily — only for nodes actually accessed.
-        _cache: dict[int, set] = {}
+        # Assign random colors in {0, ..., k-1} to each node.
+        colors = rng.integers(0, k, size=n, dtype=np.int32)
 
-        def aset(u: int) -> set:
-            s = _cache.get(u)
-            if s is None:
-                s = set(adj[u])
-                _cache[u] = s
-            return s
+        # Build sparse adjacency matrix for DP message passing.
+        n_sets   = 1 << k
+        full_set = n_sets - 1
+        A = scipy.sparse.csr_matrix(g_und.get_adjacency_sparse()).astype(np.float32)
 
-        k4_raw     = 0
-        tailed_raw = 0
-        edge_C     = 0.0
-        total_C    = 0.0
+        # dp[v, S] = number of colorful paths of length |S| ending at v with color set S.
+        dp = np.zeros((n, n_sets), dtype=np.float32)
+        for v in range(n):
+            dp[v, 1 << int(colors[v])] = 1.0
+        dp_levels = [dp]
 
-        for v in seed_ids:
-            adj_v = adj[v]
-            set_v = aset(v)
+        for step in range(1, k):
+            dp_next = np.zeros((n, n_sets), dtype=np.float32)
+            for c in range(k):
+                mc = 1 << c
+                # Source sets: size exactly `step`, not containing color c.
+                S_src = np.array(
+                    [S for S in range(n_sets)
+                     if not (S & mc) and bin(S).count('1') == step],
+                    dtype=np.int32,
+                )
+                if len(S_src) == 0:
+                    continue
+                S_dst = S_src | mc
+                # Only nodes with color c can be the new endpoint.
+                node_mask = (colors == c).astype(np.float32)[:, None]
+                dp_next[:, S_dst] += (A @ dp_levels[-1][:, S_src]) * node_mask
+            dp_levels.append(dp_next)
 
-            # A²-row: w[j] = |N(v) ∩ N(j)| via neighbour-of-neighbour counting.
-            w: dict[int, int] = {}
-            for u in adj_v:
-                for j in adj[u]:
-                    if j != v:
-                        w[j] = w.get(j, 0) + 1
+        # Total colorful k-paths (used to scale estimates).
+        t = float(dp_levels[-1][:, full_set].sum())
+        if t == 0:
+            return {}
 
-            # total_C contribution: C(w[j], 2) for all j > v.
-            for j, wj in w.items():
-                if j > v and wj >= 2:
-                    total_C += wj * (wj - 1) / 2.0
+        # Pre-build neighbor lists for fast sampling.
+        adj = [np.array(g_und.neighbors(v), dtype=np.int32) for v in range(n)]
 
-            # edge_C contribution: C(w[j], 2) for edges (v, j) with j > v.
-            for j in adj_v:
-                if j > v:
-                    wj = w.get(j, 0)
-                    if wj >= 2:
-                        edge_C += wj * (wj - 1) / 2.0
+        # Sampling weights for final level.
+        wfinal = dp_levels[-1][:, full_set].astype(np.float64)
+        wfinal /= wfinal.sum()
 
-            # K4 and tailed triangle require O(deg²) pair enumeration — skip hubs.
-            if len(adj_v) > _DEG_CAP:
+        raw_counts: defaultdict[tuple[int, ...], int] = defaultdict(int)
+        n_valid = 0
+
+        for _ in range(n_samples):
+            # Pick leaf node proportional to its weight in the final DP level.
+            v = int(rng.choice(n, p=wfinal))
+            nodes = [v]
+            S = full_set
+            ok = True
+            # Backtrack through the DP levels to reconstruct a colorful path.
+            for level in range(k - 1, 0, -1):
+                S_prev = S ^ (1 << int(colors[v]))
+                nbrs = adj[v]
+                if len(nbrs) == 0:
+                    ok = False
+                    break
+                nw = dp_levels[level - 1][nbrs, S_prev].astype(np.float64)
+                tot = nw.sum()
+                if tot == 0:
+                    ok = False
+                    break
+                v = int(nbrs[rng.choice(len(nbrs), p=nw / tot)])
+                nodes.append(v)
+                S = S_prev
+            if not ok:
                 continue
+            node_set = set(nodes)
+            if len(node_set) != k:
+                # Duplicate nodes → not a valid k-node induced subgraph.
+                continue
+            n_valid += 1
+            # Classify by sorted internal degree sequence of the induced subgraph.
+            deg_in = tuple(sorted(
+                sum(1 for nb in adj[v] if nb in node_set) for v in node_set
+            ))
+            raw_counts[deg_in] += 1
 
-            N_plus = sorted(u for u in adj_v if u > v)
+        if n_valid == 0:
+            return {}
 
-            for i, a in enumerate(N_plus):
-                set_a = aset(a)
-                for b in N_plus[i + 1:]:
-                    if b not in set_a:
-                        continue  # no edge a-b → no triangle (v, a, b)
-                    set_b = aset(b)
-                    abc   = {v, a, b}
-
-                    # K4: find c ∈ N(v) ∩ N(a) ∩ N(b) with c > b (→ v<a<b<c).
-                    for c in N_plus:
-                        if c > b and c in set_a and c in set_b:
-                            k4_raw += 1
-
-                    # Tailed triangle: pendant from each of the three triangle vertices.
-                    # Pendant from v: c ∈ N(v), c > v, not connected to a or b.
-                    tailed_raw += sum(
-                        1 for c in adj_v
-                        if c > v and c not in abc and c not in set_a and c not in set_b
-                    )
-                    # Pendant from a: c ∈ N(a), c > v, not connected to v or b.
-                    tailed_raw += sum(
-                        1 for c in adj[a]
-                        if c > v and c not in abc and c not in set_v and c not in set_b
-                    )
-                    # Pendant from b: c ∈ N(b), c > v, not connected to v or a.
-                    tailed_raw += sum(
-                        1 for c in adj[b]
-                        if c > v and c not in abc and c not in set_v and c not in set_a
-                    )
-
-        scale         = float(n) / len(seed_ids)
-        _diamond_raw  = edge_C - 6.0 * k4_raw
-        _c4_raw       = (total_C - edge_C - _diamond_raw) / 2.0
-
-        return (
-            max(0, int(round(_c4_raw      * scale))),
-            max(0, int(round(_diamond_raw * scale))),
-            int(round(k4_raw              * scale)),
-            int(round(tailed_raw          * scale)),
-        )
+        # Convert raw sample proportions to estimated graphlet counts.
+        result: dict[tuple[int, ...], int] = {}
+        for deg_seq, cnt in raw_counts.items():
+            sigma = _SIGMA.get(deg_seq, 1)
+            estimated = (cnt / n_valid) * t / sigma / p_k
+            result[deg_seq] = max(0, int(round(estimated)))
+        return result
 
     @staticmethod
     def _count_4node_motifs(
