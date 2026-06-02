@@ -109,24 +109,18 @@ class BlockE:
         Exact counts for 3- and 4-node motifs on the undirected simplification.
         Path and tree templates are estimated by random walk sampling.
         For large graphs (n >= _LARGE_N), 4-node and 5/6-cycle counts are
-        estimated via color coding (Bressan et al. 2021) on a sampled subgraph.
+        estimated via color coding (Bressan et al. 2021) on the full graph.
+        The CC DP scales with m (edges), not n^k, so no subgraph sampling needed.
         """
         g_und = g.as_undirected(combine_edges="first").simplify()
         n = g_und.vcount()
+        m = g_und.ecount()
+        log.info("Block E: graph has %d nodes, %d edges", n, m)
 
-        # Build color-coding subgraph (or full graph for small n).
-        if n > _LARGE_N:
-            _rng_cc = np.random.default_rng(42)
-            _ids    = _rng_cc.choice(n, size=min(n, _SAMPLE_N), replace=False)
-            g_cc    = g_und.induced_subgraph(_ids.tolist())
-            _scale  = float(n) / len(_ids)
-            log.info(
-                "Block E: large graph (%d nodes) — CC on %d-node subgraph (scale=%.2f)",
-                n, len(_ids), _scale,
-            )
-        else:
-            g_cc   = g_und
-            _scale = 1.0
+        # CC always runs on the full undirected graph — subgraph sampling would
+        # lose almost all edges (only ~(s/n)^2 * m survive), making t ≈ 0.
+        g_cc   = g_und
+        _scale = 1.0
 
         # Triangles: exact count on the full undirected graph (no sampling).
         log.info("Block E: computing triangles (list_triangles)…")
@@ -523,8 +517,7 @@ class BlockE:
 
         # dp[v, S] = number of colorful paths of length |S| ending at v with color set S.
         dp = np.zeros((n, n_sets), dtype=np.float32)
-        for v in range(n):
-            dp[v, 1 << int(colors[v])] = 1.0
+        dp[np.arange(n), 1 << colors] = 1.0  # vectorised init — avoids O(n) Python loop
         dp_levels = [dp]
 
         for step in range(1, k):
@@ -557,12 +550,15 @@ class BlockE:
         wfinal = dp_levels[-1][:, full_set].astype(np.float64)
         wfinal /= wfinal.sum()
 
+        # Pre-sample all leaf nodes at once — rng.choice(n, p=…) is O(n) per call,
+        # so calling it n_samples times in a loop costs O(n × n_samples).
+        v_starts = rng.choice(n, size=n_samples, p=wfinal)
+
         raw_counts: defaultdict[tuple[int, ...], int] = defaultdict(int)
         n_valid = 0
 
-        for _ in range(n_samples):
-            # Pick leaf node proportional to its weight in the final DP level.
-            v = int(rng.choice(n, p=wfinal))
+        for _i in range(n_samples):
+            v = int(v_starts[_i])
             nodes = [v]
             S = full_set
             ok = True
