@@ -87,8 +87,14 @@ A sampled root's template is `tuple(sorted([(r1, r2) for child, r1 in adj1 for _
 ### Inverse CS excludes literal targets
 `_compute_inv_cs` only records entries for non-literal target vertices. A literal node (e.g., an integer or a string value) cannot meaningfully act as the "object-side star centre" that the inverse CS is intended to characterise.
 
-### Two-step pairs require a non-literal bridge entity
-In `_two_step_pair_stats`, `in_preds[e.target]` is only populated when the target is not a literal, consistent with the inverse CS assumption above. A bridge entity `x` in `s →[q]→ x →[p]→ o` must be an IRI or blank node that can itself have outgoing edges.
+### Two-step pairs count directed 2-hop *paths*, not bridge entities
+`_two_step_pair_stats` counts, per ordered label pair `(q, p)`, the number of directed
+2-hop paths `s →[q]→ x →[p]→ o`: `path_count(q,p) = Σ_x deg_in(x,q)·deg_out(x,p)`, using
+per-predicate in/out **degree** (Counters) at each bridge `x`. This is the
+multiplicity-weighted count that predicts path-2 query selectivity — a bridge-*node*
+count (boolean per entity, the previous behaviour) ignores how many edges meet at `x`
+and under-counts hub bridges. As before, `in_deg[e.target]` is only populated for
+non-literal targets: a bridge `x` must be an IRI/blank node that can have outgoing edges.
 
 ### Entities with no outgoing edges are absent from `cs_of`
 `_compute_cs` builds `cs_of` by accumulating predicates from `g.es`; vertices with zero outgoing edges never appear as keys. Such vertices therefore do not contribute to CS size statistics or the frequency distribution. This is intentional: an entity with no outgoing predicates has an empty CS, which carries no signal for star-query cardinality estimation.
@@ -100,7 +106,7 @@ All three Zipf/power-law fits (forward CS frequency, inverse CS frequency, two-s
 The full `PowerLawStats` (alpha, xmin, KS distance, and three alternative-distribution distances) is stored in the dataclass for downstream inspection, but only `.alpha` enters the fixed-length vector. Including all six fields per fit would triple the pair-related vector entries without clear benefit for cross-KG comparison.
 
 ### Top-k pair frequencies are normalised by total pair count
-`top_pair_freqs` stores counts divided by the total number of (bridge-entity, in_pred, out_pred) combinations, not raw counts. Normalisation makes the vector comparable across KGs of different sizes.
+`top_pair_freqs` stores path counts divided by the total number of directed 2-hop paths (`Σ_x deg_in·deg_out` over all label pairs), not raw counts. Normalisation makes the vector comparable across KGs of different sizes.
 
 ### `rdf:type` edges are treated as ordinary predicates in CS
 No special handling is applied to `rdf:type` triples in Block D. A subject's type assertions contribute their predicate to its CS the same as any other relation. Block C handles type-specific statistics separately.
