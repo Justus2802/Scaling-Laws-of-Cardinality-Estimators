@@ -591,39 +591,76 @@ class BlockE(SignatureBlock):
         # so calling it n_samples times in a loop costs O(n × n_samples).
         v_starts = rng.choice(n, size=n_samples, p=wfinal)
 
+        # ------------------------------------------------------------------
+        # Batched backward reconstruction.
+        # Group samples by (current_node, S_prev) at each level so that
+        # nodes sampled many times (hub nodes with degree 225k) require only
+        # ONE rng.choice(deg, size=count) call instead of count calls.
+        # ------------------------------------------------------------------
+
+        # paths[i] grows from [endpoint] to [endpoint, ..., start]
+        paths_nodes: list[list[int]] = [[int(v)] for v in v_starts]
+        S_arr   = [full_set] * n_samples
+        valid   = [True]     * n_samples
+
+        for bk_level in range(k - 1, 0, -1):
+            groups: dict[tuple[int, int], list[int]] = defaultdict(list)
+            for i in range(n_samples):
+                if not valid[i]:
+                    continue
+                v  = paths_nodes[i][-1]
+                sp = S_arr[i] ^ (1 << int(colors[v]))
+                groups[(v, sp)].append(i)
+
+            for (v, sp), idxs in groups.items():
+                nbrs = adj[v]
+                dv   = len(nbrs)
+                if dv == 0:
+                    for i in idxs: valid[i] = False
+                    continue
+                nw  = dp_levels[bk_level - 1][nbrs, sp].astype(np.float64)
+                tot = nw.sum()
+                if tot == 0:
+                    for i in idxs: valid[i] = False
+                    continue
+                # ONE call regardless of how many samples share this (v, sp):
+                chosen = nbrs[rng.choice(dv, size=len(idxs), p=nw / tot)]
+                for j, i in enumerate(idxs):
+                    paths_nodes[i].append(int(chosen[j]))
+                    S_arr[i] = sp
+
+        # ------------------------------------------------------------------
+        # Pre-build adjacency sets for hub nodes so that path classification
+        # (checking induced-subgraph degrees) is O(k) not O(hub_deg).
+        # ------------------------------------------------------------------
+        _HUB_ADJ_THRESH = 200
+        hub_adj_sets: dict[int, set[int]] = {
+            v: set(adj[v].tolist())
+            for v in range(n)
+            if len(adj[v]) > _HUB_ADJ_THRESH
+        }
+
         raw_counts: defaultdict[tuple[int, ...], int] = defaultdict(int)
         n_valid = 0
 
-        for _i in range(n_samples):
-            v = int(v_starts[_i])
-            nodes = [v]
-            S = full_set
-            ok = True
-            # Backtrack through the DP levels to reconstruct a colorful path.
-            for level in range(k - 1, 0, -1):
-                S_prev = S ^ (1 << int(colors[v]))
-                nbrs = adj[v]
-                if len(nbrs) == 0:
-                    ok = False
-                    break
-                nw = dp_levels[level - 1][nbrs, S_prev].astype(np.float64)
-                tot = nw.sum()
-                if tot == 0:
-                    ok = False
-                    break
-                v = int(nbrs[rng.choice(len(nbrs), p=nw / tot)])
-                nodes.append(v)
-                S = S_prev
-            if not ok:
+        for i in range(n_samples):
+            if not valid[i] or len(paths_nodes[i]) != k:
                 continue
-            node_set = set(nodes)
+            node_list = paths_nodes[i]
+            node_set  = set(node_list)
             if len(node_set) != k:
-                # Duplicate nodes → not a valid k-node induced subgraph.
                 continue
             n_valid += 1
-            # Classify by sorted internal degree sequence of the induced subgraph.
+
+            # Build local adjacency sets once per path node.
+            # Hub nodes reuse the pre-built set; others build a small set.
+            local_adj: dict[int, set[int]] = {
+                v: hub_adj_sets[v] if v in hub_adj_sets else set(adj[v].tolist())
+                for v in node_set
+            }
             deg_in = tuple(sorted(
-                sum(1 for nb in adj[v] if nb in node_set) for v in node_set
+                sum(1 for u in node_set if u != v and u in local_adj[v])
+                for v in node_list
             ))
             raw_counts[deg_in] += 1
 
@@ -633,7 +670,7 @@ class BlockE(SignatureBlock):
         # Convert raw sample proportions to estimated graphlet counts.
         result: dict[tuple[int, ...], int] = {}
         for deg_seq, cnt in raw_counts.items():
-            sigma = _SIGMA.get(deg_seq, 1)
+            sigma    = _SIGMA.get(deg_seq, 1)
             estimated = (cnt / n_valid) * t / sigma / p_k
             result[deg_seq] = max(0, int(round(estimated)))
         return result
