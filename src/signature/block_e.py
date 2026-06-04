@@ -115,11 +115,16 @@ class BlockE(SignatureBlock):
         _n_cc = max(2000, sample_budget // 5)
         _rng  = np.random.default_rng(1)
 
-        # All structural counts use color coding on the full undirected graph.
-        log.info("Block E: computing triangles (color coding k=3, %d samples)…", _n_cc)
-        motifs3 = BlockE._cc_run(g_und, 3, _n_cc, _rng)
-        self._triangle_count = motifs3.get((2, 2, 2), 0)
+        # Triangles: exact via igraph list_triangles() — O(m√m), reliable even on
+        # large sparse graphs where CC misses triangles (too rare to sample with 20k shots).
+        log.info("Block E: computing triangles (exact list_triangles)…")
+        _tris = g_und.list_triangles() if n >= 3 else []
+        self._triangle_count = len(_tris)
         log.info("Block E: computed triangle_count (%d)", self._triangle_count)
+
+        # k=3 CC run still needed for path_template_zipf[3].
+        log.info("Block E: running CC k=3 for graphlet-type distribution…")
+        motifs3 = BlockE._cc_run(g_und, 3, _n_cc, _rng)
 
         log.info("Block E: computing 4-node motifs (color coding k=4, %d samples)…", _n_cc)
         motifs4 = BlockE._cc_run(g_und, 4, _n_cc, _rng)
