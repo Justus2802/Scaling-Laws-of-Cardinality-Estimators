@@ -112,22 +112,44 @@ class BlockE(SignatureBlock):
         m = g_und.ecount()
         log.info("Block E: graph has %d nodes, %d edges", n, m)
 
-        _n_cc = max(2000, sample_budget // 5)
-        _rng  = np.random.default_rng(1)
+        # n_samples scales with graph size so tiny test graphs stay fast (500 samples)
+        # while large graphs get up to budget×5 samples.  Sampling is O(n_samples×k)
+        # but negligible vs the DP build O(m×2^k); one coloring is enough for large
+        # graphs (paper §2.3: coloring noise averages out over many instances).
+        _n_samples = max(500, min(n * 20, sample_budget * 5))
+        _rng       = np.random.default_rng(1)
+
+        if n == 0:
+            self._triangle_count = 0
+            self._four_cycle_count = self._diamond_count = 0
+            self._k4_count = self._tailed_triangle_count = 0
+            self._star_counts = {k: 0 for k in range(2, 11)}
+            self._five_cycle_count = self._six_cycle_count = 0
+            self._path_template_zipf = {}
+            self._path_template_entropy = {}
+            self._tree_template_zipf = float("nan")
+            self._tree_template_entropy = float("nan")
+            return self
+
+        # Build adjacency structures once and reuse across all CC calls.
+        # Building _adj (n numpy arrays) and _A (sparse matrix) takes O(n+m) and
+        # is otherwise repeated for every k — 4 times in total.
+        _A   = scipy.sparse.csr_matrix(g_und.get_adjacency_sparse()).astype(np.float32)
+        _adj = [np.array(g_und.neighbors(v), dtype=np.int32) for v in range(n)]
 
         # Triangles: exact via igraph list_triangles() — O(m√m), reliable even on
-        # large sparse graphs where CC misses triangles (too rare to sample with 20k shots).
+        # large sparse graphs where CC misses triangles (too rare to sample).
         log.info("Block E: computing triangles (exact list_triangles)…")
         _tris = g_und.list_triangles() if n >= 3 else []
         self._triangle_count = len(_tris)
         log.info("Block E: computed triangle_count (%d)", self._triangle_count)
 
-        # k=3 CC run still needed for path_template_zipf[3].
-        log.info("Block E: running CC k=3 for graphlet-type distribution…")
-        motifs3 = BlockE._cc_run(g_und, 3, _n_cc, _rng)
+        # k=3 CC run for path_template_zipf[3] (triangle count is exact above).
+        log.info("Block E: running CC k=3 for graphlet-type distribution (%d samples)…", _n_samples)
+        motifs3 = BlockE._cc_run(g_und, 3, _n_samples, _rng, _A=_A, _adj=_adj)
 
-        log.info("Block E: computing 4-node motifs (color coding k=4, %d samples)…", _n_cc)
-        motifs4 = BlockE._cc_run(g_und, 4, _n_cc, _rng)
+        log.info("Block E: computing 4-node motifs (CC k=4, %d samples)…", _n_samples)
+        motifs4 = BlockE._cc_run(g_und, 4, _n_samples, _rng, _A=_A, _adj=_adj)
         self._four_cycle_count      = motifs4.get((2, 2, 2, 2), 0)
         self._diamond_count         = motifs4.get((2, 2, 3, 3), 0)
         self._k4_count              = motifs4.get((3, 3, 3, 3), 0)
@@ -137,20 +159,20 @@ class BlockE(SignatureBlock):
         log.info("Block E: computed k4_count (%d)", self._k4_count)
         log.info("Block E: computed tailed_triangle_count (%d)", self._tailed_triangle_count)
 
-        log.info("Block E: computing stars (color coding star treelet, k=2..10)…")
-        self._star_counts = self._cc_run_stars(g_und, _n_cc, _rng)
+        log.info("Block E: computing stars (CC star treelet, k=2..10, %d samples)…", _n_samples)
+        self._star_counts = self._cc_run_stars(g_und, _n_samples, _rng, _A=_A, _adj=_adj)
         log.info(
             "Block E: computed star_counts (k=2..10 totals=%s)",
             [self._star_counts.get(k, 0) for k in range(2, 11)],
         )
 
-        log.info("Block E: computing 5-cycle (color coding k=5, %d samples)…", _n_cc)
-        motifs5 = BlockE._cc_run(g_und, 5, _n_cc, _rng)
+        log.info("Block E: computing 5-cycle (CC k=5, %d samples)…", _n_samples)
+        motifs5 = BlockE._cc_run(g_und, 5, _n_samples, _rng, _A=_A, _adj=_adj)
         self._five_cycle_count = motifs5.get((2, 2, 2, 2, 2), 0)
         log.info("Block E: computed five_cycle_count (~%d)", self._five_cycle_count)
 
-        log.info("Block E: computing 6-cycle (color coding k=6, %d samples)…", _n_cc)
-        motifs6 = BlockE._cc_run(g_und, 6, _n_cc, _rng)
+        log.info("Block E: computing 6-cycle (CC k=6, %d samples)…", _n_samples)
+        motifs6 = BlockE._cc_run(g_und, 6, _n_samples, _rng, _A=_A, _adj=_adj)
         self._six_cycle_count = motifs6.get((2, 2, 2, 2, 2, 2), 0)
         log.info("Block E: computed six_cycle_count (~%d)", self._six_cycle_count)
 
@@ -158,13 +180,13 @@ class BlockE(SignatureBlock):
         # distribution at that size.  k=2..6 always run.  k=7..10 are run only when
         # the DP fits in ~1 GB: n × 2^k × k × 4 bytes ≤ 1 GB → n ≤ 1e9 / (k×2^k×4).
         log.info("Block E: computing path templates (color coding k=2..10)…")
-        motifs2 = BlockE._cc_run(g_und, 2, _n_cc, _rng)
+        motifs2 = BlockE._cc_run(g_und, 2, _n_samples, _rng, _A=_A, _adj=_adj)
         _cc_by_k = {2: motifs2, 3: motifs3, 4: motifs4, 5: motifs5, 6: motifs6}
         for _k in range(7, 11):
             _dp_bytes = n * (1 << _k) * _k * 4
             if _dp_bytes <= 1_000_000_000:
                 log.info("Block E: computing path template k=%d (color coding)…", _k)
-                _cc_by_k[_k] = BlockE._cc_run(g_und, _k, _n_cc, _rng)
+                _cc_by_k[_k] = BlockE._cc_run(g_und, _k, _n_samples, _rng, _A=_A, _adj=_adj)
             else:
                 log.info(
                     "Block E: skipping path template k=%d (DP would need %.1f GB > 1 GB limit)",
@@ -454,11 +476,35 @@ class BlockE(SignatureBlock):
         return dict(counts)
 
     @staticmethod
+    def _cc_run_multi(
+        g_und: igraph.Graph,
+        k: int,
+        n_samples: int,
+        n_colorings: int,
+        rng: np.random.Generator,
+    ) -> dict[tuple[int, ...], int]:
+        """Run _cc_run n_colorings times and return the averaged estimates.
+
+        Each coloring is an independent unbiased estimator; averaging reduces
+        variance by √n_colorings without changing the DP cost (which dominates).
+        The sampling cost O(n_samples × k × avg_deg) is negligible compared to
+        the DP build O(m × 2^k × k), so using more samples per coloring is free.
+        """
+        totals: dict[tuple[int, ...], float] = defaultdict(float)
+        for _ in range(n_colorings):
+            for deg_seq, cnt in BlockE._cc_run(g_und, k, n_samples, rng).items():
+                totals[deg_seq] += cnt
+        return {ds: max(0, int(round(v / n_colorings))) for ds, v in totals.items()}
+
+    @staticmethod
     def _cc_run(
         g_und: igraph.Graph,
         k: int,
         n_samples: int,
         rng: np.random.Generator,
+        *,
+        _A: "scipy.sparse.csr_matrix | None" = None,
+        _adj: "list[np.ndarray] | None" = None,
     ) -> dict[tuple[int, ...], int]:
         """Color coding estimator for k-node graphlet counts (Bressan et al. 2021).
 
@@ -466,18 +512,12 @@ class BlockE(SignatureBlock):
         matrix products, samples n_samples colorful k-paths by backtracking, and
         returns {degree_sequence_tuple: estimated_count}.
 
+        Pass pre-built _A (csr_matrix) and _adj (neighbour lists) to avoid
+        rebuilding them for every k — they are identical across all CC calls.
+
         The σ_H correction (number of directed P_k paths spanning motif H) and
         the p_k = k!/k^k colorfulness probability are applied so the returned
         counts estimate the true graphlet frequencies.
-
-        Args:
-            g_und: Undirected simple graph.
-            k: Motif size (number of nodes in the graphlet).
-            n_samples: Number of colorful paths to sample for classification.
-            rng: NumPy random generator.
-
-        Returns:
-            Dict mapping sorted degree-sequence tuples to estimated counts.
         """
         # σ_H: number of directed spanning P_k paths for each graphlet type.
         _SIGMA: dict[tuple[int, ...], int] = {
@@ -503,10 +543,12 @@ class BlockE(SignatureBlock):
         # Assign random colors in {0, ..., k-1} to each node.
         colors = rng.integers(0, k, size=n, dtype=np.int32)
 
-        # Build sparse adjacency matrix for DP message passing.
+        # Use cached structures if provided; otherwise build them now.
         n_sets   = 1 << k
         full_set = n_sets - 1
-        A = scipy.sparse.csr_matrix(g_und.get_adjacency_sparse()).astype(np.float32)
+        A = _A if _A is not None else scipy.sparse.csr_matrix(
+            g_und.get_adjacency_sparse()
+        ).astype(np.float32)
 
         # dp[v, S] = number of colorful paths of length |S| ending at v with color set S.
         dp = np.zeros((n, n_sets), dtype=np.float32)
@@ -537,7 +579,9 @@ class BlockE(SignatureBlock):
             return {}
 
         # Pre-build neighbor lists for fast sampling.
-        adj = [np.array(g_und.neighbors(v), dtype=np.int32) for v in range(n)]
+        adj = _adj if _adj is not None else [
+            np.array(g_und.neighbors(v), dtype=np.int32) for v in range(n)
+        ]
 
         # Sampling weights for final level.
         wfinal = dp_levels[-1][:, full_set].astype(np.float64)
@@ -667,6 +711,9 @@ class BlockE(SignatureBlock):
         g_und: igraph.Graph,
         n_samples: int,
         rng: np.random.Generator,
+        *,
+        _A: "scipy.sparse.csr_matrix | None" = None,
+        _adj: "list[np.ndarray] | None" = None,
     ) -> dict[int, int]:
         """Color coding estimator for induced k-star counts, k=2..10.
 
@@ -689,8 +736,12 @@ class BlockE(SignatureBlock):
         if n == 0:
             return {k: 0 for k in range(2, 11)}
 
-        A_csr = scipy.sparse.csr_matrix(g_und.get_adjacency_sparse())
-        adj   = [np.array(g_und.neighbors(v), dtype=np.int32) for v in range(n)]
+        A_csr = _A   if _A   is not None else scipy.sparse.csr_matrix(
+            g_und.get_adjacency_sparse()
+        )
+        adj   = _adj if _adj is not None else [
+            np.array(g_und.neighbors(v), dtype=np.int32) for v in range(n)
+        ]
 
         results: dict[int, int] = {}
 
