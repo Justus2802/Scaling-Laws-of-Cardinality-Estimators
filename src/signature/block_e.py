@@ -184,14 +184,16 @@ class BlockE(SignatureBlock):
             [round(self._path_template_entropy.get(k, float("nan")), 4) for k in range(2, 11)],
         )
 
-        # Tree templates: Zipf + entropy of the combined graphlet-type distribution
-        # across all CC runs (k=3..6), treating each (k, deg_seq) pair as a type.
-        log.info("Block E: computing tree templates (combined CC k=3..6)…")
-        _combined: dict[tuple, int] = {}
-        for _k in range(3, 7):
-            for _ds, _cnt in _cc_by_k[_k].items():
-                _combined[(_k,) + _ds] = _combined.get((_k,) + _ds, 0) + _cnt
-        self._tree_template_zipf, self._tree_template_entropy = BlockE._template_stats(_combined)
+        # Tree templates: Zipf + entropy of how total motif counts scale across k.
+        # Using total-count-per-k (rather than per-type) avoids NaN on small graphs
+        # where CC returns only 1-2 distinct graphlet types.
+        log.info("Block E: computing tree templates (CC total counts per k)…")
+        _totals_by_k: dict[int, int] = {
+            _k: sum(_cc_by_k[_k].values())
+            for _k in _cc_by_k
+            if sum(_cc_by_k[_k].values()) > 0
+        }
+        self._tree_template_zipf, self._tree_template_entropy = BlockE._template_stats(_totals_by_k)
         log.info(
             "Block E: computed tree_template stats (zipf_alpha=%.4f, entropy=%.4f)",
             self._tree_template_zipf, self._tree_template_entropy,
