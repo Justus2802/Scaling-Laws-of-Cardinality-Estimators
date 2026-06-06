@@ -1,0 +1,535 @@
+=== Block A: Size and Density ===
+  num_entities      : 4707
+  num_triples       : 33916
+  num_relations     : 219
+  density           : 0.00153079
+  triples_per_entity: 7.2054
+  relation_reuse    : 154.8676
+
+=== Block B: Degree Structure ===
+
+Out-degree: n=4707  min=0  max=195  mean=7.21  median=5.0
+  fit: alpha=2.9347  xmin=9.0  ks=0.0476
+In-degree : n=4707  min=0  max=1442  mean=7.21  median=3.0
+  fit: alpha=2.4213  xmin=7.0  ks=0.0251
+
+--- Functionality (sorted desc) ---
+  currency                                  func=1.000  inv_func=0.000
+  gender                                    func=1.000  inv_func=0.000
+  currency                                  func=1.000  inv_func=0.000
+  place_of_birth                            func=1.000  inv_func=0.686
+  position                                  func=1.000  inv_func=0.000
+  sport                                     func=1.000  inv_func=0.000
+  currency                                  func=1.000  inv_func=0.000
+  location_of_ceremony                      func=1.000  inv_func=0.737
+  edited_by                                 func=1.000  inv_func=0.500
+  film_production_design_by                 func=1.000  inv_func=0.000
+  category_of                               func=1.000  inv_func=0.000
+  registering_agency                        func=1.000  inv_func=0.000
+  place_of_death                            func=1.000  inv_func=0.735
+  currency                                  func=1.000  inv_func=0.000
+  currency                                  func=1.000  inv_func=0.500
+  adjustment_currency                       func=1.000  inv_func=0.000
+  type_of_union                             func=1.000  inv_func=0.000
+  first_level_division_of                   func=1.000  inv_func=0.200
+  country                                   func=1.000  inv_func=0.182
+  currency                                  func=1.000  inv_func=0.000
+  specialization_of                         func=1.000  inv_func=0.375
+  currency                                  func=1.000  inv_func=0.000
+  film_distribution_medium                  func=1.000  inv_func=0.500
+  language                                  func=1.000  inv_func=0.000
+  administrative_parent                     func=1.000  inv_func=0.583
+  state                                     func=1.000  inv_func=0.765
+  currency                                  func=1.000  inv_func=0.000
+  currency                                  func=1.000  inv_func=0.500
+  currency                                  func=1.000  inv_func=0.000
+  state_province_region                     func=1.000  inv_func=0.545
+  prequel                                   func=1.000  inv_func=0.955
+  country                                   func=1.000  inv_func=0.538
+  split_to                                  func=1.000  inv_func=1.000
+  instance_of_recurring_event               func=1.000  inv_func=0.000
+  group                                     func=1.000  inv_func=0.800
+  type_of_appearance                        func=1.000  inv_func=0.000
+  list                                      func=1.000  inv_func=0.000
+  currency                                  func=1.000  inv_func=0.000
+  costume_design_by                         func=1.000  inv_func=0.286
+  county                                    func=1.000  inv_func=0.750
+  place_founded                             func=1.000  inv_func=0.667
+  currency                                  func=1.000  inv_func=0.000
+  capital                                   func=1.000  inv_func=1.000
+  fraternities_and_sororities               func=1.000  inv_func=0.000
+  film_art_direction_by                     func=1.000  inv_func=0.667
+  dog_breed                                 func=1.000  inv_func=0.000
+  cinematography                            func=1.000  inv_func=0.294
+  film_release_distribution_medium          func=1.000  inv_func=0.000
+  county_seat                               func=1.000  inv_func=1.000
+  celebrities_impersonated                  func=1.000  inv_func=1.000
+  currency                                  func=1.000  inv_func=0.000
+  position                                  func=1.000  inv_func=1.000
+  time_zones                                func=0.992  inv_func=0.000
+  origin                                    func=0.981  inv_func=0.892
+  music                                     func=0.976  inv_func=0.422
+  religion                                  func=0.976  inv_func=0.111
+  film_format                               func=0.975  inv_func=0.000
+  languages                                 func=0.973  inv_func=0.333
+  nationality                               func=0.970  inv_func=0.500
+  film_regional_debut_venue                 func=0.968  inv_func=0.143
+  administrative_division                   func=0.968  inv_func=1.000
+  tv_program                                func=0.966  inv_func=0.562
+  spouse                                    func=0.960  inv_func=0.939
+  film_festivals                            func=0.950  inv_func=0.100
+  organizations_founded                     func=0.950  inv_func=0.889
+  teams                                     func=0.947  inv_func=1.000
+  partially_contains                        func=0.938  inv_func=0.375
+  official_language                         func=0.933  inv_func=0.000
+  family                                    func=0.933  inv_func=0.571
+  citytown                                  func=0.933  inv_func=0.764
+  school_type                               func=0.931  inv_func=0.000
+  capital                                   func=0.929  inv_func=0.929
+  participant                               func=0.929  inv_func=0.929
+  sibling                                   func=0.923  inv_func=1.000
+  written_by                                func=0.920  inv_func=0.656
+  production_companies                      func=0.917  inv_func=0.240
+  child                                     func=0.917  inv_func=1.000
+  risk_factors                              func=0.909  inv_func=0.778
+  languages                                 func=0.906  inv_func=0.333
+  company                                   func=0.900  inv_func=0.846
+  story_by                                  func=0.889  inv_func=0.718
+  featured_film_locations                   func=0.887  inv_func=0.778
+  produced_by                               func=0.884  inv_func=0.598
+  contact_category                          func=0.879  inv_func=0.000
+  basic_title                               func=0.875  inv_func=0.000
+  program_creator                           func=0.875  inv_func=0.867
+  film_release_region                       func=0.875  inv_func=0.500
+  industry                                  func=0.872  inv_func=0.538
+  program                                   func=0.868  inv_func=0.722
+  celebrity                                 func=0.867  inv_func=0.793
+  location                                  func=0.858  inv_func=0.570
+  peers                                     func=0.857  inv_func=0.808
+  service_language                          func=0.854  inv_func=0.400
+  executive_produced_by                     func=0.850  inv_func=0.707
+  country                                   func=0.847  inv_func=0.556
+  colors                                    func=0.829  inv_func=0.125
+  language                                  func=0.826  inv_func=0.200
+  place_of_burial                           func=0.818  inv_func=0.000
+  crewmember                                func=0.815  inv_func=0.118
+  friend                                    func=0.810  inv_func=0.833
+  role                                      func=0.806  inv_func=0.364
+  form_of_government                        func=0.806  inv_func=0.000
+  languages_spoken                          func=0.800  inv_func=0.636
+  program                                   func=0.800  inv_func=0.000
+  participant                               func=0.778  inv_func=0.776
+  honored_for                               func=0.778  inv_func=0.778
+  colors                                    func=0.773  inv_func=0.000
+  jurisdiction_of_office                    func=0.750  inv_func=0.750
+  service_location                          func=0.750  inv_func=0.571
+  participant                               func=0.733  inv_func=0.682
+  interests                                 func=0.727  inv_func=0.250
+  disciplines_or_subjects                   func=0.722  inv_func=0.400
+  adjoins                                   func=0.720  inv_func=0.696
+  parent_genre                              func=0.705  inv_func=0.562
+  participant                               func=0.692  inv_func=0.692
+  contains                                  func=0.689  inv_func=0.832
+  nominated_for                             func=0.689  inv_func=0.651
+  major_field_of_study                      func=0.688  inv_func=0.750
+  performance_role                          func=0.647  inv_func=0.556
+  program                                   func=0.636  inv_func=0.909
+  nominated_for                             func=0.628  inv_func=0.513
+  exported_to                               func=0.625  inv_func=0.818
+  person                                    func=0.625  inv_func=1.000
+  profession                                func=0.623  inv_func=0.279
+  award_winner                              func=0.620  inv_func=0.755
+  locations                                 func=0.615  inv_func=0.688
+  award                                     func=0.613  inv_func=0.245
+  student                                   func=0.600  inv_func=0.875
+  position                                  func=0.600  inv_func=0.000
+  film                                      func=0.597  inv_func=0.983
+  vacationer                                func=0.583  inv_func=0.576
+  geographic_distribution                   func=0.571  inv_func=0.812
+  organization                              func=0.552  inv_func=0.429
+  olympics                                  func=0.544  inv_func=0.091
+  position                                  func=0.542  inv_func=0.000
+  student                                   func=0.535  inv_func=0.883
+  entity_involved                           func=0.529  inv_func=0.640
+  role                                      func=0.529  inv_func=0.273
+  major_field_of_study                      func=0.526  inv_func=0.233
+  school                                    func=0.500  inv_func=0.500
+  films                                     func=0.500  inv_func=0.955
+  artist                                    func=0.500  inv_func=0.889
+  politician                                func=0.500  inv_func=1.000
+  region                                    func=0.500  inv_func=1.000
+  person                                    func=0.500  inv_func=1.000
+  athlete                                   func=0.500  inv_func=1.000
+  award                                     func=0.489  inv_func=0.071
+  mode_of_transportation                    func=0.478  inv_func=0.000
+  genre                                     func=0.461  inv_func=0.261
+  position                                  func=0.448  inv_func=0.250
+  genre                                     func=0.432  inv_func=0.205
+  influenced_by                             func=0.429  inv_func=0.467
+  position_s                                func=0.429  inv_func=0.000
+  countries_spoken_in                       func=0.429  inv_func=0.931
+  combatants                                func=0.421  inv_func=0.552
+  group                                     func=0.421  inv_func=0.553
+  position                                  func=0.420  inv_func=0.250
+  award_winner                              func=0.415  inv_func=0.431
+  religion                                  func=0.409  inv_func=0.000
+  film                                      func=0.398  inv_func=0.421
+  artists                                   func=0.389  inv_func=0.573
+  olympics                                  func=0.389  inv_func=0.273
+  olympics                                  func=0.386  inv_func=0.000
+  instrumentalists                          func=0.385  inv_func=0.689
+  actor                                     func=0.380  inv_func=0.843
+  actor                                     func=0.375  inv_func=0.750
+  participating_countries                   func=0.333  inv_func=0.750
+  second_level_divisions                    func=0.333  inv_func=1.000
+  notable_people_with_this_condition        func=0.333  inv_func=1.000
+  organization                              func=0.333  inv_func=1.000
+  symptom_of                                func=0.333  inv_func=0.857
+  titles                                    func=0.321  inv_func=0.807
+  award_nominee                             func=0.303  inv_func=0.313
+  performance_role                          func=0.292  inv_func=0.273
+  student                                   func=0.286  inv_func=0.902
+  artist                                    func=0.282  inv_func=0.583
+  film                                      func=0.273  inv_func=0.829
+  position                                  func=0.273  inv_func=0.000
+  current_club                              func=0.250  inv_func=0.941
+  seasonal_months                           func=0.250  inv_func=0.000
+  draft                                     func=0.242  inv_func=0.000
+  award_winner                              func=0.227  inv_func=0.677
+  honored_for                               func=0.222  inv_func=0.830
+  school                                    func=0.222  inv_func=0.708
+  people                                    func=0.200  inv_func=0.989
+  team                                      func=0.200  inv_func=0.000
+  people                                    func=0.182  inv_func=0.920
+  team                                      func=0.179  inv_func=0.725
+  team                                      func=0.167  inv_func=0.746
+  major_field_of_study                      func=0.167  inv_func=0.294
+  legislative_sessions                      func=0.167  inv_func=0.000
+  film_crew_role                            func=0.147  inv_func=0.278
+  company                                   func=0.133  inv_func=0.688
+  combatants                                func=0.133  inv_func=0.194
+  jurisdiction_of_office                    func=0.125  inv_func=0.692
+  film_sets_designed                        func=0.125  inv_func=0.842
+  ceremony                                  func=0.103  inv_func=0.082
+  institution                               func=0.100  inv_func=0.350
+  sports                                    func=0.100  inv_func=0.357
+  role                                      func=0.087  inv_func=0.130
+  nominated_for                             func=0.069  inv_func=0.479
+  role                                      func=0.061  inv_func=0.041
+  district_represented                      func=0.056  inv_func=0.143
+  team                                      func=0.050  inv_func=0.414
+  award_winner                              func=0.041  inv_func=0.769
+  film_release_region                       func=0.019  inv_func=0.182
+  legislative_sessions                      func=0.000  inv_func=0.000
+  country                                   func=0.000  inv_func=0.197
+  inductee                                  func=0.000  inv_func=0.959
+  nutrient                                  func=0.000  inv_func=0.000
+  month                                     func=0.000  inv_func=0.000
+  sports                                    func=0.000  inv_func=0.167
+  season                                    func=0.000  inv_func=0.200
+  location_of_ceremony                      func=0.000  inv_func=1.000
+  member_states                             func=0.000  inv_func=0.500
+  position                                  func=0.000  inv_func=0.250
+  countries_within                          func=0.000  inv_func=1.000
+  team                                      func=0.000  inv_func=1.000
+  cast_members                              func=0.000  inv_func=0.000
+
+--- Per-relation powerlaw fits ---
+  relation                                   om_alpha  om_xmin   sm_alpha  sm_xmin
+  position                                        nan      nan        nan      nan
+  category_of                                     nan      nan        nan      nan
+  disciplines_or_subjects                         nan      nan        nan      nan
+  nominated_for                                1.6479      2.0     2.6599      2.0
+  award_winner                                 2.4211      4.0     2.5116      1.0
+  ceremony                                     2.7477      4.0     2.5296      3.0
+  award_winner                                 2.9242      5.0     2.9208      1.0
+  honored_for                                  2.4994      2.0     3.0000      1.0
+  nominated_for                                   nan      nan        nan      nan
+  award                                        2.9677      2.0     2.9061     15.0
+  award_nominee                                2.5575      3.0     2.5703      3.0
+  nominated_for                                2.3581      1.0     2.8406      2.0
+  award_winner                                 2.5523      2.0     2.5425      2.0
+  award                                        2.3317      1.0     2.1656      3.0
+  award_winner                                 2.3147      1.0     2.7889      1.0
+  honored_for                                  2.4319      1.0     2.4319      1.0
+  inductee                                        nan      nan        nan      nan
+  list                                            nan      nan        nan      nan
+  administrative_parent                           nan      nan     1.9174      1.0
+  capital                                         nan      nan        nan      nan
+  celebrities_impersonated                        nan      nan        nan      nan
+  country                                         nan      nan     2.7229      3.0
+  state                                           nan      nan     2.2635      1.0
+  entity_involved                              2.0360      1.0     2.4866      1.0
+  seasonal_months                                 nan      nan        nan      nan
+  countries_within                                nan      nan        nan      nan
+  team                                         2.5600      2.0        nan      nan
+  dog_breed                                       nan      nan        nan      nan
+  participant                                     nan      nan        nan      nan
+  participant                                  2.7781      1.0        nan      nan
+  participant                                  2.8878      1.0     2.8606      1.0
+  participant                                  2.5423      1.0     2.5493      1.0
+  vacationer                                   2.1445      1.0     2.3986      1.0
+  cast_members                                    nan      nan        nan      nan
+  contact_category                                nan      nan        nan      nan
+  service_language                             3.0000      1.0        nan      nan
+  service_location                             2.5009      1.0     2.0478      1.0
+  currency                                        nan      nan        nan      nan
+  current_club                                    nan      nan        nan      nan
+  season                                          nan      nan        nan      nan
+  artist                                          nan      nan        nan      nan
+  currency                                        nan      nan        nan      nan
+  industry                                        nan      nan     1.8521      1.0
+  currency                                        nan      nan        nan      nan
+  currency                                        nan      nan        nan      nan
+  company                                      2.5701      3.0        nan      nan
+  friend                                       2.8943      1.0        nan      nan
+  celebrity                                       nan      nan        nan      nan
+  split_to                                        nan      nan        nan      nan
+  institution                                  1.6888      8.0     1.9549      1.0
+  major_field_of_study                            nan      nan     1.8454      1.0
+  student                                         nan      nan        nan      nan
+  colors                                          nan      nan        nan      nan
+  school_type                                     nan      nan        nan      nan
+  major_field_of_study                         2.7957      2.0     1.9361      4.0
+  student                                      2.8705      3.0        nan      nan
+  major_field_of_study                         2.4237      1.0     2.4708      1.0
+  student                                         nan      nan        nan      nan
+  currency                                        nan      nan        nan      nan
+  fraternities_and_sororities                     nan      nan        nan      nan
+  currency                                        nan      nan        nan      nan
+  currency                                        nan      nan        nan      nan
+  language                                        nan      nan        nan      nan
+  film                                         2.7813      2.0     2.7846      2.0
+  film                                         2.2672      1.0        nan      nan
+  cinematography                                  nan      nan     1.8799      1.0
+  costume_design_by                               nan      nan        nan      nan
+  country                                         nan      nan     1.7452      1.0
+  film_distribution_medium                        nan      nan        nan      nan
+  region                                          nan      nan        nan      nan
+  actor                                           nan      nan        nan      nan
+  edited_by                                       nan      nan        nan      nan
+  currency                                        nan      nan        nan      nan
+  executive_produced_by                        3.0000      1.0     2.3615      1.0
+  featured_film_locations                         nan      nan     2.4157      1.0
+  film_art_direction_by                           nan      nan        nan      nan
+  film_festivals                                  nan      nan     2.6812      3.0
+  film_format                                     nan      nan        nan      nan
+  film_production_design_by                       nan      nan        nan      nan
+  genre                                        2.0925      1.0     1.7668      8.0
+  language                                     3.0000      1.0     1.3742      1.0
+  music                                           nan      nan     2.2633      2.0
+  crewmember                                      nan      nan     2.1969      2.0
+  film_crew_role                               2.9302      3.0     1.7298     22.0
+  person                                          nan      nan        nan      nan
+  prequel                                         nan      nan        nan      nan
+  produced_by                                  3.0000      1.0     2.1489      1.0
+  production_companies                            nan      nan     2.4818      5.0
+  film_regional_debut_venue                       nan      nan        nan      nan
+  film_release_distribution_medium                nan      nan        nan      nan
+  film_release_region                          2.1992      6.0     2.4909     37.0
+  film_release_region                             nan      nan        nan      nan
+  story_by                                        nan      nan     2.5395      1.0
+  written_by                                      nan      nan     2.5000      1.0
+  film                                         2.2902     10.0        nan      nan
+  film_sets_designed                              nan      nan        nan      nan
+  films                                        1.9525      1.0        nan      nan
+  type_of_appearance                              nan      nan        nan      nan
+  nutrient                                     1.6447      3.0     2.1584      3.0
+  jurisdiction_of_office                          nan      nan        nan      nan
+  district_represented                         2.4305      3.0     2.2176      4.0
+  legislative_sessions                         2.6313      3.0     1.9551      2.0
+  politician                                      nan      nan        nan      nan
+  basic_title                                     nan      nan        nan      nan
+  jurisdiction_of_office                          nan      nan        nan      nan
+  legislative_sessions                            nan      nan        nan      nan
+  position                                        nan      nan        nan      nan
+  influenced_by                                2.6386      2.0     1.9202      1.0
+  peers                                           nan      nan        nan      nan
+  countries_spoken_in                             nan      nan        nan      nan
+  country                                         nan      nan     1.9944      2.0
+  first_level_division_of                         nan      nan        nan      nan
+  administrative_division                         nan      nan        nan      nan
+  capital                                         nan      nan        nan      nan
+  form_of_government                              nan      nan        nan      nan
+  official_language                               nan      nan        nan      nan
+  second_level_divisions                          nan      nan        nan      nan
+  county                                          nan      nan     2.6378      1.0
+  adjoins                                      2.6796      1.0     2.6290      1.0
+  contains                                     2.1215      1.0        nan      nan
+  partially_contains                              nan      nan        nan      nan
+  time_zones                                      nan      nan        nan      nan
+  currency                                        nan      nan        nan      nan
+  currency                                        nan      nan        nan      nan
+  adjustment_currency                             nan      nan        nan      nan
+  currency                                        nan      nan        nan      nan
+  exported_to                                     nan      nan        nan      nan
+  religion                                     2.0212      1.0        nan      nan
+  currency                                        nan      nan        nan      nan
+  county_seat                                     nan      nan        nan      nan
+  titles                                       1.9234      3.0     3.0000      1.0
+  notable_people_with_this_condition              nan      nan        nan      nan
+  risk_factors                                    nan      nan        nan      nan
+  symptom_of                                      nan      nan        nan      nan
+  combatants                                   1.9061      2.0     2.1488      3.0
+  combatants                                   2.3707      2.0     2.1949      1.0
+  performance_role                                nan      nan        nan      nan
+  origin                                          nan      nan     2.8882      4.0
+  role                                         2.0690      1.0     1.9036      2.0
+  artists                                      2.1193      3.0     2.2084      1.0
+  parent_genre                                    nan      nan     2.2226      1.0
+  group                                           nan      nan        nan      nan
+  role                                            nan      nan     1.7150      1.0
+  family                                          nan      nan        nan      nan
+  instrumentalists                             1.9800      2.0     2.5480      1.0
+  performance_role                             2.6667      3.0     2.3703      3.0
+  group                                        2.0359      2.0     2.1719      1.0
+  role                                         2.9164      6.0     2.7287      6.0
+  role                                         2.7434      8.0     2.8113      9.0
+  artist                                       1.7856      2.0     2.3153      1.0
+  participating_countries                         nan      nan        nan      nan
+  sports                                       2.2959      3.0     2.0578      2.0
+  olympics                                     2.0786      1.0     1.9029      3.0
+  olympics                                     2.8570      4.0     2.3126      6.0
+  country                                      1.9317      5.0     1.9155      2.0
+  olympics                                     1.9114      1.0     1.6433      1.0
+  currency                                        nan      nan        nan      nan
+  registering_agency                              nan      nan        nan      nan
+  child                                           nan      nan        nan      nan
+  citytown                                        nan      nan     2.4899      1.0
+  state_province_region                           nan      nan     1.9207      1.0
+  place_founded                                   nan      nan        nan      nan
+  organizations_founded                           nan      nan        nan      nan
+  organization                                    nan      nan        nan      nan
+  organization                                    nan      nan        nan      nan
+  people                                       2.1919      3.0        nan      nan
+  place_of_burial                                 nan      nan        nan      nan
+  place_of_death                                  nan      nan     2.1773      1.0
+  geographic_distribution                         nan      nan        nan      nan
+  languages_spoken                                nan      nan     2.2181      1.0
+  people                                       1.7301      3.0        nan      nan
+  location_of_ceremony                            nan      nan        nan      nan
+  company                                         nan      nan     3.0000      1.0
+  gender                                          nan      nan        nan      nan
+  languages                                       nan      nan        nan      nan
+  nationality                                     nan      nan     1.7078      1.0
+  place_of_birth                                  nan      nan     2.3100      1.0
+  location                                     3.0000      1.0     1.9993      1.0
+  profession                                   2.4458      1.0     1.5387      3.0
+  religion                                        nan      nan        nan      nan
+  sibling                                         nan      nan        nan      nan
+  location_of_ceremony                            nan      nan        nan      nan
+  spouse                                          nan      nan        nan      nan
+  type_of_union                                   nan      nan        nan      nan
+  specialization_of                               nan      nan        nan      nan
+  team                                         1.7954      1.0     2.7026      1.0
+  position                                        nan      nan        nan      nan
+  position                                        nan      nan        nan      nan
+  team                                         1.8114      1.0        nan      nan
+  draft                                        1.8956      1.0        nan      nan
+  school                                       1.9760      1.0     2.1842      1.0
+  athlete                                         nan      nan        nan      nan
+  team                                            nan      nan        nan      nan
+  school                                          nan      nan        nan      nan
+  position                                        nan      nan        nan      nan
+  team                                         2.1593      9.0     2.1479      1.0
+  colors                                          nan      nan        nan      nan
+  position_s                                   2.0146      1.0        nan      nan
+  position                                        nan      nan        nan      nan
+  position                                     2.2064      2.0        nan      nan
+  position                                        nan      nan        nan      nan
+  sport                                           nan      nan        nan      nan
+  teams                                           nan      nan        nan      nan
+  instance_of_recurring_event                     nan      nan        nan      nan
+  locations                                    2.1989      1.0     2.5159      1.0
+  month                                           nan      nan        nan      nan
+  mode_of_transportation                          nan      nan        nan      nan
+  person                                          nan      nan        nan      nan
+  program                                      2.1570      1.0        nan      nan
+  program                                         nan      nan        nan      nan
+  program                                         nan      nan     2.4229      1.0
+  genre                                        2.0488      1.0     2.1080      3.0
+  languages                                       nan      nan        nan      nan
+  program_creator                                 nan      nan        nan      nan
+  actor                                        2.9596      2.0        nan      nan
+  tv_program                                      nan      nan     2.1631      1.0
+  interests                                       nan      nan        nan      nan
+  sports                                       2.6654      3.0     1.7440      1.0
+  member_states                                   nan      nan        nan      nan
+
+=== Block C: Schema and Relation Correlation ===
+
+--- Subject-side co-occurrence ---
+  density:       0.0898
+  top SVs:       3242.823, 1901.423, 730.601, 562.151, 459.966, 447.834, 443.838, 368.855, 351.191, 322.939
+  row entropy:   mean=2.1655  std=0.8599
+
+--- Object-side co-occurrence ---
+  density:       0.0717
+  top SVs:       1284.801, 1148.177, 523.541, 384.977, 321.276, 299.628, 270.865, 263.092, 236.299, 226.221
+  row entropy:   mean=1.9360  std=0.9736
+
+--- Type statistics (0 classes) ---
+  class_size_zipf_exponent: nan
+
+=== Block D: Characteristic Set Features ===
+
+Forward CS:
+  Distinct types: 2370
+  Freq fit: alpha=2.6583  ks=0.0326
+  Size stats: mean=3.98  median=3.00  p90=7.00
+Inverse CS:
+  Distinct types: 1425
+  Freq fit: alpha=2.0353  ks=0.0237
+  Size stats: mean=2.59  median=2.00  p90=5.00
+
+Two-step pairs (top pairs):
+  in_pred                              out_pred                             count  freq
+  award_nominee                        award_nominee                          570  0.0110
+  film                                 genre                                  417  0.0081
+  film                                 language                               415  0.0080
+  award_winner                         award                                  371  0.0072
+  award_nominee                        award                                  368  0.0071
+  award_winner                         award_winner                           366  0.0071
+  award_winner                         award_nominee                          362  0.0070
+  award_nominee                        gender                                 351  0.0068
+  award_nominee                        award_winner                           349  0.0068
+  film                                 currency                               320  0.0062
+
+Pair freq fit: alpha=2.2522  ks=0.0400
+
+=== Block E: Motif Shape Distribution ===
+
+--- Subgraph counts ---
+  triangles:           18607
+  4-cycles:            1666427
+  5-cycles (est):      4916083
+  6-cycles (est):      170977548
+  diamonds:            362267
+  K4:                  18044
+  tailed triangles:    5444826
+
+--- Star counts ---
+  k=2: 2954522  k=3: 689098852  k=4: 153583761519  k=5: 29339550593706  k=6: 4972256902552735  k=7: 644119642679367680  k=8: 86693408314855374848  k=9: 9062570809663228477440  k=10: 915991133691660776505344
+
+--- Path templates ---
+    k  zipf_alpha     entropy
+    2         nan     -0.0000
+    3      1.3477      0.0214
+    4      1.2369      0.4978
+    5      1.2411      1.4194
+    6      1.2575      2.4473
+    7      1.3654      3.2590
+    8      1.5607      4.0050
+    9      1.7304      5.1691
+   10      1.8042      6.0256
+
+--- Tree templates (depth-2) ---
+  zipf_alpha=1.1049  entropy=2.5595
+
+Block F — Connectivity
+  num_components:              11
+  largest_component_fraction:  0.9890
+  avg_shortest_path_length:    3.3570
+  avg_shortest_path_length_se: 0.0312
+  clustering_coefficient:      0.1483
+  degree_assortativity:        -0.1547

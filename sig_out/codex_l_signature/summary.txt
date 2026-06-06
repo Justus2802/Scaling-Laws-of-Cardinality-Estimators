@@ -1,0 +1,235 @@
+=== Block A: Size and Density ===
+  num_entities      : 77951
+  num_triples       : 612437
+  num_relations     : 69
+  density           : 0.00010079
+  triples_per_entity: 7.8567
+  relation_reuse    : 8875.8986
+
+=== Block B: Degree Structure ===
+
+Out-degree: n=77951  min=0  max=265  mean=7.86  median=7.0
+  fit: alpha=2.6839  xmin=5.0  ks=0.1257
+In-degree : n=77951  min=0  max=18433  mean=7.86  median=0.0
+  fit: alpha=1.9059  xmin=13.0  ks=0.0152
+
+--- Functionality (sorted desc) ---
+  P1056                                     func=1.000  inv_func=0.600
+  P149                                      func=1.000  inv_func=0.000
+  P194                                      func=1.000  inv_func=0.000
+  P2283                                     func=1.000  inv_func=0.000
+  P169                                      func=1.000  inv_func=0.818
+  P3095                                     func=1.000  inv_func=1.000
+  P457                                      func=1.000  inv_func=1.000
+  P740                                      func=0.997  inv_func=0.634
+  P20                                       func=0.996  inv_func=0.333
+  P19                                       func=0.996  inv_func=0.191
+  P1454                                     func=0.994  inv_func=0.000
+  P114                                      func=0.990  inv_func=0.000
+  P119                                      func=0.988  inv_func=0.370
+  P4552                                     func=0.986  inv_func=0.083
+  P2348                                     func=0.983  inv_func=0.222
+  P509                                      func=0.970  inv_func=0.053
+  P407                                      func=0.969  inv_func=0.425
+  P172                                      func=0.956  inv_func=0.087
+  P140                                      func=0.954  inv_func=0.054
+  P84                                       func=0.953  inv_func=0.778
+  P1050                                     func=0.952  inv_func=0.333
+  P30                                       func=0.952  inv_func=0.100
+  P57                                       func=0.951  inv_func=0.432
+  P159                                      func=0.951  inv_func=0.643
+  P641                                      func=0.938  inv_func=0.013
+  P749                                      func=0.936  inv_func=0.618
+  P26                                       func=0.936  inv_func=0.942
+  P112                                      func=0.923  inv_func=0.915
+  P135                                      func=0.909  inv_func=0.291
+  P1412                                     func=0.905  inv_func=0.043
+  P17                                       func=0.890  inv_func=0.376
+  P50                                       func=0.889  inv_func=0.701
+  P361                                      func=0.888  inv_func=0.510
+  P37                                       func=0.886  inv_func=0.218
+  P452                                      func=0.881  inv_func=0.368
+  P101                                      func=0.869  inv_func=0.302
+  P138                                      func=0.857  inv_func=0.879
+  P451                                      func=0.856  inv_func=0.885
+  P102                                      func=0.846  inv_func=0.010
+  P27                                       func=0.845  inv_func=0.223
+  P840                                      func=0.837  inv_func=0.399
+  P551                                      func=0.826  inv_func=0.545
+  P1995                                     func=0.818  inv_func=0.125
+  P40                                       func=0.811  inv_func=0.884
+  P123                                      func=0.795  inv_func=0.467
+  P36                                       func=0.793  inv_func=0.616
+  P495                                      func=0.792  inv_func=0.270
+  P108                                      func=0.767  inv_func=0.263
+  P1303                                     func=0.743  inv_func=0.015
+  P3373                                     func=0.719  inv_func=0.681
+  P69                                       func=0.705  inv_func=0.027
+  P466                                      func=0.691  inv_func=0.758
+  P54                                       func=0.668  inv_func=0.064
+  P113                                      func=0.660  inv_func=0.106
+  P264                                      func=0.660  inv_func=0.083
+  P463                                      func=0.644  inv_func=0.295
+  P170                                      func=0.607  inv_func=0.638
+  P737                                      func=0.588  inv_func=0.627
+  P136                                      func=0.573  inv_func=0.067
+  P131                                      func=0.471  inv_func=0.421
+  P488                                      func=0.412  inv_func=1.000
+  P366                                      func=0.333  inv_func=0.667
+  P47                                       func=0.254  inv_func=0.299
+  P2176                                     func=0.200  inv_func=0.000
+  P106                                      func=0.147  inv_func=0.048
+  P530                                      func=0.070  inv_func=0.115
+  P161                                      func=0.068  inv_func=0.329
+  P780                                      func=0.000  inv_func=0.250
+  P2578                                     func=0.000  inv_func=1.000
+
+--- Per-relation powerlaw fits ---
+  relation                                   om_alpha  om_xmin   sm_alpha  sm_xmin
+  P101                                         3.0000      1.0     1.9790      5.0
+  P102                                         3.0000      1.0     1.9650      5.0
+  P1050                                        3.0000      1.0     1.9042      6.0
+  P1056                                           nan      nan        nan      nan
+  P106                                         2.3752      2.0     1.5297      5.0
+  P108                                         2.7934      1.0     2.0984      6.0
+  P112                                         3.0000      3.0     3.0000      4.0
+  P113                                         2.3089      1.0     2.3256      2.0
+  P114                                            nan      nan        nan      nan
+  P119                                            nan      nan     2.3882     13.0
+  P123                                         2.9722      1.0     2.7765      5.0
+  P1303                                        2.7330      1.0     1.8094     42.0
+  P131                                         2.1316      1.0     2.1828      5.0
+  P135                                         3.0000      1.0     2.2217      5.0
+  P136                                         2.1437      1.0     1.6913      5.0
+  P138                                         3.0000      1.0     3.0000      1.0
+  P140                                         3.0000      1.0     1.5414      4.0
+  P1412                                        3.0000     12.0     1.7713    110.0
+  P1454                                           nan      nan     2.6389      7.0
+  P149                                            nan      nan        nan      nan
+  P159                                            nan      nan     2.0874      1.0
+  P161                                         2.9442      7.0     1.6849      1.0
+  P169                                            nan      nan        nan      nan
+  P17                                          2.4620      2.0     1.7429      4.0
+  P170                                         2.3037      1.0     1.9725      1.0
+  P172                                         2.8326      2.0     2.0592     18.0
+  P19                                             nan      nan     2.1149      8.0
+  P194                                            nan      nan        nan      nan
+  P1995                                           nan      nan        nan      nan
+  P20                                             nan      nan     1.9969      4.0
+  P2176                                        2.7682      5.0     3.0000      5.0
+  P2283                                           nan      nan        nan      nan
+  P2348                                           nan      nan     1.7091      6.0
+  P2578                                           nan      nan        nan      nan
+  P26                                             nan      nan        nan      nan
+  P264                                         2.3892      1.0     2.0179      4.0
+  P27                                          3.0000      1.0     1.4711      3.0
+  P30                                          3.0000      1.0     1.8517     21.0
+  P3095                                           nan      nan        nan      nan
+  P3373                                        2.4102      1.0     2.3542      1.0
+  P36                                          2.9550      1.0     2.2052      1.0
+  P361                                         3.0000      1.0     2.7804      5.0
+  P366                                            nan      nan        nan      nan
+  P37                                          3.0000      1.0     1.8200      3.0
+  P40                                          2.9336      1.0        nan      nan
+  P407                                         2.9517      3.0     1.6496      1.0
+  P451                                         3.0000      1.0     3.0000      1.0
+  P452                                            nan      nan     2.7613      6.0
+  P4552                                           nan      nan     2.1417      6.0
+  P457                                            nan      nan        nan      nan
+  P463                                         2.5365      2.0     1.8004      5.0
+  P466                                         2.5878      1.0     2.8050      1.0
+  P47                                          2.4442      3.0     1.6847      1.0
+  P488                                         2.6698      2.0        nan      nan
+  P495                                         2.9368      1.0     1.4122      1.0
+  P50                                             nan      nan     2.1074      1.0
+  P509                                         3.0000      1.0     1.7833     13.0
+  P530                                         2.3323     21.0     2.3954     22.0
+  P54                                          2.3114      1.0     2.6772      4.0
+  P551                                         2.9998      1.0     2.3006      6.0
+  P57                                          3.0000      1.0     1.8343      1.0
+  P641                                         2.9265      5.0     2.4833     50.0
+  P69                                          2.6362      1.0     2.2755     18.0
+  P737                                         2.0022      1.0     2.1119      1.0
+  P740                                            nan      nan     2.0851      1.0
+  P749                                         3.0000      1.0     2.1593      1.0
+  P780                                         2.5493      3.0     1.4892      1.0
+  P84                                             nan      nan     2.3558      1.0
+  P840                                         3.0000      1.0     2.2265     17.0
+
+=== Block C: Schema and Relation Correlation ===
+
+--- Subject-side co-occurrence ---
+  density:       0.4194
+  top SVs:       197488.235, 23064.645, 16306.338, 15403.989, 13624.729, 10701.778, 9862.576, 8330.707, 7516.097, 7097.985
+  row entropy:   mean=2.3230  std=0.4858
+
+--- Object-side co-occurrence ---
+  density:       0.2342
+  top SVs:       6944.438, 6574.249, 2678.742, 2355.198, 2073.480, 1830.512, 1120.734, 1014.937, 948.249, 902.971
+  row entropy:   mean=1.4533  std=0.7274
+
+--- Type statistics (0 classes) ---
+  class_size_zipf_exponent: nan
+
+=== Block D: Characteristic Set Features ===
+
+Forward CS:
+  Distinct types: 9454
+  Freq fit: alpha=1.8463  ks=0.0131
+  Size stats: mean=5.33  median=5.00  p90=8.00
+Inverse CS:
+  Distinct types: 1018
+  Freq fit: alpha=1.7246  ks=0.0313
+  Size stats: mean=1.58  median=1.00  p90=3.00
+
+Two-step pairs (top pairs):
+  in_pred                              out_pred                             count  freq
+  P27                                  P530                                 6778374  0.4639
+  P27                                  P463                                 2178189  0.1491
+  P495                                 P530                                 895769  0.0613
+  P27                                  P47                                  747080  0.0511
+  P17                                  P530                                 582078  0.0398
+  P530                                 P530                                 413280  0.0283
+  P495                                 P463                                 279428  0.0191
+  P17                                  P463                                 223178  0.0153
+  P530                                 P463                                 150249  0.0103
+  P27                                  P36                                  142833  0.0098
+
+Pair freq fit: alpha=1.5486  ks=0.0347
+
+=== Block E: Motif Shape Distribution ===
+
+--- Subgraph counts ---
+  triangles:           275420
+  4-cycles:            355906224
+  5-cycles (est):      1596735078
+  6-cycles (est):      848816862187
+  diamonds:            122810794
+  K4:                  272308
+  tailed triangles:    1607704933
+
+--- Star counts ---
+  k=2: 971894810  k=3: 3438559980358  k=4: 11533103894697344  k=5: 34418509799521718272  k=6: 87775147096956720906240  k=7: 198528768223279424584286208  k=8: 413203751128092389777078222848  k=9: 777782552219413953040707731062784  k=10: 1343820273857034275092100029888856064
+
+--- Path templates ---
+    k  zipf_alpha     entropy
+    2         nan     -0.0000
+    3      1.2257      0.0014
+    4      1.1516      0.4240
+    5      1.2207      1.3900
+    6      1.2452      2.1588
+    7      1.3340      2.8633
+    8      1.5003      3.4955
+    9         nan         nan
+   10         nan         nan
+
+--- Tree templates (depth-2) ---
+  zipf_alpha=1.0684  entropy=2.2881
+
+Block F — Connectivity
+  num_components:              2
+  largest_component_fraction:  0.9999
+  avg_shortest_path_length:    2.9730
+  avg_shortest_path_length_se: 0.0217
+  clustering_coefficient:      0.0980
+  degree_assortativity:        -0.1782
