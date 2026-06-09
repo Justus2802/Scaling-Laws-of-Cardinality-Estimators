@@ -1,0 +1,1162 @@
+{
+  "_subj_singular_values": {
+    "__sig_type__": "ndarray",
+    "dtype": "float64",
+    "data": [
+      414949.9137169921,
+      97691.62269508155,
+      43469.57011851971,
+      10403.404963990533,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "_subj_cooc_density": 0.84,
+  "_subj_row_entropies": {
+    "__sig_type__": "ndarray",
+    "dtype": "float64",
+    "data": [
+      1.1451451504494463,
+      1.1375531051494712,
+      1.0625681702893026,
+      1.0259298800372774,
+      1.2617560145433213
+    ]
+  },
+  "_obj_singular_values": {
+    "__sig_type__": "ndarray",
+    "dtype": "float64",
+    "data": [
+      176992.08922459863,
+      94799.62148436919,
+      40445.93118476445,
+      2640.3581062676762,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "_obj_cooc_density": 0.52,
+  "_obj_row_entropies": {
+    "__sig_type__": "ndarray",
+    "dtype": "float64",
+    "data": [
+      0.8020845416366538,
+      0.7651775419146796,
+      0.6470362196233164,
+      0.6028792061887157,
+      -0.0
+    ]
+  },
+  "_num_classes": 51,
+  "_class_size_zipf_exponent": 1.3383052580067296,
+  "_class_sizes": {
+    "__sig_type__": "dict",
+    "items": [
+      [
+        "http://class1",
+        34851
+      ],
+      [
+        "http://class0",
+        184493
+      ],
+      [
+        "http://class3",
+        24216
+      ],
+      [
+        "http://class6",
+        2491
+      ],
+      [
+        "http://class9",
+        475
+      ],
+      [
+        "http://class21",
+        1854
+      ],
+      [
+        "http://class4",
+        4328
+      ],
+      [
+        "http://class5",
+        539
+      ],
+      [
+        "http://class8",
+        110
+      ],
+      [
+        "http://class19",
+        54
+      ],
+      [
+        "http://class16",
+        140
+      ],
+      [
+        "http://class20",
+        125
+      ],
+      [
+        "http://class10",
+        47
+      ],
+      [
+        "http://class2",
+        46
+      ],
+      [
+        "http://class27",
+        7
+      ],
+      [
+        "http://class34",
+        17
+      ],
+      [
+        "http://class38",
+        8
+      ],
+      [
+        "http://class33",
+        33
+      ],
+      [
+        "http://class46",
+        9
+      ],
+      [
+        "http://class14",
+        33
+      ],
+      [
+        "http://class44",
+        2
+      ],
+      [
+        "http://class35",
+        11
+      ],
+      [
+        "http://class32",
+        8
+      ],
+      [
+        "http://class28",
+        84
+      ],
+      [
+        "http://class22",
+        1
+      ],
+      [
+        "http://class12",
+        21
+      ],
+      [
+        "http://class15",
+        28
+      ],
+      [
+        "http://class17",
+        1
+      ],
+      [
+        "http://class11",
+        10
+      ],
+      [
+        "http://class25",
+        42
+      ],
+      [
+        "http://class45",
+        4
+      ],
+      [
+        "http://class42",
+        6
+      ],
+      [
+        "http://class43",
+        1
+      ],
+      [
+        "http://class49",
+        2
+      ],
+      [
+        "http://class57",
+        1
+      ],
+      [
+        "http://class24",
+        2
+      ],
+      [
+        "http://class30",
+        1
+      ],
+      [
+        "http://class26",
+        12
+      ],
+      [
+        "http://class48",
+        14
+      ],
+      [
+        "http://class7",
+        7
+      ],
+      [
+        "http://class36",
+        4
+      ],
+      [
+        "http://class23",
+        3
+      ],
+      [
+        "http://class37",
+        5
+      ],
+      [
+        "http://class40",
+        2
+      ],
+      [
+        "http://class51",
+        1
+      ],
+      [
+        "http://class52",
+        1
+      ],
+      [
+        "http://class53",
+        1
+      ],
+      [
+        "http://class39",
+        1
+      ],
+      [
+        "http://class47",
+        1
+      ],
+      [
+        "http://class13",
+        1
+      ],
+      [
+        "http://class59",
+        2
+      ]
+    ]
+  },
+  "_type_relation_conditional": {
+    "__sig_type__": "dict",
+    "items": [
+      [
+        "http://class1",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.43320074580484774
+            ],
+            [
+              "http://edge1",
+              0.20969546302050962
+            ],
+            [
+              "http://edge0",
+              0.33599751398384087
+            ],
+            [
+              "http://edge3",
+              0.019316345556246117
+            ],
+            [
+              "http://edge2",
+              0.0017899316345556247
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class0",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.30063633030512893
+            ],
+            [
+              "http://edge3",
+              0.3379622764492606
+            ],
+            [
+              "http://edge0",
+              0.32024442905446693
+            ],
+            [
+              "http://edge1",
+              0.03882999959261824
+            ],
+            [
+              "http://edge2",
+              0.002326964598525278
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class3",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.3130583170659186
+            ],
+            [
+              "http://edge0",
+              0.40449627034504154
+            ],
+            [
+              "http://edge3",
+              0.21802645016999986
+            ],
+            [
+              "http://edge2",
+              0.014013677556138741
+            ],
+            [
+              "http://edge1",
+              0.050405284862901245
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class6",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.527307366638442
+            ],
+            [
+              "http://edge0",
+              0.45681625740897547
+            ],
+            [
+              "http://edge1",
+              0.015876375952582556
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class9",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.5319148936170213
+            ],
+            [
+              "http://edge0",
+              0.46808510638297873
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class21",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.5
+            ],
+            [
+              "http://edge0",
+              0.5
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class4",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.3009526458521661
+            ],
+            [
+              "http://edge3",
+              0.10194005980112648
+            ],
+            [
+              "http://edge0",
+              0.3902371184201377
+            ],
+            [
+              "http://edge1",
+              0.20687017592656978
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class5",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.20007423904974017
+            ],
+            [
+              "http://edge0",
+              0.6752041573867854
+            ],
+            [
+              "http://edge1",
+              0.12472160356347439
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class8",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.7952029520295203
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.2029520295202952
+            ],
+            [
+              "http://edge1",
+              0.0018450184501845018
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class19",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.18685121107266436
+            ],
+            [
+              "http://edge0",
+              0.8131487889273357
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class16",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.2
+            ],
+            [
+              "http://edge0",
+              0.8
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class20",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.6188118811881188
+            ],
+            [
+              "http://edge0",
+              0.37623762376237624
+            ],
+            [
+              "http://edge1",
+              0.0049504950495049506
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class10",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.858433734939759
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.14156626506024098
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class2",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.1803921568627451
+            ],
+            [
+              "http://edge0",
+              0.8196078431372549
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class27",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.30434782608695654
+            ],
+            [
+              "http://edge0",
+              0.6956521739130435
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class34",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.11643835616438356
+            ],
+            [
+              "http://edge0",
+              0.8835616438356164
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class38",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              1.0
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class33",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.1952662721893491
+            ],
+            [
+              "http://edge0",
+              0.8047337278106509
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class46",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8253968253968254
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.14285714285714285
+            ],
+            [
+              "http://edge1",
+              0.031746031746031744
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class14",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8565217391304348
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.14347826086956522
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class44",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.25
+            ],
+            [
+              "http://edge0",
+              0.75
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class35",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8625
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.1375
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class32",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.1951219512195122
+            ],
+            [
+              "http://edge0",
+              0.8048780487804879
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class28",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              1.0
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class22",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.5
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.5
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class12",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.7029702970297029
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.2079207920792079
+            ],
+            [
+              "http://edge1",
+              0.0891089108910891
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class15",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.5421686746987951
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.3373493975903614
+            ],
+            [
+              "http://edge1",
+              0.12048192771084337
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class17",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.14285714285714285
+            ],
+            [
+              "http://edge0",
+              0.7142857142857143
+            ],
+            [
+              "http://edge1",
+              0.14285714285714285
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class11",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8765432098765432
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.12345679012345678
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class25",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8675078864353313
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.13249211356466878
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class45",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8260869565217391
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.17391304347826086
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class42",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8333333333333334
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.16666666666666666
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class43",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8333333333333334
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.16666666666666666
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class49",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8461538461538461
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.15384615384615385
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class57",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8571428571428571
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.14285714285714285
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class24",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.75
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.25
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class30",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.2
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class26",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.2
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class48",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8717948717948718
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.11965811965811966
+            ],
+            [
+              "http://edge1",
+              0.008547008547008548
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class7",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.2
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class36",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8461538461538461
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.15384615384615385
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class23",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.7647058823529411
+            ],
+            [
+              "http://edge1",
+              0.058823529411764705
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.17647058823529413
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class37",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8076923076923077
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.19230769230769232
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class40",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.6666666666666666
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.3333333333333333
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class51",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8571428571428571
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.14285714285714285
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class52",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8571428571428571
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.14285714285714285
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class53",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8571428571428571
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.14285714285714285
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class39",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.6666666666666666
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.3333333333333333
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class47",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              1.0
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class13",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.2
+            ]
+          ]
+        }
+      ],
+      [
+        "http://class59",
+        {
+          "__sig_type__": "dict",
+          "items": [
+            [
+              "http://edge0",
+              0.8
+            ],
+            [
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+              0.2
+            ]
+          ]
+        }
+      ]
+    ]
+  }
+}

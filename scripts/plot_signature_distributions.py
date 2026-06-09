@@ -1,9 +1,14 @@
-"""Load all signature.json files from sig_out/ and plot component-wise value
-distributions across graphs.  One figure is produced per block; each subplot
-shows the per-graph values for a single feature, annotated with its name and
-block context.  Figures are saved to sig_out/distribution_plots/.
+"""Load all signature.json files and plot component-wise value distributions
+across graphs.  One figure is produced per block; each subplot shows the
+per-graph values for a single feature, annotated with its name and block context.
+
+By default reads the full signature from sig_out/ and writes to
+sig_out/distribution_plots/.  With ``--reduced`` it reads the reduced signature
+(signature_reduced, no motif block) from sig_out_reduced/ and writes to
+sig_out_reduced/distribution_plots/.
 """
 
+import argparse
 import json
 import math
 import sys
@@ -15,20 +20,44 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
+ROOT = Path(__file__).parent.parent
 
-# Block metadata: class, display title, subplot grid colour.
-BLOCKS: list[tuple[str, type, str, str]] = [
-    ("a", BlockA, "Block A — Size & Density",          "#4C72B0"),
-    ("b", BlockB, "Block B — Degree Structure",         "#DD8452"),
-    ("c", BlockC, "Block C — Schema & Co-occurrence",   "#55A868"),
-    ("d", BlockD, "Block D — Characteristic Sets",      "#C44E52"),
-    ("e", BlockE, "Block E — Motifs",                   "#8172B3"),
-    ("f", BlockF, "Block F — Connectivity",             "#937860"),
-]
+# Per-letter subplot colour, shared by both signatures.
+_BLOCK_COLOURS: dict[str, str] = {
+    "a": "#4C72B0", "b": "#DD8452", "c": "#55A868",
+    "d": "#C44E52", "e": "#8172B3", "f": "#937860",
+}
 
-SIG_OUT = Path(__file__).parent.parent / "sig_out"
-OUT_DIR = SIG_OUT / "distribution_plots"
+
+def _block_config(reduced: bool) -> tuple[list[tuple[str, type, str, str]], Path]:
+    """Return (block metadata, sig_out dir) for the selected signature.
+
+    The reduced signature (``signature_reduced``) has no motif block (E) and
+    reads from ``sig_out_reduced/``; the full signature reads from ``sig_out/``.
+    Imports are local so the unused package isn't required to run either mode.
+    """
+    if reduced:
+        from signature_reduced import BlockA, BlockB, BlockC, BlockD, BlockF
+        blocks = [
+            ("a", BlockA, "Block A — Size & Vocabulary"),
+            ("b", BlockB, "Block B — Relation Freq & Multiplicity"),
+            ("c", BlockC, "Block C — Schema & Co-occurrence"),
+            ("d", BlockD, "Block D — Characteristic Sets & Two-step"),
+            ("f", BlockF, "Block F — Connectivity"),
+        ]
+        sig_out = ROOT / "sig_out_reduced"
+    else:
+        from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
+        blocks = [
+            ("a", BlockA, "Block A — Size & Density"),
+            ("b", BlockB, "Block B — Degree Structure"),
+            ("c", BlockC, "Block C — Schema & Co-occurrence"),
+            ("d", BlockD, "Block D — Characteristic Sets"),
+            ("e", BlockE, "Block E — Motifs"),
+            ("f", BlockF, "Block F — Connectivity"),
+        ]
+        sig_out = ROOT / "sig_out"
+    return [(c, cls, title, _BLOCK_COLOURS[c]) for c, cls, title in blocks], sig_out
 
 
 _STEM_ALIASES: dict[str, str] = {
@@ -141,18 +170,28 @@ def plot_block(
 
 
 def main() -> None:
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--reduced", action="store_true",
+        help="Plot the reduced signature (signature_reduced) from sig_out_reduced/ "
+             "instead of the full signature from sig_out/.",
+    )
+    args = parser.parse_args()
 
-    print(f"Scanning : {SIG_OUT}")
-    graph_names, features = load_signatures(SIG_OUT)
+    blocks, sig_out = _block_config(args.reduced)
+    out_dir = sig_out / "distribution_plots"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Scanning : {sig_out}")
+    graph_names, features = load_signatures(sig_out)
     print(f"Graphs   : {graph_names}")
     print(f"Features : {len(features)} total")
 
     saved: list[Path] = []
-    for block_char, block_cls, title, colour in BLOCKS:
+    for block_char, block_cls, title, colour in blocks:
         path = plot_block(
             block_char, block_cls, title, colour,
-            graph_names, features, OUT_DIR,
+            graph_names, features, out_dir,
         )
         if path:
             print(f"  Saved  : {path}")
@@ -160,7 +199,7 @@ def main() -> None:
         else:
             print(f"  Skipped: {title} (no data)")
 
-    print(f"\nDone. {len(saved)} figures written to {OUT_DIR}/")
+    print(f"\nDone. {len(saved)} figures written to {out_dir}/")
 
 
 if __name__ == "__main__":

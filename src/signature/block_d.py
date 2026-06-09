@@ -1,6 +1,6 @@
 """Block D — Characteristic set features."""
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import igraph
 import matplotlib.pyplot as plt  # type: ignore[import-untyped]
@@ -20,8 +20,9 @@ class BlockD(SignatureBlock):
 
     A characteristic set (CS) of a subject entity is the set of predicates it
     uses as outgoing edges. The inverse CS is the set of incoming predicates for
-    an object entity. Two-step pairs capture which (in_pred, out_pred) combos
-    appear at bridge entities.
+    an object entity. Two-step pairs count directed 2-hop paths per (in_pred,
+    out_pred) label — ``Σ_x deg_in(x,q)·deg_out(x,p)`` — which predicts path-2
+    query selectivity.
 
     Usage::
 
@@ -379,20 +380,30 @@ class BlockD(SignatureBlock):
     def _two_step_pair_stats(
         g: igraph.Graph,
     ) -> tuple[np.ndarray, PowerLawStats, list[tuple[str, str, int]]]:
-        """Enumerate (in_pred, out_pred) pairs at every bridge entity in one g.es pass."""
-        out_preds: defaultdict[int, set[str]] = defaultdict(set)
-        in_preds: defaultdict[int, set[str]] = defaultdict(set)
+        """Count directed 2-hop paths per (in_pred, out_pred) label, in one g.es pass.
+
+        For each bridge entity ``x`` we accumulate the per-predicate in- and
+        out-degree, then the number of paths ``s -q-> x -p-> o`` labelled (q, p) is
+        ``path_count(q, p) = Σ_x deg_in(x, q) · deg_out(x, p)``. This is the
+        multiplicity-weighted count that predicts path-2 query selectivity — unlike a
+        bridge-node count, it accounts for how many edges actually meet at ``x``.
+        """
+        # Per-predicate in/out *degree* per entity (Counter, not set) so the product
+        # below counts edge instances, not just whether a predicate is present.
+        out_deg: defaultdict[int, Counter] = defaultdict(Counter)
+        in_deg: defaultdict[int, Counter] = defaultdict(Counter)
         is_literal: list[bool] = g.vs["is_literal"]
         for e in g.es:
-            out_preds[e.source].add(e["predicate"])
+            out_deg[e.source][e["predicate"]] += 1
             if not is_literal[e.target]:
-                in_preds[e.target].add(e["predicate"])
+                in_deg[e.target][e["predicate"]] += 1
 
         pair_counts: defaultdict[tuple[str, str], int] = defaultdict(int)
-        for v in set(out_preds) & set(in_preds):
-            for q in in_preds[v]:
-                for p in out_preds[v]:
-                    pair_counts[(q, p)] += 1
+        for v in set(out_deg) & set(in_deg):
+            in_c, out_c = in_deg[v], out_deg[v]
+            for q, cq in in_c.items():
+                for p, cp in out_c.items():
+                    pair_counts[(q, p)] += cq * cp
 
         if not pair_counts:
             return (

@@ -1,0 +1,171 @@
+=== Block A: Size and Density ===
+  num_entities      : 254207
+  num_triples       : 802066
+  num_relations     : 5
+  density           : 1.24118e-05
+  triples_per_entity: 3.1552
+  relation_reuse    : 160413.2000
+
+=== Block B: Degree Structure ===
+
+Out-degree: n=254207  min=0  max=12  mean=3.16  median=3.0
+  fit: alpha=2.5366  xmin=2.0  ks=0.3268
+In-degree : n=254207  min=0  max=184493  mean=3.16  median=2.0
+  fit: alpha=1.3368  xmin=12.0  ks=0.0804
+
+--- Functionality (sorted desc) ---
+  type                                      func=1.000  inv_func=0.216
+  edge2                                     func=1.000  inv_func=1.000
+  edge1                                     func=0.975  inv_func=0.975
+  edge0                                     func=0.450  inv_func=0.450
+  edge3                                     func=0.000  inv_func=0.000
+
+--- Per-relation powerlaw fits ---
+  relation                                   om_alpha  om_xmin   sm_alpha  sm_xmin
+  edge0                                        2.1664      1.0     2.1664      1.0
+  edge1                                           nan      nan        nan      nan
+  edge2                                           nan      nan        nan      nan
+  edge3                                           nan      nan        nan      nan
+  type                                            nan      nan     1.3383      5.0
+
+=== Block C: Schema and Relation Correlation ===
+
+--- Subject-side co-occurrence ---
+  density:       0.8400
+  top SVs:       414949.914, 97691.623, 43469.570, 10403.405
+  row entropy:   mean=1.1266  std=0.0812
+
+--- Object-side co-occurrence ---
+  density:       0.5200
+  top SVs:       176992.089, 94799.621, 40445.931, 2640.358
+  row entropy:   mean=0.5634  std=0.2911
+
+--- Type statistics (51 classes) ---
+  class_size_zipf_exponent: 1.3383
+  top classes by size:
+    class0                                    184493
+    class1                                    34851
+    class3                                    24216
+    class4                                    4328
+    class6                                    2491
+    class21                                   1854
+    class5                                    539
+    class9                                    475
+    class16                                   140
+    class20                                   125
+
+--- P(r | type) — top relations per type ---
+  class0                          edge3=0.34, edge0=0.32, type=0.30, edge1=0.04, edge2=0.00
+  class1                          type=0.43, edge0=0.34, edge1=0.21, edge3=0.02, edge2=0.00
+  class10                         edge0=0.86, type=0.14
+  class11                         edge0=0.88, type=0.12
+  class12                         edge0=0.70, type=0.21, edge1=0.09
+  class13                         edge0=0.80, type=0.20
+  class14                         edge0=0.86, type=0.14
+  class15                         edge0=0.54, type=0.34, edge1=0.12
+  class16                         edge0=0.80, type=0.20
+  class17                         edge0=0.71, type=0.14, edge1=0.14
+  class19                         edge0=0.81, type=0.19
+  class2                          edge0=0.82, type=0.18
+  class20                         type=0.62, edge0=0.38, edge1=0.00
+  class21                         type=0.50, edge0=0.50
+  class22                         edge0=0.50, type=0.50
+  class23                         edge0=0.76, type=0.18, edge1=0.06
+  class24                         edge0=0.75, type=0.25
+  class25                         edge0=0.87, type=0.13
+  class26                         edge0=0.80, type=0.20
+  class27                         edge0=0.70, type=0.30
+  class28                         type=1.00
+  class3                          edge0=0.40, type=0.31, edge3=0.22, edge1=0.05, edge2=0.01
+  class30                         edge0=0.80, type=0.20
+  class32                         edge0=0.80, type=0.20
+  class33                         edge0=0.80, type=0.20
+  class34                         edge0=0.88, type=0.12
+  class35                         edge0=0.86, type=0.14
+  class36                         edge0=0.85, type=0.15
+  class37                         edge0=0.81, type=0.19
+  class38                         type=1.00
+  class39                         edge0=0.67, type=0.33
+  class4                          edge0=0.39, type=0.30, edge1=0.21, edge3=0.10
+  class40                         edge0=0.67, type=0.33
+  class42                         edge0=0.83, type=0.17
+  class43                         edge0=0.83, type=0.17
+  class44                         edge0=0.75, type=0.25
+  class45                         edge0=0.83, type=0.17
+  class46                         edge0=0.83, type=0.14, edge1=0.03
+  class47                         type=1.00
+  class48                         edge0=0.87, type=0.12, edge1=0.01
+  class49                         edge0=0.85, type=0.15
+  class5                          edge0=0.68, type=0.20, edge1=0.12
+  class51                         edge0=0.86, type=0.14
+  class52                         edge0=0.86, type=0.14
+  class53                         edge0=0.86, type=0.14
+  class57                         edge0=0.86, type=0.14
+  class59                         edge0=0.80, type=0.20
+  class6                          type=0.53, edge0=0.46, edge1=0.02
+  class7                          edge0=0.80, type=0.20
+  class8                          edge0=0.80, type=0.20, edge1=0.00
+  class9                          type=0.53, edge0=0.47
+
+=== Block D: Characteristic Set Features ===
+
+Forward CS:
+  Distinct types: 9
+  Freq fit: alpha=nan  ks=nan
+  Size stats: mean=2.24  median=2.00  p90=3.00
+Inverse CS:
+  Distinct types: 9
+  Freq fit: alpha=nan  ks=nan
+  Size stats: mean=1.24  median=1.00  p90=2.00
+
+Two-step pairs (top pairs):
+  in_pred                              out_pred                             count  freq
+  edge0                                edge0                                563422  0.2991
+  edge3                                edge3                                485318  0.2576
+  edge0                                type                                 269960  0.1433
+  edge3                                type                                 227284  0.1207
+  edge3                                edge0                                62674  0.0333
+  edge0                                edge3                                62674  0.0333
+  edge1                                edge1                                50458  0.0268
+  edge0                                edge1                                48488  0.0257
+  edge1                                edge0                                48488  0.0257
+  edge1                                type                                 48010  0.0255
+
+Pair freq fit: alpha=2.1547  ks=0.2442
+
+=== Block E: Motif Shape Distribution ===
+
+--- Subgraph counts ---
+  triangles:           597605
+  4-cycles:            0
+  5-cycles (est):      0
+  6-cycles (est):      0
+  diamonds:            0
+  K4:                  0
+  tailed triangles:    30667039950
+
+--- Star counts ---
+  k=2: 17995691964  k=3: 1056680233133152  k=4: 48346853489807720448  k=5: 1775811736770939988213760  k=6: 55094042826308656589573193728  k=7: 1445422139556310206536712378646528  k=8: 32892634662676713863918747853504118784  k=9: 691113781046775473257965962590042649001984  k=10: 12603465305501455137248866810258036616010399744
+
+--- Path templates ---
+    k  zipf_alpha     entropy
+    2         nan     -0.0000
+    3      1.1818      0.0002
+    4      6.1554      0.6747
+    5      1.2081      1.5391
+    6      1.4990      0.0141
+    7      1.2305      0.8694
+    8         nan         nan
+    9         nan         nan
+   10         nan         nan
+
+--- Tree templates (depth-2) ---
+  zipf_alpha=1.0906  entropy=0.0225
+
+Block F — Connectivity
+  num_components:              4
+  largest_component_fraction:  0.9996
+  avg_shortest_path_length:    2.5440
+  avg_shortest_path_length_se: 0.0205
+  clustering_coefficient:      0.3730
+  degree_assortativity:        -0.2380
