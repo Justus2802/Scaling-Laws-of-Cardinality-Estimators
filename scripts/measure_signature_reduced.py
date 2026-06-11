@@ -1,8 +1,10 @@
 """Measure the reduced graph signature of a KG file and write results to a directory.
 
 Sibling of ``measure_signature.py`` for the reduced (non-over-determined)
-signature (Blocks A, B, C, D, F). Writes to ``sig_out_reduced/<name>_signature/``
-so it never clobbers the original signature's output under ``sig_out/``.
+signature (Blocks A, B, C, D, F). By default writes a ``signature/`` directory
+**next to the graph file**, matching the ``data/graphs/<name>/`` corpus layout
+(so ``data/graphs/aids/AIDS.nt`` → ``data/graphs/aids/signature/``). Override
+with ``--output-dir``.
 """
 
 import argparse
@@ -25,7 +27,7 @@ def main() -> None:
     parser.add_argument("kg_file", help="Path to the input KG (.ttl or .nt)")
     parser.add_argument(
         "--output-dir", default=None,
-        help="Directory to write results into (default: sig_out_reduced/<graph name>_signature/)",
+        help="Directory to write results into (default: a 'signature/' dir next to the graph file)",
     )
     parser.add_argument(
         "--show", action="store_true", help="Show each block's plot interactively after saving"
@@ -43,8 +45,9 @@ def main() -> None:
 
     selected_blocks = [b.strip() for b in args.blocks.split(",") if b.strip()]
 
-    graph_name = Path(args.kg_file).stem
-    out_dir = Path(args.output_dir) if args.output_dir else Path("sig_out_reduced") / f"{graph_name}_signature"
+    # Default: write a 'signature/' directory next to the graph file, matching the
+    # data/graphs/<name>/ corpus layout. Override with --output-dir.
+    out_dir = Path(args.output_dir) if args.output_dir else Path(args.kg_file).parent / "signature"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Loading  : {args.kg_file}")
