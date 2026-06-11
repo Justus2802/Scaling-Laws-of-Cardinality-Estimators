@@ -16,7 +16,7 @@ build records) in [`notes/`](notes/).
 
 Two signatures coexist: the original full signature (`src/signature/`,
 `scripts/measure_signature.py` → `sig_out/`) and the reduced one
-(`src/signature_reduced/`, `scripts/measure_signature_reduced.py` → `sig_out_reduced/`).
+(`src/signature_reduced/`, `scripts/measure_signature_reduced.py` → `data/graphs/<name>/signature/`).
 `scripts/measure_all_raw.py [--reduced]` runs either over all raw KGs.
 
 ## Plans (future)
@@ -25,6 +25,12 @@ Two signatures coexist: the original full signature (`src/signature/`,
   implementing the three-stage sampler (`src/generator_reduced.py`) against the reduced
   signature: Stage 1 (schema) + Stage 2 (CS-first instantiation) now, Stage 3 (motif
   refinement) deferred.
+- **[plan/stage1_population_sampler.md](plan/stage1_population_sampler.md)** — the
+  **doc-Stage-1 population sampler**: sampling a *novel* signature from the real-graph
+  population (conditional-on-size). Evaluates the data-expansion proposals (more KGs, WCC
+  splitting, subgraph cutting, size conditioning, component grouping), the p ≫ n reality of
+  the current 6 measurements, and a recommended scaling-law pipeline. Blocked on acquiring
+  more (esp. typed) real KGs.
 
 ## Notes
 
@@ -40,3 +46,14 @@ Two signatures coexist: the original full signature (`src/signature/`,
 - **[notes/signature_measurement_plan.md](notes/signature_measurement_plan.md)** — the
   build record / plan for the reduced signature (completed; realised as a coexisting
   module). Its realised-module summary is mirrored in [signature.md](signature.md).
+- **[notes/lod_laundromat_acquisition.md](notes/lod_laundromat_acquisition.md)** —
+  evaluation of LOD-a-lot / LOD Laundromat as a doc-Stage-1 data source (plan §3b):
+  splits the merged single-graph LOD-a-lot from the ~650 K-document LOD Laundromat, the
+  per-document meta-dataset find, and the case against using it for the population fit
+  (document ≠ KG, laundered structure, wrong population). Recommends meta-dataset for
+  exploration/validation only; acquire fit rows from the named typed §3b sources.
+- **[notes/data_source_evaluation.md](notes/data_source_evaluation.md)** — evaluation of the
+  *named* §3b sources (Bio2RDF, DBpedia, YAGO, DBLP, GeoNames, OGB, PrimeKG, …) as
+  population draws, split by the two sub-goals they serve — the type-block gate (needs
+  rich-typed sources) vs the non-type spread of 58 features (any real KG, typed or not).
+  Tiered verdict + acquisition order; Bio2RDF is the top typed-gate source.

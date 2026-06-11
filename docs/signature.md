@@ -32,8 +32,8 @@ The fits are stored as NamedTuples that restore as plain tuples through the JSON
 round-trip, so each block property re-wraps them to preserve attribute access.
 
 Run it: `python scripts/measure_signature_reduced.py <graph> [--blocks a,b,c,d,f]` →
-`sig_out_reduced/<name>_signature/`, or `scripts/measure_all_raw.py --reduced` for every
-raw KG. Tests: `tests/test_signature_reduced_fits.py`,
+`<graph-dir>/signature/` (override with `--output-dir`); the curated corpus lives in
+`data/graphs/<name>/signature/`. Or `scripts/measure_all_raw.py --reduced` for every raw KG. Tests: `tests/test_signature_reduced_fits.py`,
 `tests/test_signature_reduced_blocks.py`. The original full signature (`signature/`,
 `scripts/measure_signature.py`) is unchanged and still runs.
 

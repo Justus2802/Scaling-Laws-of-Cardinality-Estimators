@@ -4,8 +4,12 @@ per-graph values for a single feature, annotated with its name and block context
 
 By default reads the full signature from sig_out/ and writes to
 sig_out/distribution_plots/.  With ``--reduced`` it reads the reduced signature
-(signature_reduced, no motif block) from sig_out_reduced/ and writes to
-sig_out_reduced/distribution_plots/.
+(signature_reduced, no motif block) from the canonical graph store data/graphs/
+and writes to data/graph_population/.  ``--source`` / ``--out`` override either.
+
+Signatures are discovered as ``<source>/*/signature.json`` (flat sig_out layout)
+or ``<source>/*/signature/signature.json`` (the data/graphs/<name>/signature/
+bundle layout); both are scanned, so the same script serves either store.
 """
 
 import argparse
@@ -33,8 +37,9 @@ def _block_config(reduced: bool) -> tuple[list[tuple[str, type, str, str]], Path
     """Return (block metadata, sig_out dir) for the selected signature.
 
     The reduced signature (``signature_reduced``) has no motif block (E) and
-    reads from ``sig_out_reduced/``; the full signature reads from ``sig_out/``.
-    Imports are local so the unused package isn't required to run either mode.
+    reads from the canonical store ``data/graphs/``; the full signature reads
+    from ``sig_out/``. Imports are local so the unused package isn't required to
+    run either mode.
     """
     if reduced:
         from signature_reduced import BlockA, BlockB, BlockC, BlockD, BlockF
@@ -45,7 +50,7 @@ def _block_config(reduced: bool) -> tuple[list[tuple[str, type, str, str]], Path
             ("d", BlockD, "Block D — Characteristic Sets & Two-step"),
             ("f", BlockF, "Block F — Connectivity"),
         ]
-        sig_out = ROOT / "sig_out_reduced"
+        sig_out = ROOT / "data" / "graphs"
     else:
         from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
         blocks = [
@@ -86,7 +91,12 @@ def load_signatures(sig_out: Path) -> tuple[list[str], dict[str, list[float]]]:
     graph_names: list[str] = []
     rows: list[dict[str, float]] = []
 
-    for path in sorted(sig_out.glob("*/signature.json")):
+    # Accept both the flat sig_out layout (<name>/signature.json) and the
+    # data/graphs bundle layout (<name>/signature/signature.json).
+    paths = sorted(sig_out.glob("*/signature.json")) + sorted(
+        sig_out.glob("*/signature/signature.json")
+    )
+    for path in paths:
         data = json.loads(path.read_text())
         if "features" not in data or not data["features"]:
             continue  # skip old-format files without named features
@@ -173,13 +183,29 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--reduced", action="store_true",
-        help="Plot the reduced signature (signature_reduced) from sig_out_reduced/ "
+        help="Plot the reduced signature (signature_reduced) from data/graphs/ "
              "instead of the full signature from sig_out/.",
+    )
+    parser.add_argument(
+        "--source", type=Path, default=None,
+        help="Override the signature source directory (default per --reduced).",
+    )
+    parser.add_argument(
+        "--out", type=Path, default=None,
+        help="Override the output directory (default: data/graph_population/ for "
+             "--reduced, else <source>/distribution_plots/).",
     )
     args = parser.parse_args()
 
     blocks, sig_out = _block_config(args.reduced)
-    out_dir = sig_out / "distribution_plots"
+    if args.source is not None:
+        sig_out = args.source
+    if args.out is not None:
+        out_dir = args.out
+    elif args.reduced:
+        out_dir = ROOT / "data" / "graph_population"
+    else:
+        out_dir = sig_out / "distribution_plots"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Scanning : {sig_out}")

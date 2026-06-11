@@ -35,8 +35,8 @@ Reduced-signature feature count = **69** (A3 + B18 + C23 + D16 + F9). The NamedT
 round-trip, so each block property re-wraps them to preserve attribute access.
 
 CLI: `scripts/measure_signature_reduced.py` (mirrors `measure_signature.py`) writes to
-**`sig_out_reduced/<name>_signature/`** — a separate top-level dir from the original's
-`sig_out/`. Tests: `tests/test_signature_reduced_fits.py` and
+**`<graph-dir>/signature/`** (the `data/graphs/<name>/signature/` corpus layout);
+historically this was a separate top-level `sig_out_reduced/` dir, now retired. Tests: `tests/test_signature_reduced_fits.py` and
 `tests/test_signature_reduced_blocks.py`.
 
 The Steps below document the original *replace* design and the per-quantity rationale;
