@@ -480,10 +480,12 @@ def instantiate(
     n_type_edges = actual_V if num_types > 0 else 0
     content_E_target = max(0, actual_E_target - n_type_edges)
 
-    effective_cs_size = (
-        schema.cs_size_mean if schema.cs_size_mean > 0
-        else (content_E_target / actual_V if actual_V > 0 else 1.0)
-    )
+    # Target edges per entity divided by average objects per CS slot.
+    # cs_size_mean counts relation slots; each slot emits geometric(mean_func)
+    # objects on average, so we scale up to hit the edge budget.
+    edges_per_entity = content_E_target / actual_V if actual_V > 0 else 1.0
+    objects_per_slot = 1.0 / schema.mean_functionality if schema.mean_functionality < 1.0 else 1.0
+    effective_cs_size = max(0.1, edges_per_entity / objects_per_slot)
 
     # ------------------------------------------------------------------
     # 2. Assign a type to every entity
