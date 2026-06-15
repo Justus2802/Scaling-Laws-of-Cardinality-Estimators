@@ -71,10 +71,24 @@ class TestLoadKG(unittest.TestCase):
         predicates = set(g.es["predicate"])
         self.assertIn("http://example.org/knows", predicates)
 
-    def test_unsupported_extension_raises(self):
+    def test_invalid_content_raises(self):
         path = self._write("sample.rdf", "<rdf/>")
         with self.assertRaises(ValueError):
             load_kg(path)
+
+    def test_format_detected_from_content_not_extension(self):
+        # N-Triples content under a .ttl name, and Turtle content under a .nt
+        # name, both load correctly: detection ignores the extension.
+        nt_path = self._write("misnamed.ttl", NT_SAMPLE)
+        ttl_path = self._write("misnamed.nt", TTL_SAMPLE)
+        self.assertEqual(load_kg(nt_path).ecount(), 2)
+        self.assertEqual(load_kg(ttl_path).ecount(), 3)
+
+    def test_extensionless_file_loads(self):
+        path = self._write("59622641", NT_SAMPLE)  # raw dumps often have no suffix
+        g = load_kg(path)
+        self.assertEqual(g.vcount(), 3)
+        self.assertEqual(g.ecount(), 2)
 
     def test_duplicate_triples_collapse_to_one_edge(self):
         ttl = (
@@ -112,7 +126,7 @@ class TestSaveKG(unittest.TestCase):
         src = self._write("in.nt", NT_SAMPLE)
         out = os.path.join(self.tmp, "out.nt")
         g = load_kg(src)
-        save_kg(g, out)
+        save_kg(g, out, fmt="nt")
         g2 = load_kg(out)
         self.assertEqual(g.vcount(), g2.vcount())
         self.assertEqual(g.ecount(), g2.ecount())
@@ -121,15 +135,15 @@ class TestSaveKG(unittest.TestCase):
         src = self._write("in.ttl", TTL_SAMPLE)
         out = os.path.join(self.tmp, "out.nt")
         g = load_kg(src)
-        save_kg(g, out)
+        save_kg(g, out, fmt="nt")
         self.assertTrue(os.path.exists(out))
         self.assertGreater(os.path.getsize(out), 0)
 
-    def test_unsupported_extension_raises(self):
+    def test_unsupported_format_raises(self):
         src = self._write("in.ttl", TTL_SAMPLE)
         g = load_kg(src)
         with self.assertRaises(ValueError):
-            save_kg(g, os.path.join(self.tmp, "out.xml"))
+            save_kg(g, os.path.join(self.tmp, "out.xml"), fmt="xml")
 
 
 if __name__ == "__main__":

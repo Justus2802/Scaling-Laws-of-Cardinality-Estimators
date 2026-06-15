@@ -64,7 +64,8 @@ shortest-path shapes. Those require *loading each document* and running the proj
   (b) **map the population's shape** — stratify by domain/namespace, detect the mixture,
   inform the §4 conditioning structure — *before* expensive measurement.
 - **Tier 2 — download + measure a curated sample (full 69-d signature).** Laundromat docs
-  are dedup'd sorted N-Triples → after `gunzip` they drop straight into the `.nt` loader,
+  are dedup'd sorted N-Triples → after `gunzip` they drop straight into `kg_io.load_kg`
+  (which detects the serialization from content, so the extensionless dumps need no suffix),
   no new I/O code. Measure ~30–300 curated documents with
   `scripts/measure_signature_reduced.py` for full-signature rows — the literal §3b fix. The
   meta-dataset is the **sampling frame** that makes the curation principled.

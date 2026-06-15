@@ -20,29 +20,21 @@ import json
 import math
 import os
 import sys
-import tempfile
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 import igraph
 from kg_io import load_kg
 
-SUPPORTED_SUFFIXES = (".nt", ".ttl")
-
 
 def load_graph(path: str, fmt: str) -> igraph.Graph:
-    """Load a KG file via load_kg, giving it a suffix load_kg recognizes.
+    """Load a KG file via load_kg.
 
-    The raw dataset files often have no extension (e.g. ``59622641``), but
-    load_kg dispatches on the suffix. We expose the original bytes under a
-    correctly-suffixed symlink so no large file is copied.
+    The raw dataset files often have no extension (e.g. ``59622641``); load_kg
+    detects the serialization from content, so the path is passed straight
+    through. ``fmt`` is retained for the CLI signature but no longer needed.
     """
-    if os.path.splitext(path)[1].lower() in SUPPORTED_SUFFIXES:
-        return load_kg(path)
-    suffix = ".ttl" if fmt.lower().lstrip(".") == "ttl" else ".nt"
-    link = os.path.join(tempfile.mkdtemp(), "graph" + suffix)
-    os.symlink(os.path.abspath(path), link)
-    return load_kg(link)
+    return load_kg(path)
 
 
 def isoclass_index(size: int, degseq: tuple[int, ...]) -> int:

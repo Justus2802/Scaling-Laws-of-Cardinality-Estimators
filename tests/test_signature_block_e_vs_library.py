@@ -10,7 +10,8 @@ igraph library methods, for every graph listed in
 CSV columns:
     name    — human-readable label used in subTest output
     path    — graph file path, relative to the repository root
-    format  — ``nt`` or ``ttl`` (used to give the file a suffix load_kg accepts)
+    format  — ``nt`` or ``ttl`` (passed to the oracle CLI; load_kg itself
+              detects the serialization from file content)
 
 Triangles (``list_triangles``) and star counts (degree formula) are exact at
 any graph size and are always checked exactly. The 4-node motif counts

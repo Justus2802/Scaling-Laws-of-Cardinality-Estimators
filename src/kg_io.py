@@ -1,4 +1,8 @@
-"""Knowledge Graph I/O: load/save .ttl and .nt files as igraph objects."""
+"""Knowledge Graph I/O: load/save Turtle and N-Triples files as igraph objects.
+
+Loading detects the serialization from file content (not the extension) so
+extensionless dumps work; saving takes the format as an explicit argument.
+"""
 
 from pathlib import Path
 
@@ -6,7 +10,14 @@ import igraph
 import rdflib
 from rdflib import BNode, Literal, URIRef
 
-_FORMAT_MAP = {".ttl": "turtle", ".nt": "nt"}
+# Maps caller-facing format names (and common aliases) to rdflib parser names.
+_FORMAT_ALIASES = {
+    "turtle": "turtle",
+    "ttl": "turtle",
+    "nt": "nt",
+    "ntriples": "nt",
+    "n-triples": "nt",
+}
 
 
 def _rdf_node_id(node: rdflib.term.Identifier) -> str:
@@ -16,8 +27,43 @@ def _rdf_node_id(node: rdflib.term.Identifier) -> str:
     return str(node)
 
 
+def _looks_like_ntriples(text: str) -> bool:
+    """Return True if every content line is a one-line N-Triples statement.
+
+    N-Triples is a strict line-based subset of Turtle: each statement sits on a
+    single line, starts with an absolute IRI (`<...>`) or blank node (`_:...`)
+    and is terminated by `.`. Any other shape (prefix directives, prefixed
+    names, `;`/`,` predicate lists) means the document needs the Turtle parser.
+    Requires at least one statement so empty/comment-only input is not N-Triples.
+    """
+    saw_statement = False
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if not (line.startswith(("<", "_:")) and line.endswith(".")):
+            return False
+        saw_statement = True
+    return saw_statement
+
+
+def _detect_rdf_format(text: str) -> str:
+    """Guess the RDF serialization ('nt' or 'turtle') from file content.
+
+    Because N-Triples is a subset of Turtle, the Turtle parser also accepts
+    N-Triples; we therefore default to Turtle and only return 'nt' for input
+    that is unambiguously line-shaped N-Triples. Invalid RDF is left for the
+    parser to reject.
+    """
+    return "nt" if _looks_like_ntriples(text) else "turtle"
+
+
 def load_kg(path: str | Path) -> igraph.Graph:
-    """Parse a .ttl or .nt file and return a directed igraph Graph.
+    """Parse a Turtle or N-Triples file and return a directed igraph Graph.
+
+    The serialization is detected from the file *content*, not its extension,
+    so extensionless files (common for raw LOD dumps) load directly. Input that
+    is not valid Turtle/N-Triples raises a ValueError via the rdflib parser.
 
     Edges are deduplicated by (subject, predicate, object): the resulting
     graph contains at most one edge per distinct RDF triple. rdflib's `Graph`
@@ -33,12 +79,14 @@ def load_kg(path: str | Path) -> igraph.Graph:
         predicate    – URI string of the RDF predicate
     """
     path = Path(path)
-    fmt = _FORMAT_MAP.get(path.suffix.lower())
-    if fmt is None:
-        raise ValueError(f"Unsupported file extension '{path.suffix}'. Use .ttl or .nt")
+    text = path.read_text(encoding="utf-8")
+    fmt = _detect_rdf_format(text)
 
     rdf_graph = rdflib.Graph()
-    rdf_graph.parse(str(path), format=fmt)
+    try:
+        rdf_graph.parse(data=text, format=fmt)
+    except Exception as exc:
+        raise ValueError(f"'{path}' is not valid Turtle or N-Triples content") from exc
 
     # Collect unique nodes (preserve insertion order for stable vertex indices)
     node_index: dict[str, int] = {}
@@ -87,16 +135,25 @@ def load_kg(path: str | Path) -> igraph.Graph:
     return g
 
 
-def save_kg(graph: igraph.Graph, path: str | Path) -> None:
-    """Serialize an igraph Graph (produced by load_kg) to a .ttl or .nt file.
+def save_kg(graph: igraph.Graph, path: str | Path, fmt: str = "turtle") -> None:
+    """Serialize an igraph Graph (produced by load_kg) to a file.
 
-    The graph must have vertex attribute 'name' and edge attribute 'predicate'
-    as set by load_kg.
+    Because the output format cannot be inferred from content that does not yet
+    exist, it is given explicitly via ``fmt`` rather than the path's extension.
+
+    Args:
+        graph: Graph with vertex attribute 'name' and edge attribute
+            'predicate' as set by load_kg.
+        path: Destination file path (its extension is not interpreted).
+        fmt: Output serialization — 'turtle'/'ttl' or 'nt'/'n-triples'.
+
+    Raises:
+        ValueError: if ``fmt`` is not a supported serialization.
     """
     path = Path(path)
-    fmt = _FORMAT_MAP.get(path.suffix.lower())
-    if fmt is None:
-        raise ValueError(f"Unsupported file extension '{path.suffix}'. Use .ttl or .nt")
+    rdf_fmt = _FORMAT_ALIASES.get(fmt.lower())
+    if rdf_fmt is None:
+        raise ValueError(f"Unsupported format '{fmt}'. Use 'turtle' or 'nt'")
 
     rdf_graph = rdflib.Graph()
 
@@ -121,4 +178,4 @@ def save_kg(graph: igraph.Graph, path: str | Path) -> None:
         predicate = URIRef(edge["predicate"])
         rdf_graph.add((s_node, predicate, o_node))
 
-    rdf_graph.serialize(destination=str(path), format=fmt)
+    rdf_graph.serialize(destination=str(path), format=rdf_fmt)
