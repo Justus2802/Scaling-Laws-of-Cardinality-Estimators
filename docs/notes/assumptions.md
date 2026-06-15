@@ -141,3 +141,43 @@ Only `lcc.vs` entries with `is_literal == False` are eligible as sources or targ
 
 ### Bootstrap SE is configurable via `n_bootstrap`
 `block_f` accepts `n_bootstrap: int = _N_BOOTSTRAP` (default 999). `scipy.stats.bootstrap` is called with `n_resamples=n_bootstrap` and a fixed `rng=42` for reproducibility. Warnings from scipy (e.g. the BCa degeneracy warning that fires when all sampled distances are equal) are suppressed with `warnings.catch_warnings` — consistent with how Block B silences powerlaw output. When `finite` has fewer than 2 values, the SE is set to NaN without calling bootstrap.
+
+## Generator (`src/generator.py`)
+
+### Deterministic graph sizes
+`instantiate` uses `schema.num_entities` and `schema.num_triples` directly — no Gaussian noise. Requesting 30 nodes produces exactly 30 nodes.
+
+### PA exponent is data-driven from Block B
+`schema.in_pa_exponent` is derived from `block_b.in_degree_fit.alpha` via the Dorogovtsev-Mendes PA↔power-law inversion `β = 1/(α−2)`, clamped to [0.1, 2.0]. When α ≤ 2 or Block B is absent the default 0.5 is used. For typical KG in-degree exponents (α ≈ 2.5–3.5) this gives β ≈ 0.4–2.0.
+
+### Max in-degree cap from Block B
+`schema.max_in_degree = max(10, n^(1/(α−1)) × 3)` caps the in-degree of any single node during Stage 2. This limits pathological hub formation (PA with β>1 can otherwise concentrate all in-edges on one node) and reduces object co-occurrence density. Set to 0 (uncapped) when Block B is absent.
+
+### Inverse functionality cap on (predicate, object) pairs
+The cap is only active when `mean_inv_functionality < 0.7` **and** `⌈1/mean_inv_func⌉ ≥ 2`. Previous formula `round(1/x)` collapsed to 1 for any x > 0.5, blocking all sharing and causing a ~35% edge deficit. Now uses `ceil` and requires the cap to be at least 2 so that some sharing is always permitted.
+
+### Connectivity guarantee in Stage 2
+After throttling to the edge budget, `_connect_components` adds one bridging edge per isolated component, directed toward the largest component. This ensures the generated KG has exactly one weakly connected component (matching most real KGs).
+
+### P(r|t) from measured data when available
+`sample_schema` uses `block_c.type_relation_conditional` directly when it is non-empty, mapping real types and relations to schema indices by rank order (most-active type → schema type 0, most-frequent relation → schema relation 0). Falls back to the low-rank random factorisation when the measured table is absent.
+
+### Multi-motif SA objective in Stage 3 (`refine`)
+The simulated-annealing loss is a weighted sum of relative errors:
+- **Triangle count** — exact, incremental via `_triangle_delta`
+- **4-node motifs** (C4, diamond, K4, tailed triangle) — remeasured every `remeasure_interval` accepted swaps using `igraph.motifs_randesu(size=4)` on a rebuilt undirected graph
+- **Degree assortativity** — exact and incremental: double-edge swaps preserve degree sequences, so only the cross-product sum Q = Σ_e d_u·d_v changes. ΔQ = (d_s1−d_s2)(d_o2−d_o1). The formula r = (4MQ − S²) / (2MT − S²) gives assortativity from Q alone since S and T are constant under swaps.
+
+Block F's `degree_assortativity` is targeted when `target_f` is provided to `refine` (set automatically by `Generator.sample` when `Signature.f` is not None).
+
+### Triangle-targeted swaps in Stage 3
+In addition to random double-edge swaps, `refine` attempts triangle-creating swaps with probability proportional to the triangle deficit (up to 50%). A targeted swap picks a random open wedge (u–w–v where w has both u and v as neighbours but u–v is missing), then finds edges (u→x, y→v) with the same predicate and swaps them to create edge u→v. An `edge_tgt` index (object → set of edge indices) enables O(out-degree) lookup per attempt; it is updated after each accepted swap. `edge_src_by_pred` (pred→src→indices) is built once and never updated since sources are invariant under swaps.
+
+### Default SA budget
+`Generator.sample` defaults to `rewire_budget=50_000` and `cooling_rate=0.9999` (previously 10k/0.999). The slower cooling gives the annealer more time to find triangle-creating configurations.
+
+### igraph motif index mapping is discovered at runtime
+`_get_motif4_idx()` builds a one-time mapping from degree-sequence tuples to igraph's `motifs_randesu(size=4)` indices by creating small test graphs (P4, K_{1,3}, C4, paw, diamond, K4) and inspecting which index returns 1. This avoids hardcoding igraph's internal isomorphism class ordering.
+
+### `Signature.from_graph` uses the Block class API
+`Signature.from_graph(g)` calls `BlockX().calculate(g)` for all six blocks. The earlier pattern `from signature import block_x; block_x(g)` was broken (submodules are not callable) and has been replaced.
