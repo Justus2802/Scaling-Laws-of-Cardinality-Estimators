@@ -1,12 +1,23 @@
 # Plan: implement the three-stage sampler against the reduced signature
 
+> **Status (implemented, differs from the original plan below).** Rather than a separate
+> `src/generator_reduced.py`, the existing generator was converted in place to consume the
+> reduced blocks and split into a package: `src/generator/` (`schema`, `stage1`, `stage2`,
+> `stage3`, `pipeline`, plus `_adapters` for the reduced-signature reconstructions). The
+> public API (`Schema`, `sample_schema`, `instantiate`, `refine`, `Signature`, `Generator`)
+> is unchanged and re-exported from `generator/__init__.py`. **Stage 3 is now in scope**:
+> reduced Block E exists (the 7 raw motif counts + path/tree templates), so `refine()` steers
+> triangle / 4-node-motif / assortativity targets as before. The reduced-block reads that
+> lacked a direct attribute are reconstructed in `_adapters.py`: `num_triples = V·mean_degree`,
+> functionality/inverse-functionality from the multiplicity-α skew-normal (`1/ζ(α)`),
+> P(r|t) singular values from the `type_rel_spectrum_exp` exp-decay fit (its own T×R
+> spectrum, no longer conflated with `M`), and `cs_size_mean` from the CS-size skew-normal.
+> The inputs table and stage notes below remain accurate as reference.
+
 Implements the project spec's three-stage generation algorithm
-([../notes/generation_algorithm_fit.md](../notes/generation_algorithm_fit.md)) as a **new
-coexisting module** `src/generator_reduced.py` that consumes a `ReducedGraphSignature`
-([../signature.md](../signature.md),
-[../notes/signature_measurement_plan.md](../notes/signature_measurement_plan.md)). The existing
-`src/generator.py` (old signature) is left untouched, mirroring how
-`signature_reduced/` sits beside `signature/`.
+([../notes/generation_algorithm_fit.md](../notes/generation_algorithm_fit.md)) consuming a
+reduced signature ([../signature.md](../signature.md),
+[../notes/signature_measurement_plan.md](../notes/signature_measurement_plan.md)).
 
 ## Scope & decisions
 

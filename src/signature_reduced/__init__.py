@@ -7,9 +7,9 @@ moments, dropping every value guaranteed by the stored parameters. See
 ``docs/signature_redesign.md`` for the design and ``docs/signature_measurement_plan.md``
 for the mapping onto blocks.
 
-Scope: Blocks A, B, C, D, F (G0–G4). Block E (motifs, G5) is deferred. The shared
-block infrastructure — the ``SignatureBlock`` ABC, JSON serialization and logging —
-is reused from the ``signature`` package.
+Scope: Blocks A, B, C, D, E, F (G0–G5). The shared block infrastructure — the
+``SignatureBlock`` ABC, JSON serialization and logging — is reused from the
+``signature`` package.
 """
 
 from dataclasses import dataclass, field
@@ -21,6 +21,7 @@ from .block_a import BlockA
 from .block_b import BlockB
 from .block_c import BlockC
 from .block_d import BlockD
+from .block_e import BlockE
 from .block_f import BlockF
 from ._fits import (
     SkewNormFit,
@@ -34,13 +35,13 @@ from ._fits import (
     fit_cs_size_offset,
 )
 
-# Block E (motifs) is intentionally excluded from the reduced signature for now.
-_ALL_BLOCKS: tuple[str, ...] = ("a", "b", "c", "d", "f")
+_ALL_BLOCKS: tuple[str, ...] = ("a", "b", "c", "d", "e", "f")
 _BLOCK_CLASSES: dict[str, type] = {
     "a": BlockA,
     "b": BlockB,
     "c": BlockC,
     "d": BlockD,
+    "e": BlockE,
     "f": BlockF,
 }
 
@@ -56,10 +57,11 @@ class ReducedGraphSignature:
     b: Optional[BlockB] = field(default=None)
     c: Optional[BlockC] = field(default=None)
     d: Optional[BlockD] = field(default=None)
+    e: Optional[BlockE] = field(default=None)
     f: Optional[BlockF] = field(default=None)
 
     def _blocks(self) -> list:
-        return [self.a, self.b, self.c, self.d, self.f]
+        return [self.a, self.b, self.c, self.d, self.e, self.f]
 
     def as_vector(self) -> list[float]:
         """Flatten to a fixed-length vector; uncomputed blocks are NaN-filled."""
@@ -93,7 +95,7 @@ def compute_reduced_signature(
     Args:
         path: Path to the KG file (.ttl or .nt).
         blocks: Which blocks to compute, e.g. ``["a", "c", "f"]``. Defaults to
-            all reduced blocks (``["a", "b", "c", "d", "f"]``). Skipped blocks
+            all reduced blocks (``["a", "b", "c", "d", "e", "f"]``). Skipped blocks
             appear as NaN in ``ReducedGraphSignature.as_vector()``.
         verbose: Print progress to stdout.
 
@@ -120,6 +122,7 @@ def compute_reduced_signature(
         "b": "Block B (relation frequency & multiplicity)",
         "c": "Block C (schema & co-occurrence)",
         "d": "Block D (characteristic sets & two-step)",
+        "e": "Block E (motifs & templates)",
         "f": "Block F (connectivity)",
     }
     for char in _ALL_BLOCKS:
@@ -132,12 +135,13 @@ def compute_reduced_signature(
         b=computed.get("b"),
         c=computed.get("c"),
         d=computed.get("d"),
+        e=computed.get("e"),
         f=computed.get("f"),
     )
 
 
 __all__ = [
-    "BlockA", "BlockB", "BlockC", "BlockD", "BlockF",
+    "BlockA", "BlockB", "BlockC", "BlockD", "BlockE", "BlockF",
     "ReducedGraphSignature", "compute_reduced_signature",
     "_ALL_BLOCKS",
     "SkewNormFit", "ExpDecayFit", "TruncPowerLawFit", "ZipfFit",

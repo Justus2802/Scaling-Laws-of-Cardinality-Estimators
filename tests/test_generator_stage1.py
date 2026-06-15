@@ -6,10 +6,14 @@ import unittest
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from signature import BlockA, BlockC
+from signature_reduced import BlockA, BlockC
+from signature_reduced._fits import ExpDecayFit, nan_exp_decay
+from signature._utils import PowerLawStats
 from generator import Schema, sample_schema
 
-_TOP_K_SV = 10
+# Default P(r|t) type-relation spectrum: a positive, decaying exp curve that
+# reconstructs to a usable low-rank signal for P(r|t) synthesis.
+_DEFAULT_SPECTRUM = ExpDecayFit(rate=0.5, scale=100.0)
 
 
 def _make_block_a(
@@ -17,38 +21,36 @@ def _make_block_a(
     num_triples: int = 500,
     num_relations: int = 10,
 ) -> BlockA:
-    return BlockA(
-        num_entities=num_entities,
-        num_triples=num_triples,
-        num_relations=num_relations,
-        density=num_triples / (num_entities ** 2) if num_entities else 0.0,
-        triples_per_entity=num_triples / num_entities if num_entities else 0.0,
-        relation_reuse=num_triples / num_relations if num_relations else 0.0,
-    )
+    """Build a reduced BlockA by setting its measured fields directly.
+
+    Reduced BlockA stores mean degree (E/V); the generator recovers the edge
+    budget as round(V × mean_degree).
+    """
+    a = BlockA()
+    a._num_entities = num_entities
+    a._num_relations = num_relations
+    a._mean_degree = (num_triples / num_entities) if num_entities else 0.0
+    return a
 
 
 def _make_block_c(
     num_classes: int = 5,
     class_size_zipf: float = 2.0,
-    singular_values: np.ndarray | None = None,
+    spectrum: ExpDecayFit = _DEFAULT_SPECTRUM,
 ) -> BlockC:
-    if singular_values is None:
-        # Plausible decaying singular values
-        singular_values = np.array(
-            [100.0, 60.0, 30.0, 10.0, 5.0, 2.0, 1.0, 0.5, 0.2, 0.1]
-        )
-    return BlockC(
-        subj_singular_values=singular_values,
-        subj_cooc_density=0.4,
-        subj_row_entropies=np.ones(5),
-        obj_singular_values=singular_values.copy(),
-        obj_cooc_density=0.3,
-        obj_row_entropies=np.ones(5),
-        num_classes=num_classes,
-        class_size_zipf_exponent=class_size_zipf,
-        class_sizes={f"T{i}": max(1, 10 - i) for i in range(num_classes)},
-        type_relation_conditional={},
+    """Build a reduced BlockC by setting the fields sample_schema reads.
+
+    ``class_size_zipf`` becomes the class-size power-law α; ``spectrum`` is the
+    P(r|t) type-relation exp-decay spectrum the generator reconstructs singular
+    values from. Pass ``nan_exp_decay()`` to model "no P(r|t) signal".
+    """
+    c = BlockC()
+    c._num_classes = num_classes
+    c._class_size_fit = PowerLawStats(
+        class_size_zipf, 1.0, float("nan"), float("nan"), float("nan"), float("nan")
     )
+    c._type_rel_spectrum_exp = spectrum
+    return c
 
 
 class TestSampleSchemaStructure(unittest.TestCase):
@@ -106,9 +108,10 @@ class TestSampleSchemaStructure(unittest.TestCase):
         schema = sample_schema(self.a, self.c, seed=0)
         self.assertEqual(schema.num_entities, self.a.num_entities)
 
-    def test_num_triples_passed_through(self):
+    def test_num_triples_derived_from_mean_degree(self):
         schema = sample_schema(self.a, self.c, seed=0)
-        self.assertEqual(schema.num_triples, self.a.num_triples)
+        expected = round(self.a.num_entities * self.a.mean_degree)
+        self.assertEqual(schema.num_triples, expected)
 
     def test_relation_uris_are_strings(self):
         schema = sample_schema(self.a, self.c, seed=0)
@@ -156,11 +159,11 @@ class TestSampleSchemaEdgeCases(unittest.TestCase):
         self.assertAlmostEqual(schema.type_weights[0], 1.0)
         self.assertAlmostEqual(schema.type_relation_probs[0].sum(), 1.0)
 
-    def test_zero_singular_values_falls_back_to_relation_weights(self):
-        # When all singular values are zero the low-rank path degenerates;
+    def test_no_spectrum_signal_falls_back_to_relation_weights(self):
+        # With no P(r|t) spectrum the low-rank path degenerates;
         # each type row should equal the global relation_weights.
         a = _make_block_a(num_relations=4)
-        c = _make_block_c(num_classes=3, singular_values=np.zeros(_TOP_K_SV))
+        c = _make_block_c(num_classes=3, spectrum=nan_exp_decay())
         schema = sample_schema(a, c, seed=0)
         for row in schema.type_relation_probs:
             np.testing.assert_allclose(row, schema.relation_weights, atol=1e-10)

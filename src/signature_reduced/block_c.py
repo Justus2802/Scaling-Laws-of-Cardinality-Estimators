@@ -7,6 +7,13 @@ curve (the original conflated it with ``M``). Co-occurrence density and per-type
 relation entropy are kept as targets — functionals the lossy spectrum does not
 pin. The matrix/SVD/row-entropy machinery is reused from the original Block C.
 
+The ``M`` co-occurrence spectrum is **V-normalised** (the singular values are
+divided by the entity count, i.e. ``M/V``) so its ``scale`` is size-free; the
+normalised entries are the empirical joint ``P(i,j)`` = fraction of entities
+using both relations. This mirrors — but is distinct from — the *row*-normalised
+``P(r|t)`` spectrum (whose scale is already bounded); see
+``docs/notes/signature_size_dependence.md``.
+
 The unsummarised spectra and entropy samples are kept on the object so
 ``visualize`` can overlay each fit on the data it was computed from.
 """
@@ -139,12 +146,23 @@ class BlockC(SignatureBlock):
         subj_svs, self._subj_cooc_density, subj_ent = _OrigBlockC._cooc_stats(M_subj)
         obj_svs, self._obj_cooc_density, obj_ent = _OrigBlockC._cooc_stats(M_obj)
 
-        self._subj_singular_values = subj_svs
-        self._obj_singular_values = obj_svs
+        # Normalise the spectra by V so the exp-decay `scale` is size-free: M holds
+        # raw entity counts (top singular value ∝ V), so we divide by the entity
+        # count. SVD is linear, so svds(M/V) == svds(M)/V — scaling the returned
+        # singular values is identical to normalising M and avoids copying the
+        # sparse matrix. M/V entries are the empirical joint P(i,j) (fraction of
+        # entities using both relations i and j). Only `scale` shifts; the decay
+        # `rate` (log-rank slope) is invariant to this rescale. Density and row
+        # entropy come from the unnormalised M and are already size-free, so they
+        # are left as-is. See docs/notes/signature_size_dependence.md.
+        num_entities = len(g.vs.select(is_literal_eq=False))
+        norm = float(num_entities) if num_entities > 0 else 1.0
+        self._subj_singular_values = subj_svs / norm
+        self._obj_singular_values = obj_svs / norm
         self._subj_row_entropies = subj_ent
         self._obj_row_entropies = obj_ent
-        self._subj_cooc_exp = fit_exp_decay_rank(subj_svs)
-        self._obj_cooc_exp = fit_exp_decay_rank(obj_svs)
+        self._subj_cooc_exp = fit_exp_decay_rank(self._subj_singular_values)
+        self._obj_cooc_exp = fit_exp_decay_rank(self._obj_singular_values)
         self._subj_row_entropy_skew = fit_skewnorm(subj_ent) if subj_ent.size else nan_skewnorm()
         self._obj_row_entropy_skew = fit_skewnorm(obj_ent) if obj_ent.size else nan_skewnorm()
 

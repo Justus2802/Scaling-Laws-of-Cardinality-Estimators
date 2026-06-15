@@ -1,13 +1,15 @@
 # The Reduced, Non-Over-Determined Signature
 
-Status: **implemented** as the `signature_reduced` package (Blocks A, B, C, D, F; Block E
-/ motifs deferred). This document is the design **and the reasoning** behind that
+Status: **implemented** as the `signature_reduced` package (Blocks A, B, C, D, E, F).
+This document is the design **and the reasoning** behind that
 signature. For the concrete module/feature reference jump to
 [Implemented module](#implemented-module); for the per-block measurement assumptions see
 [notes/assumptions.md](notes/assumptions.md) and the build record in
 [notes/signature_measurement_plan.md](notes/signature_measurement_plan.md). Empirical
 basis: [notes/signature_observations.md](notes/signature_observations.md) (referred to
-below as "the notes").
+below as "the notes"). For which features scale with graph size vs. which are size-free
+(the Stage-1 conditioning split), see
+[notes/signature_size_dependence.md](notes/signature_size_dependence.md).
 
 ## Implemented module
 
@@ -25,13 +27,14 @@ counts, path lengths) on the object for `visualize`.
 | **B** — G1/G2/G2b | 18 | out/in-degree power-law (target); relation-usage **Zipf**; obj/subj multiplicity-α **skew-normal** (cutoffs [1.4,3.0]); CS-size offsets `a_obj`, `a_subj` |
 | **C** — G3 | 23 | class-size **power-law**; subj/obj co-occurrence **exp-decay** + density; row entropy **skew-normal**; `P(r\|t)` spectrum **exp-decay**; per-type entropy **exp-decay** |
 | **D** — G3 | 16 | `num_distinct_cs`; CS-freq **power-law**; CS-size & inverse-CS-size **skew-normal**; two-step path-count **truncated power-law** |
+| **E** — G5 | 27 | raw motif counts (triangle, 4-/5-/6-cycle, diamond, k4, tailed triangle); path-template **Zipf** + entropy (k=2..10); tree-template Zipf + entropy. `star_count_k*` dropped (non-induced stars `= Σ C(deg,k)`, fixed by the degree distribution) |
 | **F** — G4 | 9 | components, LCC fraction, avg-local clustering, assortativity; shortest-path **skew-normal** |
 
-Total **69** features (A3 + B18 + C23 + D16 + F9). **Block E (motifs, G5) is deferred.**
+Total **96** features (A3 + B18 + C23 + D16 + E27 + F9).
 The fits are stored as NamedTuples that restore as plain tuples through the JSON
 round-trip, so each block property re-wraps them to preserve attribute access.
 
-Run it: `python scripts/measure_signature_reduced.py <graph> [--blocks a,b,c,d,f]` →
+Run it: `python scripts/measure_signature_reduced.py <graph> [--blocks a,b,c,d,e,f]` →
 `<graph-dir>/signature/` (override with `--output-dir`); the curated corpus lives in
 `data/graphs/<name>/signature/`. Or `scripts/measure_all_raw.py --reduced` for every raw KG. Tests: `tests/test_signature_reduced_fits.py`,
 `tests/test_signature_reduced_blocks.py`. The original full signature (`signature/`,
@@ -91,7 +94,7 @@ Each retained value carries a **why** (what it controls in generation) and a **n
 | Per-relation object/subject multiplicity α (spread across relations) | **skew-normal** + cutoffs | loc ξ, scale ω, shape α_skew, lower/upper cutoff (~1.4 / ~3.0) |
 | Class size (entities per class) | **power-law** | α (+ x_min) |
 | Characteristic-set size \|CS\| | **skew-normal** | loc, scale, shape |
-| `M` co-occurrence singular values (rank curve) | **exponential decay** | rate, magnitude scale |
+| `M` co-occurrence singular values (rank curve, **V-normalised** `M/V`) | **exponential decay** | rate, magnitude scale (size-free) |
 | `P(r\|t)` type-relation singular values (rank curve) | **exponential decay** | rate, magnitude scale |
 | Per-type relation entropy (rank curve) | **exponential decay** | rate, magnitude scale |
 | Co-occurrence row entropy | **skew-normal** | loc, scale, shape |
@@ -432,15 +435,15 @@ apply.
 |---|---|---|---|
 | class-size distribution | **power-law** exponent (+ x_min) over entities-per-class | C | How entities spread over types; also fixes `n_s(r)`/`n_o(r)` jointly with the relation usage. |
 
-**Option S-A — Type→relation P(r\|t) via spectrum** (what generator.py does)
+**Option S-A — Type→relation P(r\|t) via spectrum** (what the generator does)
 
 | Value | Repr. | Nature | Why |
 |---|---|---|---|
-| `M` co-occurrence spectrum | **exponential-decay** (rate, scale) of subject- and object-side singular values | C | Relation co-occurrence on entities (type-agnostic). |
+| `M` co-occurrence spectrum | **exponential-decay** (rate, scale) of subject- and object-side singular values, **V-normalised** (`M/V`) so `scale` is size-free | C | Relation co-occurrence on entities (type-agnostic). |
 | `P(r\|t)` type-relation spectrum | **exponential-decay** (rate, scale) of the `T×R` singular values | C | The type→relation structure itself (separate object from `M`; resolves the item-3 type-light gap). Fed to the generator's low-rank `P(r\|t)`. |
 
-Note: `generator.py` currently reconstructs `P(r|t)` from `M`'s spectrum (conflation);
-the redesign stores `P(r|t)`'s **own** spectrum so the generator no longer has to.
+Note: the `generator/` package reconstructs `P(r|t)` from `P(r|t)`'s **own** `type_rel_spectrum_exp`
+(`stage1.sample_schema`), no longer conflating it with `M`'s co-occurrence spectrum.
 
 Under S-A, **derived/emergent:** `cooc_density`, `row_entropy`, the CS distribution,
 two-step pairs.

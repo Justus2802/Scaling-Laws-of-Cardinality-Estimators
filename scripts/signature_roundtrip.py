@@ -1,22 +1,112 @@
-"""Signature round-trip: measure a KG, generate a synthetic one, save it, compare.
+"""Signature round-trip: load a target reduced signature, generate a synthetic
+graph from it, save it, re-measure it, and compare.
+
+By default the target signature is loaded from the measured corpus at
+``data/graphs/<graph_name>/signature/`` (the per-block ``block_*.json`` files
+written by ``measure_signature_reduced.py``) — no recomputation of the original.
+Block E is not part of the corpus yet; if ``block_e.json`` is absent it is
+measured on demand from the graph file in that directory. Pass ``--kg-file`` to
+measure the full target signature from a graph file instead.
 
 Usage
 -----
-    python scripts/signature_roundtrip.py path/to/graph.ttl
-    python scripts/signature_roundtrip.py path/to/graph.ttl --out synth.ttl --seed 7
+    python scripts/signature_roundtrip.py aids
+    python scripts/signature_roundtrip.py aids --seed 7 --rewire-budget 5000
+    python scripts/signature_roundtrip.py --kg-file path/to/graph.ttl
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+_REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_REPO / "src"))
 
 from generator import Generator, Signature
 from kg_io import load_kg, save_kg
-from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
+from signature_reduced import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
+
+# Reduced block letter → class, in signature order.
+_BLOCK_CLASSES = {"a": BlockA, "b": BlockB, "c": BlockC, "d": BlockD, "f": BlockF}
+
+
+def _load_block(cls, path: Path):
+    """Reconstruct a reduced block from its serialized ``block_*.json``."""
+    return cls.from_serializable(json.loads(path.read_text()))
+
+
+def _find_graph_file(d: Path) -> Path | None:
+    """Return the first .nt/.ttl graph file in directory ``d`` (None if absent)."""
+    for pattern in ("*.nt", "*.ttl", "*.nt.gz", "*.ttl.gz"):
+        hits = sorted(d.glob(pattern))
+        if hits:
+            return hits[0]
+    return None
+
+
+def _load_target_from_corpus(graph_name: str, graphs_dir: Path):
+    """Load the cached reduced target signature for ``graph_name``.
+
+    Loads blocks A/B/C/D/F from ``<graphs_dir>/<graph_name>/signature/`` and
+    Block E from ``block_e.json`` if present, else measures it from the graph
+    file in that directory. Returns ``(Signature, blocks_dict)``.
+    """
+    graph_dir = graphs_dir / graph_name
+    sig_dir = graph_dir / "signature"
+    if not sig_dir.is_dir():
+        available = sorted(p.name for p in graphs_dir.iterdir() if p.is_dir()) \
+            if graphs_dir.is_dir() else []
+        raise SystemExit(
+            f"No signature dir at {sig_dir}. Available graphs: {available}"
+        )
+
+    blocks: dict[str, object] = {}
+    for letter, cls in _BLOCK_CLASSES.items():
+        path = sig_dir / f"block_{letter}.json"
+        if not path.exists():
+            raise SystemExit(f"Missing cached block: {path}")
+        blocks[letter] = _load_block(cls, path)
+        print(f"  Loaded : {path.name}")
+
+    e_path = sig_dir / "block_e.json"
+    if e_path.exists():
+        blocks["e"] = _load_block(BlockE, e_path)
+        print(f"  Loaded : {e_path.name}")
+    else:
+        graph_file = _find_graph_file(graph_dir)
+        if graph_file is None:
+            raise SystemExit(
+                f"block_e.json absent and no graph file in {graph_dir} to measure it from."
+            )
+        print(f"  block_e.json absent — measuring Block E from {graph_file.name} …")
+        blocks["e"] = BlockE().calculate(load_kg(graph_file))
+
+    sig = Signature(
+        a=blocks["a"], b=blocks["b"], c=blocks["c"],
+        d=blocks["d"], e=blocks["e"], f=blocks["f"],
+    )
+    return sig, blocks
+
+
+def _measure_target_from_file(kg_file: Path):
+    """Measure the full reduced target signature from a graph file."""
+    print(f"Loading   : {kg_file}")
+    g = load_kg(kg_file)
+    print(f"  {g.vcount():,} nodes  {g.ecount():,} edges")
+    print("Measuring : blocks A–F on original graph …")
+    blocks = {
+        "a": BlockA().calculate(g), "b": BlockB().calculate(g),
+        "c": BlockC().calculate(g), "d": BlockD().calculate(g),
+        "e": BlockE().calculate(g), "f": BlockF().calculate(g),
+    }
+    sig = Signature(
+        a=blocks["a"], b=blocks["b"], c=blocks["c"],
+        d=blocks["d"], e=blocks["e"], f=blocks["f"],
+    )
+    return sig, blocks
 
 
 def _fmt(v):
@@ -46,35 +136,49 @@ def _header(title):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("kg_file", help="Input KG file (.ttl or .nt)")
+    parser.add_argument(
+        "graph", nargs="?", default=None,
+        help="Graph name in the corpus (e.g. 'aids'); its cached target signature "
+             "is loaded from <graphs-dir>/<graph>/signature/. Omit when using --kg-file.",
+    )
+    parser.add_argument(
+        "--graphs-dir", default=str(_REPO / "data" / "graphs"),
+        help="Corpus root holding <graph>/signature/ (default: data/graphs).",
+    )
+    parser.add_argument(
+        "--kg-file", default=None,
+        help="Measure the full target signature from this graph file instead of "
+             "loading it from the corpus.",
+    )
     parser.add_argument(
         "--out", default=None,
         help="Where to save the synthetic graph (.ttl or .nt). "
-             "Default: <input_stem>_synth.ttl next to the input file.",
+             "Default: <graph>_synth.ttl next to the source.",
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--rewire-budget", type=int, default=5_000)
     args = parser.parse_args()
 
-    in_path = Path(args.kg_file)
-    out_path = Path(args.out) if args.out else in_path.with_name(in_path.stem + "_synth.ttl")
+    # ── Step 1: obtain the target signature ──────────────────────────────────
+    if args.kg_file:
+        kg_path = Path(args.kg_file)
+        target_sig, tblocks = _measure_target_from_file(kg_path)
+        default_out = kg_path.with_name(kg_path.stem + "_synth.ttl")
+    elif args.graph:
+        graphs_dir = Path(args.graphs_dir)
+        print(f"Loading   : cached target signature for '{args.graph}' from {graphs_dir}")
+        target_sig, tblocks = _load_target_from_corpus(args.graph, graphs_dir)
+        default_out = graphs_dir / args.graph / f"{args.graph}_synth.ttl"
+    else:
+        parser.error("provide a corpus graph name or --kg-file")
 
-    # ── Step 1: measure all six blocks for the original graph ────────────────
-    print(f"Loading   : {in_path}")
-    g_orig = load_kg(in_path)
-    print(f"  {g_orig.vcount():,} nodes  {g_orig.ecount():,} edges")
-
-    print("Measuring : blocks A–F on original graph …")
-    ta = BlockA().calculate(g_orig)
-    tb = BlockB().calculate(g_orig)
-    tc = BlockC().calculate(g_orig)
-    td = BlockD().calculate(g_orig)
-    te = BlockE().calculate(g_orig)
-    tf = BlockF().calculate(g_orig)
+    ta, tb, tc, td, te, tf = (
+        tblocks["a"], tblocks["b"], tblocks["c"], tblocks["d"], tblocks["e"], tblocks["f"],
+    )
+    out_path = Path(args.out) if args.out else default_out
 
     # ── Step 2: generate synthetic graph ─────────────────────────────────────
     print(f"Generating: seed={args.seed}, rewire_budget={args.rewire_budget} …")
-    target_sig = Signature(a=ta, b=tb, c=tc, d=td, e=te, f=tf)
     g_synth = Generator(target_sig).sample(
         seed=args.seed,
         rewire_budget=args.rewire_budget,
@@ -99,44 +203,39 @@ def main():
     print(f"  {'Metric':<38}  {'Original':>14}  {'Synthetic':>14}  {'Rel err':>8}")
     print("  " + "─" * 80)
 
-    print(_header("Block A — size & density"))
-    print(_row("num_entities",       ta.num_entities,       sa.num_entities))
-    print(_row("num_triples",        ta.num_triples,        sa.num_triples))
-    print(_row("num_relations",      ta.num_relations,      sa.num_relations))
-    print(_row("density",            ta.density,            sa.density))
-    print(_row("triples_per_entity", ta.triples_per_entity, sa.triples_per_entity))
-    print(_row("relation_reuse",     ta.relation_reuse,     sa.relation_reuse))
+    print(_header("Block A — size & vocabulary"))
+    print(_row("num_entities",  ta.num_entities,  sa.num_entities))
+    print(_row("num_relations", ta.num_relations, sa.num_relations))
+    print(_row("mean_degree",   ta.mean_degree,   sa.mean_degree))
 
-    print(_header("Block B — degree structure"))
-    print(_row("out_degree_fit.alpha",     tb.out_degree_fit.alpha,       sb.out_degree_fit.alpha))
-    print(_row("out_degree_fit.xmin",      tb.out_degree_fit.xmin,        sb.out_degree_fit.xmin))
-    print(_row("in_degree_fit.alpha",      tb.in_degree_fit.alpha,        sb.in_degree_fit.alpha))
-    print(_row("in_degree_fit.xmin",       tb.in_degree_fit.xmin,         sb.in_degree_fit.xmin))
-    t_func  = list(tb.functionality.values())
-    s_func  = list(sb.functionality.values())
-    t_ifunc = list(tb.inverse_functionality.values())
-    s_ifunc = list(sb.inverse_functionality.values())
-    print(_row("functionality (mean)",     np.mean(t_func)  if t_func  else float("nan"),
-                                           np.mean(s_func)  if s_func  else float("nan")))
-    print(_row("inv_functionality (mean)", np.mean(t_ifunc) if t_ifunc else float("nan"),
-                                           np.mean(s_ifunc) if s_ifunc else float("nan")))
+    print(_header("Block B — relation frequency & multiplicity"))
+    print(_row("out_degree_fit.alpha",   tb.out_degree_fit.alpha,    sb.out_degree_fit.alpha))
+    print(_row("out_degree_fit.xmin",    tb.out_degree_fit.xmin,     sb.out_degree_fit.xmin))
+    print(_row("in_degree_fit.alpha",    tb.in_degree_fit.alpha,     sb.in_degree_fit.alpha))
+    print(_row("in_degree_fit.xmin",     tb.in_degree_fit.xmin,      sb.in_degree_fit.xmin))
+    print(_row("relation_zipf.exponent", tb.relation_zipf.exponent,  sb.relation_zipf.exponent))
+    print(_row("obj_alpha_skew.loc",     tb.obj_alpha_skew.loc,      sb.obj_alpha_skew.loc))
+    print(_row("subj_alpha_skew.loc",    tb.subj_alpha_skew.loc,     sb.subj_alpha_skew.loc))
+    print(_row("a_obj",                  tb.a_obj,                   sb.a_obj))
+    print(_row("a_subj",                 tb.a_subj,                  sb.a_subj))
 
     print(_header("Block C — schema & co-occurrence"))
     print(_row("num_classes",          tc.num_classes,              sc.num_classes))
-    print(_row("class_size_zipf_exp",  tc.class_size_zipf_exponent, sc.class_size_zipf_exponent))
+    print(_row("class_size_fit.alpha", tc.class_size_fit.alpha,     sc.class_size_fit.alpha))
     print(_row("subj_cooc_density",    tc.subj_cooc_density,        sc.subj_cooc_density))
     print(_row("obj_cooc_density",     tc.obj_cooc_density,         sc.obj_cooc_density))
-    for i in range(min(5, len(tc.subj_singular_values))):
-        print(_row(f"subj_sv[{i}]", tc.subj_singular_values[i], sc.subj_singular_values[i]))
+    print(_row("subj_cooc_exp.rate",   tc.subj_cooc_exp.rate,       sc.subj_cooc_exp.rate))
+    print(_row("subj_cooc_exp.scale",  tc.subj_cooc_exp.scale,      sc.subj_cooc_exp.scale))
+    print(_row("type_rel_spectrum.rate", tc.type_rel_spectrum_exp.rate, sc.type_rel_spectrum_exp.rate))
 
-    print(_header("Block D — characteristic sets"))
-    print(_row("num_distinct_cs",     td.num_distinct_cs,         sd.num_distinct_cs))
-    print(_row("cs_size_mean",        td.cs_size_mean,            sd.cs_size_mean))
-    print(_row("cs_size_median",      td.cs_size_median,          sd.cs_size_median))
-    print(_row("inv_num_distinct_cs", td.inv_num_distinct_cs,     sd.inv_num_distinct_cs))
-    print(_row("inv_cs_size_mean",    td.inv_cs_size_mean,        sd.inv_cs_size_mean))
+    print(_header("Block D — characteristic sets & two-step"))
+    print(_row("num_distinct_cs",     td.num_distinct_cs,       sd.num_distinct_cs))
+    print(_row("cs_freq_fit.alpha",   td.cs_freq_fit.alpha,     sd.cs_freq_fit.alpha))
+    print(_row("cs_size_skew.loc",    td.cs_size_skew.loc,      sd.cs_size_skew.loc))
+    print(_row("inv_cs_size_skew.loc", td.inv_cs_size_skew.loc, sd.inv_cs_size_skew.loc))
+    print(_row("two_step_fit.alpha",  td.two_step_fit.alpha,    sd.two_step_fit.alpha))
 
-    print(_header("Block E — motifs & structural patterns"))
+    print(_header("Block E — motifs & templates"))
     print(_row("triangle_count",      te.triangle_count,        se.triangle_count))
     print(_row("four_cycle_count",    te.four_cycle_count,      se.four_cycle_count))
     print(_row("five_cycle_count",    te.five_cycle_count,      se.five_cycle_count))
@@ -144,15 +243,13 @@ def main():
     print(_row("diamond_count",       te.diamond_count,         se.diamond_count))
     print(_row("k4_count",            te.k4_count,              se.k4_count))
     print(_row("tailed_triangle",     te.tailed_triangle_count, se.tailed_triangle_count))
-    for k in range(2, 11):
-        print(_row(f"star[{k}]", te.star_counts.get(k, 0), se.star_counts.get(k, 0)))
     print(_row("tree_template_zipf",    te.tree_template_zipf,    se.tree_template_zipf))
     print(_row("tree_template_entropy", te.tree_template_entropy, se.tree_template_entropy))
 
     print(_header("Block F — connectivity"))
     print(_row("num_components",             tf.num_components,              sf.num_components))
     print(_row("largest_component_fraction", tf.largest_component_fraction,  sf.largest_component_fraction))
-    print(_row("avg_shortest_path_length",   tf.avg_shortest_path_length,    sf.avg_shortest_path_length))
+    print(_row("shortest_path_skew.loc",     tf.shortest_path_skew.loc,      sf.shortest_path_skew.loc))
     print(_row("clustering_coefficient",     tf.clustering_coefficient,      sf.clustering_coefficient))
     print(_row("degree_assortativity",       tf.degree_assortativity,        sf.degree_assortativity))
 

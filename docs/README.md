@@ -22,9 +22,9 @@ Two signatures coexist: the original full signature (`src/signature/`,
 ## Plans (future)
 
 - **[plan/generation_implementation_plan.md](plan/generation_implementation_plan.md)** —
-  implementing the three-stage sampler (`src/generator_reduced.py`) against the reduced
-  signature: Stage 1 (schema) + Stage 2 (CS-first instantiation) now, Stage 3 (motif
-  refinement) deferred.
+  the three-stage sampler against the reduced signature. **Implemented** in the
+  `src/generator/` package (Stage 1 schema, Stage 2 CS-first instantiation, Stage 3 motif
+  refinement — all in scope now that reduced Block E exists); see the status note atop that plan.
 - **[plan/stage1_population_sampler.md](plan/stage1_population_sampler.md)** — the
   **doc-Stage-1 population sampler**: sampling a *novel* signature from the real-graph
   population (conditional-on-size). Evaluates the data-expansion proposals (more KGs, WCC

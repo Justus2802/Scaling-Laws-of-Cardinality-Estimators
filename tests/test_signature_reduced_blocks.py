@@ -9,11 +9,11 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from kg_io import load_kg  # noqa: E402
 from signature_reduced import (  # noqa: E402
-    BlockA, BlockB, BlockC, BlockD, BlockF,
+    BlockA, BlockB, BlockC, BlockD, BlockE, BlockF,
     ReducedGraphSignature,
 )
 
-_BLOCKS = [BlockA, BlockB, BlockC, BlockD, BlockF]
+_BLOCKS = [BlockA, BlockB, BlockC, BlockD, BlockE, BlockF]
 _RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 
 
