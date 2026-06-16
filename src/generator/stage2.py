@@ -414,17 +414,10 @@ def instantiate(
             # else: no valid object found within retries → drop this stub (rare)
 
     # ------------------------------------------------------------------
-    # 5. Throttle content edges down to budget if over target
-    # ------------------------------------------------------------------
-    log.info("Stage 2: wired %d content edges (pre-throttle)", len(content_edges))
-    if len(content_edges) > content_E_target > 0:
-        keep = rng.choice(len(content_edges), size=content_E_target, replace=False)
-        keep_set = set(keep.tolist())
-        content_edges = [e for i, e in enumerate(content_edges) if i in keep_set]
-        log.info("Stage 2: throttled content edges down to %d", len(content_edges))
+    log.info("Stage 2: wired %d content edges", len(content_edges))
 
     # ------------------------------------------------------------------
-    # 5b. Connectivity guarantee: bridge any isolated components to the giant
+    # 5. Connectivity guarantee: bridge any isolated components to the giant
     # ------------------------------------------------------------------
     _connect_components(content_edges, actual_V, schema, rng, seen, in_degrees)
 

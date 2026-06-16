@@ -57,8 +57,7 @@ Thumbs.db
 *.parquet
 *.h5
 *.hdf5
-graphs/
-data/
+
 outputs/
 
 # Model checkpoints

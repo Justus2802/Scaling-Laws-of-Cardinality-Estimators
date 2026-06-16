@@ -1,0 +1,62 @@
+=== Reduced Block A: Size & Vocabulary (G0) ===
+  num_entities : 3051
+  num_relations: 200
+  mean_degree  : 4.7702
+
+=== Reduced Block B: Relation Frequency & Multiplicity (G1/G2/G2b) ===
+  out-degree fit : alpha=2.9064  xmin=7.0
+  in-degree fit  : alpha=2.5507  xmin=6.0
+  relation Zipf  : exponent=1.7070  xmin=12.0
+  obj  mult-alpha skew-normal: loc=2.793 scale=0.624 shape=-2.943 cutoffs=[1.40,3.00]
+  subj mult-alpha skew-normal: loc=1.880 scale=0.548 shape=1.663 cutoffs=[1.40,3.00]
+  CS-size offset : a_obj=-0.0718  a_subj=0.0350
+
+=== Reduced Block C: Schema & Co-occurrence (G3) ===
+  num_classes        : 0
+  class size power-law: alpha=nan  xmin=nan
+  subj co-occurrence : exp(rate=0.210, scale=0.231)  density=0.0666
+  obj  co-occurrence : exp(rate=0.202, scale=0.188)  density=0.0633
+  subj row entropy   : skew-normal(loc=2.901, scale=1.367, shape=-27.034)
+  obj  row entropy   : skew-normal(loc=2.970, scale=1.509, shape=-5.618)
+  P(r|t) spectrum    : exp(rate=nan, scale=nan)
+  per-type entropy   : exp(rate=nan, scale=nan)
+
+=== Reduced Block D: Characteristic Sets & Two-step (G3) ===
+  num_distinct_cs    : 1298
+  CS frequency       : power-law(alpha=2.3792, xmin=1.0)
+  CS size            : skew-normal(loc=1.000, scale=2.554, shape=12970308.712, cutoffs=[1.0,13.0])
+  inverse-CS size    : skew-normal(loc=1.000, scale=2.201, shape=34657681.368, cutoffs=[1.0,21.0])
+  two-step path count: trunc. power-law(alpha=1.3245, range=[1,9972])
+
+=== Reduced Block E: Motif Shape Distribution (G5) ===
+
+--- Subgraph counts ---
+  triangles:           3529
+  4-cycles:            111005
+  5-cycles (est):      92373
+  6-cycles (est):      3583165
+  diamonds:            29081
+  K4:                  1342
+  tailed triangles:    262065
+
+--- Path templates ---
+    k  zipf_alpha     entropy
+    2         nan     -0.0000
+    3      1.3821      0.0331
+    4      1.2408      0.3842
+    5      1.3460      1.2718
+    6      1.2225      2.0142
+    7      1.3342      2.7204
+    8      1.4209      3.6353
+    9      1.4688      4.7329
+   10      1.5643      5.4108
+
+--- Tree templates ---
+  zipf_alpha=1.0811  entropy=0.2082
+
+=== Reduced Block F: Connectivity (G4) ===
+  num_components            : 30
+  largest_component_fraction: 0.9728
+  clustering_coefficient    : 0.1070
+  degree_assortativity      : -0.1838
+  shortest path             : skew-normal(loc=3.219, scale=1.345, shape=1.208)

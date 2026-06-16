@@ -222,60 +222,25 @@ def main():
     se = BlockE().calculate(g_synth)
     sf = BlockF().calculate(g_synth)
 
-    # ── Step 5: comparison table ─────────────────────────────────────────────
+    # ── Step 5: full reduced-signature comparison ────────────────────────────
+    # Every feature of every block (the complete reduced signature vector), via each
+    # block's feature_names() × as_vector(), so nothing is summarised away.
     print()
     print(f"  {'Metric':<38}  {'Original':>14}  {'Synthetic':>14}  {'Rel err':>8}")
     print("  " + "─" * 80)
 
-    print(_header("Block A — size & vocabulary"))
-    print(_row("num_entities",  ta.num_entities,  sa.num_entities))
-    print(_row("num_relations", ta.num_relations, sa.num_relations))
-    print(_row("mean_degree",   ta.mean_degree,   sa.mean_degree))
-
-    print(_header("Block B — relation frequency & multiplicity"))
-    print(_row("out_degree_fit.alpha",   tb.out_degree_fit.alpha,    sb.out_degree_fit.alpha))
-    print(_row("out_degree_fit.xmin",    tb.out_degree_fit.xmin,     sb.out_degree_fit.xmin))
-    print(_row("in_degree_fit.alpha",    tb.in_degree_fit.alpha,     sb.in_degree_fit.alpha))
-    print(_row("in_degree_fit.xmin",     tb.in_degree_fit.xmin,      sb.in_degree_fit.xmin))
-    print(_row("relation_zipf.exponent", tb.relation_zipf.exponent,  sb.relation_zipf.exponent))
-    print(_row("obj_alpha_skew.loc",     tb.obj_alpha_skew.loc,      sb.obj_alpha_skew.loc))
-    print(_row("subj_alpha_skew.loc",    tb.subj_alpha_skew.loc,     sb.subj_alpha_skew.loc))
-    print(_row("a_obj",                  tb.a_obj,                   sb.a_obj))
-    print(_row("a_subj",                 tb.a_subj,                  sb.a_subj))
-
-    print(_header("Block C — schema & co-occurrence"))
-    print(_row("num_classes",          tc.num_classes,              sc.num_classes))
-    print(_row("class_size_fit.alpha", tc.class_size_fit.alpha,     sc.class_size_fit.alpha))
-    print(_row("subj_cooc_density",    tc.subj_cooc_density,        sc.subj_cooc_density))
-    print(_row("obj_cooc_density",     tc.obj_cooc_density,         sc.obj_cooc_density))
-    print(_row("subj_cooc_exp.rate",   tc.subj_cooc_exp.rate,       sc.subj_cooc_exp.rate))
-    print(_row("subj_cooc_exp.scale",  tc.subj_cooc_exp.scale,      sc.subj_cooc_exp.scale))
-    print(_row("type_rel_spectrum.rate", tc.type_rel_spectrum_exp.rate, sc.type_rel_spectrum_exp.rate))
-
-    print(_header("Block D — characteristic sets & two-step"))
-    print(_row("num_distinct_cs",     td.num_distinct_cs,       sd.num_distinct_cs))
-    print(_row("cs_freq_fit.alpha",   td.cs_freq_fit.alpha,     sd.cs_freq_fit.alpha))
-    print(_row("cs_size_skew.loc",    td.cs_size_skew.loc,      sd.cs_size_skew.loc))
-    print(_row("inv_cs_size_skew.loc", td.inv_cs_size_skew.loc, sd.inv_cs_size_skew.loc))
-    print(_row("two_step_fit.alpha",  td.two_step_fit.alpha,    sd.two_step_fit.alpha))
-
-    print(_header("Block E — motifs & templates"))
-    print(_row("triangle_count",      te.triangle_count,        se.triangle_count))
-    print(_row("four_cycle_count",    te.four_cycle_count,      se.four_cycle_count))
-    print(_row("five_cycle_count",    te.five_cycle_count,      se.five_cycle_count))
-    print(_row("six_cycle_count",     te.six_cycle_count,       se.six_cycle_count))
-    print(_row("diamond_count",       te.diamond_count,         se.diamond_count))
-    print(_row("k4_count",            te.k4_count,              se.k4_count))
-    print(_row("tailed_triangle",     te.tailed_triangle_count, se.tailed_triangle_count))
-    print(_row("tree_template_zipf",    te.tree_template_zipf,    se.tree_template_zipf))
-    print(_row("tree_template_entropy", te.tree_template_entropy, se.tree_template_entropy))
-
-    print(_header("Block F — connectivity"))
-    print(_row("num_components",             tf.num_components,              sf.num_components))
-    print(_row("largest_component_fraction", tf.largest_component_fraction,  sf.largest_component_fraction))
-    print(_row("shortest_path_skew.loc",     tf.shortest_path_skew.loc,      sf.shortest_path_skew.loc))
-    print(_row("clustering_coefficient",     tf.clustering_coefficient,      sf.clustering_coefficient))
-    print(_row("degree_assortativity",       tf.degree_assortativity,        sf.degree_assortativity))
+    block_pairs = [
+        ("Block A — size & vocabulary", ta, sa),
+        ("Block B — relation frequency & multiplicity", tb, sb),
+        ("Block C — schema & co-occurrence", tc, sc),
+        ("Block D — characteristic sets & two-step", td, sd),
+        ("Block E — motifs & templates", te, se),
+        ("Block F — connectivity", tf, sf),
+    ]
+    for title, tblk, sblk in block_pairs:
+        print(_header(title))
+        for name, tv, sv in zip(tblk.feature_names(), tblk.as_vector(), sblk.as_vector()):
+            print(_row(name, tv, sv))
 
     # ── Aggregate vector error ────────────────────────────────────────────────
     tv_vec = np.array(
