@@ -1,8 +1,12 @@
 """Stage 1 output: the abstract Schema dataclass handed to Stage 2."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
+
+# Canonical "fit unavailable" skew-normal (loc, scale, shape, lo, hi); the
+# generator treats it as "no usable shape" and falls back to neutral behavior.
+_NAN_SKEW = (float("nan"),) * 5
 
 
 @dataclass
@@ -45,7 +49,13 @@ class Schema:
     cs_num_templates: int = 0       # 0 → per-entity independent sampling
     cs_template_zipf: float = 2.0   # Zipf exponent for template frequency
     # Block B-derived edge multiplicity and degree distribution
-    mean_functionality: float = 1.0      # 1.0 → single object per (s,p) pair
-    in_pa_exponent: float = 0.5          # PA exponent for object selection → in-degree shape
-    mean_inv_functionality: float = 1.0  # 1.0 → no cap on subjects per (predicate, object)
+    mean_functionality: float = 1.0      # out-side fallback only (CS-size mean when no Block D)
+    in_pa_exponent: float = 0.5          # PA exponent → aggregate in-degree hub preference
     max_in_degree: int = 0               # 0 → uncapped; limits hub formation
+    # Per-relation multiplicity shape + G2b offset (Block B); CS-size shape (Block D).
+    # Defaults are NEUTRAL (no tail shape / no offset / budget-derived CS size), not the
+    # old wiring — Stage 2 falls back to uniform per-subject weights when these are NaN.
+    obj_alpha_skew: tuple = field(default_factory=lambda: _NAN_SKEW)   # per-relation obj-mult α
+    a_obj: float = 0.0                   # G2b cs_size^a out-degree offset (0 → no effect)
+    subj_alpha_skew: tuple = field(default_factory=lambda: _NAN_SKEW)  # per-relation subj-mult α
+    cs_size_skew: tuple = field(default_factory=lambda: _NAN_SKEW)     # CS-size distribution

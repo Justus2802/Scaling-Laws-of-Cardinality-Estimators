@@ -53,7 +53,7 @@ def main() -> None:
     print(f"Loading  : {args.kg_file}")
     sig = compute_reduced_signature(args.kg_file, verbose=True, blocks=selected_blocks)
 
-    all_blocks = [("a", sig.a), ("b", sig.b), ("c", sig.c), ("d", sig.d), ("f", sig.f)]
+    all_blocks = [("a", sig.a), ("b", sig.b), ("c", sig.c), ("d", sig.d), ("e", sig.e), ("f", sig.f)]
     computed_blocks = [(label, block) for label, block in all_blocks if block is not None]
     written: list[Path] = []
 

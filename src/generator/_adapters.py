@@ -42,6 +42,42 @@ def _functionality_from_alpha(fit, floor: float = 0.1) -> float:
     return float(np.clip(1.0 / zeta(alpha), floor, 1.0))
 
 
+def sample_skewnorm_trunc(fit, n: int, rng: np.random.Generator):
+    """Sample ``n`` values from a (truncated) skew-normal fit, or ``None``.
+
+    ``fit`` is a ``SkewNormFit``-shaped 5-tuple ``(loc, scale, shape, lo, hi)``
+    (works for both the NamedTuple and a plain decoded tuple). Draws via
+    ``scipy.stats.skewnorm.rvs`` and clips to ``[lo, hi]`` when those cutoffs are
+    finite. Returns ``None`` when the fit is unavailable (NaN params), so callers
+    fall back to a budget-derived / neutral default.
+    """
+    loc, scale, shape, lo, hi = fit
+    if math.isnan(loc) or math.isnan(scale) or math.isnan(shape):
+        return None
+    vals = scipy.stats.skewnorm.rvs(shape, loc=loc, scale=scale, size=n, random_state=rng)
+    vals = np.atleast_1d(vals)
+    if not math.isnan(lo):
+        vals = np.maximum(vals, lo)
+    if not math.isnan(hi):
+        vals = np.minimum(vals, hi)
+    return vals
+
+
+def sample_powerlaw(alpha: float, n: int, rng: np.random.Generator) -> np.ndarray:
+    """``n`` continuous power-law(α) draws on ``[1, ∞)`` via inverse-CDF.
+
+    For ``p(x) ∝ x^(−α)`` on ``x ≥ 1`` the inverse CDF is
+    ``x = (1 − u)^(−1/(α−1))``. Returns uniform ones when ``α`` is NaN or ``≤ 1``
+    (no usable tail shape → callers get equal weights = the neutral fallback).
+    """
+    if n <= 0:
+        return np.array([], dtype=float)
+    if math.isnan(alpha) or alpha <= 1.0:
+        return np.ones(n, dtype=float)
+    u = rng.random(n)
+    return (1.0 - u) ** (-1.0 / (alpha - 1.0))
+
+
 def _reconstruct_singular_values(exp_fit, k: int = 10) -> np.ndarray:
     """Rebuild a singular-value spectrum from an exp-decay fit ``(rate, scale)``.
 

@@ -7,9 +7,12 @@ import igraph
 
 from signature_reduced import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
 
+from ._logging import get_logger
 from .stage1 import sample_schema
 from .stage2 import instantiate
 from .stage3 import refine
+
+log = get_logger(__name__)
 
 
 @dataclass
@@ -95,6 +98,7 @@ class Generator:
             Synthetic KG with the same vertex/edge attribute schema as a
             graph loaded by kg_io.load_kg.
         """
+        log.info("Generator: sampling synthetic KG (master seed=%d)", seed)
         schema = sample_schema(
             self.target.a,
             self.target.c,
@@ -104,7 +108,7 @@ class Generator:
             seed=seed,
         )
         g = instantiate(schema, seed=seed + 1)
-        return refine(
+        g_refined = refine(
             g,
             self.target.e,
             target_f=self.target.f,
@@ -113,3 +117,5 @@ class Generator:
             cooling_rate=cooling_rate,
             seed=seed + 2,
         )
+        log.info("Generator: done — synthetic KG V=%d, E=%d", g_refined.vcount(), g_refined.ecount())
+        return g_refined

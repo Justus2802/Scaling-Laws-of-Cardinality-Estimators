@@ -26,7 +26,10 @@ from ._adapters import (
     _reconstruct_singular_values,
     _skewnorm_mean,
 )
-from .schema import Schema
+from ._logging import get_logger
+from .schema import Schema, _NAN_SKEW
+
+log = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -201,10 +204,22 @@ def sample_schema(
     # Reduced Block A stores mean degree (E/V) rather than |E|; recover the
     # edge budget as round(V × mean_degree).
     num_triples = int(round(a.num_entities * a.mean_degree))
+    log.info(
+        "Stage 1: sampling schema (seed=%d) for V=%d, R=%d, T=%d, target E=%d",
+        seed, a.num_entities, num_relations, num_types, num_triples,
+    )
 
     # --- Relations ---
+    # Prefer the measured relation-usage Zipf exponent (Block B) over the
+    # hard-coded parameter default, matching the brief's "Zipf(s)" with s = target.
+    rel_zipf = relation_zipf_exponent
+    if b is not None:
+        measured = b.relation_zipf.exponent
+        if not math.isnan(measured) and measured > 0:
+            rel_zipf = float(measured)
+            log.info("Stage 1: using measured relation Zipf exponent %.3f", rel_zipf)
     relations = [f"http://kgsynth.org/rel/{i}" for i in range(num_relations)]
-    relation_weights = _zipf_weights(num_relations, relation_zipf_exponent, rng)
+    relation_weights = _zipf_weights(num_relations, rel_zipf, rng)
 
     # --- Types ---
     types = [f"http://kgsynth.org/type/{i}" for i in range(num_types)]
@@ -215,6 +230,7 @@ def sample_schema(
             type_weights = _zipf_weights(num_types, type_zipf, rng)
         else:
             # Block C could not fit a power-law (too few classes): fall back to uniform
+            log.info("Stage 1: class-size α unavailable — using uniform type weights")
             type_weights = np.full(num_types, 1.0 / num_types)
     else:
         type_weights = np.array([], dtype=float)
@@ -231,6 +247,8 @@ def sample_schema(
         )
     else:
         target_svs = _reconstruct_singular_values(c.type_rel_spectrum_exp)
+        if num_types > 0 and target_svs.size == 0:
+            log.info("Stage 1: no P(r|t) spectrum — uniform per-type relation weights")
         type_relation_probs = _sample_type_relation_probs(
             num_types, num_relations, relation_weights, target_svs, rng,
         )
@@ -269,12 +287,24 @@ def sample_schema(
             max_in_degree = max(10, int(round(n_ent ** (1.0 / (alpha_in - 1.0)))))
         else:
             max_in_degree = 0
-        mean_inv_functionality = _functionality_from_alpha(b.subj_alpha_skew, floor=0.01)
     else:
         in_pa_exponent = 0.5
-        mean_inv_functionality = 1.0
         max_in_degree = 0
 
+    # --- Per-relation multiplicity shape (G2) + CS-size offset (G2b) + CS-size shape ---
+    # Stored as plain tuples; Stage 2 samples a per-relation α from obj_alpha_skew and
+    # applies the cs_size^a_obj offset. NaN fits → neutral fallback in Stage 2.
+    obj_alpha_skew = tuple(b.obj_alpha_skew) if b is not None else _NAN_SKEW
+    subj_alpha_skew = tuple(b.subj_alpha_skew) if b is not None else _NAN_SKEW
+    a_obj = float(b.a_obj) if (b is not None and not math.isnan(b.a_obj)) else 0.0
+    cs_size_skew = tuple(d.cs_size_skew) if d is not None else _NAN_SKEW
+
+    log.info(
+        "Stage 1: schema ready — mean_functionality=%.3f, in_pa_exponent=%.3f, "
+        "max_in_degree=%d, cs_num_templates=%d, a_obj=%.3f, obj_alpha_loc=%.3f",
+        mean_functionality, in_pa_exponent, max_in_degree, cs_num_templates,
+        a_obj, obj_alpha_skew[0],
+    )
     return Schema(
         relations=relations,
         relation_weights=relation_weights,
@@ -288,6 +318,9 @@ def sample_schema(
         cs_template_zipf=cs_template_zipf,
         mean_functionality=mean_functionality,
         in_pa_exponent=in_pa_exponent,
-        mean_inv_functionality=mean_inv_functionality,
         max_in_degree=max_in_degree,
+        obj_alpha_skew=obj_alpha_skew,
+        a_obj=a_obj,
+        subj_alpha_skew=subj_alpha_skew,
+        cs_size_skew=cs_size_skew,
     )

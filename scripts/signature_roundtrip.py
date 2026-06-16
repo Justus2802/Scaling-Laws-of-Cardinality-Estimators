@@ -1,22 +1,25 @@
 """Signature round-trip: load a target reduced signature, generate a synthetic
 graph from it, save it, re-measure it, and compare.
 
-By default the target signature is loaded from the measured corpus at
-``data/graphs/<graph_name>/signature/`` (the per-block ``block_*.json`` files
-written by ``measure_signature_reduced.py``) — no recomputation of the original.
+By default the target signature is searched in ``data/graphs/`` first, then in
+``data/test_graphs/`` (smaller graphs excluded from the population fit).  Within
+each directory the per-block ``block_*.json`` files written by
+``measure_signature_reduced.py`` are used — no recomputation of the original.
 Block E is not part of the corpus yet; if ``block_e.json`` is absent it is
-measured on demand from the graph file in that directory. Pass ``--kg-file`` to
+measured on demand from the graph file in that directory.  Pass ``--kg-file`` to
 measure the full target signature from a graph file instead.
 
 Usage
 -----
     python scripts/signature_roundtrip.py aids
+    python scripts/signature_roundtrip.py wn18rr_v4          # from data/test_graphs
     python scripts/signature_roundtrip.py aids --seed 7 --rewire-budget 5000
     python scripts/signature_roundtrip.py --kg-file path/to/graph.ttl
 """
 
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
 
@@ -29,8 +32,17 @@ from generator import Generator, Signature
 from kg_io import load_kg, save_kg
 from signature_reduced import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
 
+# Surface generator + signature-measurement progress and errors in the console.
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
 # Reduced block letter → class, in signature order.
 _BLOCK_CLASSES = {"a": BlockA, "b": BlockB, "c": BlockC, "d": BlockD, "f": BlockF}
+
+# Directories searched (in order) when --graphs-dir is not set explicitly.
+_DEFAULT_SEARCH_DIRS: list[Path] = [
+    _REPO / "data" / "graphs",
+    _REPO / "data" / "test_graphs",
+]
 
 
 def _load_block(cls, path: Path):
@@ -47,20 +59,30 @@ def _find_graph_file(d: Path) -> Path | None:
     return None
 
 
-def _load_target_from_corpus(graph_name: str, graphs_dir: Path):
+def _load_target_from_corpus(graph_name: str, search_dirs: list[Path]):
     """Load the cached reduced target signature for ``graph_name``.
 
-    Loads blocks A/B/C/D/F from ``<graphs_dir>/<graph_name>/signature/`` and
-    Block E from ``block_e.json`` if present, else measures it from the graph
-    file in that directory. Returns ``(Signature, blocks_dict)``.
+    Searches each directory in ``search_dirs`` for ``<graph_name>/signature/``
+    and loads blocks A/B/C/D/F from the first match. Block E is loaded from
+    ``block_e.json`` if present, else measured from the graph file. Returns
+    ``(Signature, blocks_dict)``.
     """
-    graph_dir = graphs_dir / graph_name
-    sig_dir = graph_dir / "signature"
-    if not sig_dir.is_dir():
-        available = sorted(p.name for p in graphs_dir.iterdir() if p.is_dir()) \
-            if graphs_dir.is_dir() else []
+    graph_dir = sig_dir = None
+    for graphs_dir in search_dirs:
+        candidate = graphs_dir / graph_name
+        if (candidate / "signature").is_dir():
+            graph_dir = candidate
+            sig_dir = candidate / "signature"
+            break
+
+    if sig_dir is None:
+        available: list[str] = []
+        for d in search_dirs:
+            if d.is_dir():
+                available += sorted(p.name for p in d.iterdir() if p.is_dir())
         raise SystemExit(
-            f"No signature dir at {sig_dir}. Available graphs: {available}"
+            f"'{graph_name}' not found in {[str(d) for d in search_dirs]}. "
+            f"Available graphs: {sorted(set(available))}"
         )
 
     blocks: dict[str, object] = {}
@@ -88,7 +110,7 @@ def _load_target_from_corpus(graph_name: str, graphs_dir: Path):
         a=blocks["a"], b=blocks["b"], c=blocks["c"],
         d=blocks["d"], e=blocks["e"], f=blocks["f"],
     )
-    return sig, blocks
+    return sig, blocks, graph_dir
 
 
 def _measure_target_from_file(kg_file: Path):
@@ -138,12 +160,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "graph", nargs="?", default=None,
-        help="Graph name in the corpus (e.g. 'aids'); its cached target signature "
-             "is loaded from <graphs-dir>/<graph>/signature/. Omit when using --kg-file.",
+        help="Graph name in the corpus (e.g. 'aids' or 'wn18rr_v4'); its cached "
+             "target signature is loaded from <graphs-dir>/<graph>/signature/. "
+             "Omit when using --kg-file.",
     )
     parser.add_argument(
-        "--graphs-dir", default=str(_REPO / "data" / "graphs"),
-        help="Corpus root holding <graph>/signature/ (default: data/graphs).",
+        "--graphs-dir", default=None,
+        help="Corpus root holding <graph>/signature/. "
+             "Default: searches data/graphs/ then data/test_graphs/ in order.",
     )
     parser.add_argument(
         "--kg-file", default=None,
@@ -165,10 +189,10 @@ def main():
         target_sig, tblocks = _measure_target_from_file(kg_path)
         default_out = kg_path.with_name(kg_path.stem + "_synth.ttl")
     elif args.graph:
-        graphs_dir = Path(args.graphs_dir)
-        print(f"Loading   : cached target signature for '{args.graph}' from {graphs_dir}")
-        target_sig, tblocks = _load_target_from_corpus(args.graph, graphs_dir)
-        default_out = graphs_dir / args.graph / f"{args.graph}_synth.ttl"
+        search_dirs = [Path(args.graphs_dir)] if args.graphs_dir else _DEFAULT_SEARCH_DIRS
+        print(f"Loading   : cached target signature for '{args.graph}' from {[str(d) for d in search_dirs]}")
+        target_sig, tblocks, found_graph_dir = _load_target_from_corpus(args.graph, search_dirs)
+        default_out = found_graph_dir / f"{args.graph}_synth.ttl"
     else:
         parser.error("provide a corpus graph name or --kg-file")
 

@@ -12,7 +12,10 @@ import igraph
 import numpy as np
 
 from ._constants import _RDF_TYPE
+from ._logging import get_logger
 from .stage2 import _connect_components
+
+log = get_logger(__name__)
 
 # Lazily discovered mapping: 4-node degree-sequence tuple → igraph motifs_randesu index.
 _MOTIF4_IDX: dict[tuple, int] | None = None
@@ -140,6 +143,7 @@ def refine(
             content_edge_data.append(entry)
 
     if len(content_edge_data) < 2:
+        log.warning("Stage 3: <2 content edges — skipping refinement, returning input graph")
         return g
 
     rel_to_idxs: dict[str, list[int]] = defaultdict(list)
@@ -148,6 +152,7 @@ def refine(
 
     swappable_rels = [r for r, lst in rel_to_idxs.items() if len(lst) >= 2]
     if not swappable_rels:
+        log.warning("Stage 3: no relation has ≥2 edges to swap — skipping refinement")
         return g
 
     n = g.vcount()
@@ -234,6 +239,12 @@ def refine(
     current_loss = _loss(current_tri, current_motifs4, Q_deg)
     best_loss = current_loss
     best_content = list(content_edge_data)
+    log.info(
+        "Stage 3: refining (seed=%d, budget=%d) — target triangles=%d, motif4 targets=%s, "
+        "assortativity=%s; initial loss=%.4f (triangles=%d)",
+        seed, budget, target_tri, sorted(_motif4_targets),
+        f"{target_r:.4f}" if use_assort else "off", current_loss, current_tri,
+    )
 
     # -------------------------------------------- triangle-targeting indexes
     # edge_tgt[o] = set of content_edge_data indices whose target is o
@@ -346,6 +357,11 @@ def refine(
             if current_loss < best_loss:
                 best_loss = current_loss
                 best_content = list(content_edge_data)
+
+    log.info(
+        "Stage 3: done — accepted %d/%d swaps, best loss=%.4f, triangles=%d (target %d)",
+        accepted, budget, best_loss, current_tri, target_tri,
+    )
 
     # Re-connect any components that SA swaps may have disconnected
     seen_best: set[tuple[int, int, str]] = set(best_content)

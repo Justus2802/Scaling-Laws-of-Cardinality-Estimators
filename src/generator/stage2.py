@@ -16,8 +16,12 @@ import math
 import igraph
 import numpy as np
 
+from ._adapters import sample_powerlaw, sample_skewnorm_trunc
 from ._constants import _RDF_TYPE
+from ._logging import get_logger
 from .schema import Schema
+
+log = get_logger(__name__)
 
 
 def _connect_components(
@@ -122,12 +126,24 @@ def instantiate(
     n_type_edges = actual_V if num_types > 0 else 0
     content_E_target = max(0, actual_E_target - n_type_edges)
 
-    # Target edges per entity divided by average objects per CS slot.
-    # cs_size_mean counts relation slots; each slot emits geometric(mean_func)
-    # objects on average, so we scale up to hit the edge budget.
-    edges_per_entity = content_E_target / actual_V if actual_V > 0 else 1.0
+    # CS size (number of relation slots per entity) comes from the measured cs_size
+    # skew-normal; when unavailable, fall back to a budget-derived Poisson mean. Edge
+    # counts are NOT set here — the per-relation multinomial allocation below owns the
+    # |E| budget, so CS size only sets relation *membership*.
     objects_per_slot = 1.0 / schema.mean_functionality if schema.mean_functionality < 1.0 else 1.0
-    effective_cs_size = max(0.1, edges_per_entity / objects_per_slot)
+    fallback_cs_mean = max(0.5, (content_E_target / actual_V if actual_V > 0 else 1.0) / objects_per_slot)
+
+    def _draw_cs_size() -> int:
+        """Draw one CS size: from the measured skew-normal, else budget-derived Poisson."""
+        vals = sample_skewnorm_trunc(schema.cs_size_skew, 1, rng)
+        size = float(vals[0]) if vals is not None else float(rng.poisson(fallback_cs_mean))
+        return max(1, int(round(size)))
+
+    log.info(
+        "Stage 2: instantiating (seed=%d) V=%d, content-edge target=%d (+%d type edges), "
+        "cs_size source=%s", seed, actual_V, content_E_target, n_type_edges,
+        "skew-normal" if not math.isnan(schema.cs_size_skew[0]) else "budget-derived",
+    )
 
     # ------------------------------------------------------------------
     # 2. Assign a type to every entity
@@ -149,71 +165,131 @@ def instantiate(
     #    Sample each entity's CS independently (original behaviour).
     # ------------------------------------------------------------------
 
-    def _sample_cs_for_type(t: int, size: float) -> np.ndarray:
-        """Draw one CS from the distribution appropriate for type t."""
-        if num_relations == 0:
-            return np.array([], dtype=int)
-        if t >= 0:
-            probs = schema.type_relation_probs[t].copy()
-        else:
-            probs = schema.relation_weights.copy()
+    def _cs_probs(t: int) -> tuple[np.ndarray, int]:
+        """Return (normalised relation probabilities, #nonzero) for type t (-1 = untyped).
+
+        Typed entities draw relations from their P(r|t) row; untyped from the global
+        relation frequency. Falls back to relation frequency for an empty row.
+        """
+        probs = schema.type_relation_probs[t].copy() if t >= 0 else schema.relation_weights.copy()
         s = probs.sum()
         if s <= 0:
             probs = schema.relation_weights.copy()
             s = probs.sum()
-        probs /= s
-        nonzero = int((probs > 0).sum())
-        k = min(nonzero, max(0, int(rng.poisson(max(0.1, size)))))
+        if s > 0:
+            probs = probs / s
+        return probs, int((probs > 0).sum())
+
+    def _sample_cs_for_type(t: int) -> np.ndarray:
+        """Draw one CS (relation membership) for type t; size from _draw_cs_size()."""
+        if num_relations == 0:
+            return np.array([], dtype=int)
+        probs, nonzero = _cs_probs(t)
+        k = min(nonzero, _draw_cs_size())
         if k == 0:
             return np.array([], dtype=int)
         return rng.choice(num_relations, size=k, replace=False, p=probs)
 
-    entity_cs: list[np.ndarray] = []
+    def _build_distinct_templates(t: int, n_target: int) -> list[np.ndarray]:
+        """Rejection-sample up to ``n_target`` DISTINCT CS templates for type t.
+
+        Deduping by relation-set steers ``num_distinct_cs``: a plain pool collides
+        heavily (size-1 CSs yield at most #relations distinct, and frequency-
+        concentrated draws repeat popular combos), so the realised distinct count
+        far undershoots the target. A size-escape raises the minimum CS size once
+        small combos saturate, so distinct combos keep being found — bounded by the
+        type's P(r|t) support (``nonzero``) and an attempt cap. Templates are still
+        drawn from P(r|t)/relation_weights, so the schema structure is preserved.
+        """
+        if num_relations == 0 or n_target <= 0:
+            return [np.array([], dtype=int)]
+        probs, nonzero = _cs_probs(t)
+        if nonzero == 0:
+            return [np.array([], dtype=int)]
+        seen: set[frozenset] = set()
+        pool: list[np.ndarray] = []
+        attempts = consec_fail = 0
+        min_k = 1
+        max_attempts = max(64, n_target * 20)
+        while len(pool) < n_target and attempts < max_attempts:
+            attempts += 1
+            k = min(nonzero, max(min_k, _draw_cs_size()))
+            cs = rng.choice(num_relations, size=k, replace=False, p=probs)
+            key = frozenset(int(x) for x in cs)
+            if key in seen:
+                consec_fail += 1
+                if consec_fail >= 32 and min_k < nonzero:
+                    min_k += 1          # small combos saturated → explore larger CSs
+                    consec_fail = 0
+                continue
+            seen.add(key)
+            pool.append(cs)
+            consec_fail = 0
+        return pool
+
+    entity_cs: list = [None] * actual_V
 
     if schema.cs_num_templates > 0 and num_relations > 0:
         # --- Template-based CS sampling ---
-        # Generate a pool of templates per type, sized proportionally.
-        type_templates: list[list[np.ndarray]] = []
-        for t in range(num_types):
-            n_t = max(1, round(schema.cs_num_templates * float(schema.type_weights[t])))
-            type_templates.append([
-                _sample_cs_for_type(t, effective_cs_size) for _ in range(n_t)
-            ])
-        # Template pool for untyped entities (or when num_types == 0)
-        untyped_templates = [
-            _sample_cs_for_type(-1, effective_cs_size)
-            for _ in range(max(1, schema.cs_num_templates))
+        # Build a pool of DISTINCT templates so num_distinct_cs is steered. Typed pools
+        # are sized proportionally to type_weights and drawn from each type's P(r|t);
+        # the untyped pool is only needed when there are no types.
+        type_templates: list[list[np.ndarray]] = [
+            _build_distinct_templates(t, max(1, round(schema.cs_num_templates * float(schema.type_weights[t]))))
+            for t in range(num_types)
         ]
+        untyped_templates: list[np.ndarray] = (
+            _build_distinct_templates(-1, max(1, schema.cs_num_templates)) if num_types == 0 else []
+        )
 
-        # Zipf weights for selecting a template (popular templates reused more)
-        def _zipf_pick(pool: list[np.ndarray]) -> np.ndarray:
-            n = len(pool)
-            if n == 1:
-                return pool[0]
-            ranks = np.arange(1, n + 1, dtype=float)
-            w = ranks ** (-schema.cs_template_zipf)
-            w /= w.sum()
-            return pool[int(rng.choice(n, p=w))]
+        def _assign(entities: list[int], pool: list[np.ndarray]) -> None:
+            """Assign entities to templates: floor each template at ≥1 entity (so every
+            distinct CS is realised → steers num_distinct_cs), then distribute the rest by
+            a cs-frequency power-law (the reuse tail → cs_freq). Empty pool → empty CS."""
+            n_p = len(pool)
+            if n_p == 0:
+                for v in entities:
+                    entity_cs[v] = np.array([], dtype=int)
+                return
+            order = rng.permutation(len(entities))
+            fit = sample_powerlaw(schema.cs_template_zipf, n_p, rng)
+            sfit = fit.sum()
+            fit = fit / sfit if sfit > 0 else np.full(n_p, 1.0 / n_p)
+            for rank, oi in enumerate(order):
+                v = int(entities[oi])
+                idx = rank if rank < n_p else int(rng.choice(n_p, p=fit))
+                entity_cs[v] = pool[idx]
 
-        for v in range(actual_V):
-            t = int(entity_types[v])
-            pool = type_templates[t] if (t >= 0 and num_types > 0) else untyped_templates
-            entity_cs.append(_zipf_pick(pool))
+        # Group entities by type in one pass, then assign within each pool.
+        if num_types > 0:
+            buckets: dict[int, list[int]] = {}
+            for v in range(actual_V):
+                buckets.setdefault(int(entity_types[v]), []).append(v)
+            for t in range(num_types):
+                _assign(buckets.get(t, []), type_templates[t])
+        else:
+            _assign(list(range(actual_V)), untyped_templates)
+
+        used = len({frozenset(int(x) for x in entity_cs[v]) for v in range(actual_V) if len(entity_cs[v])})
+        log.info(
+            "Stage 2: CS sampling in template mode (target %d distinct, realised %d)",
+            schema.cs_num_templates, used,
+        )
     else:
         # --- Legacy: per-entity independent sampling ---
+        log.info("Stage 2: CS sampling in per-entity mode (no Block D templates)")
         for v in range(actual_V):
-            entity_cs.append(_sample_cs_for_type(int(entity_types[v]), effective_cs_size))
+            entity_cs[v] = _sample_cs_for_type(int(entity_types[v]))
 
     # ------------------------------------------------------------------
-    # 4. Wire content edges with preferential attachment
-    #    Object picked proportional to current in_degree ^ in_pa_exponent
-    #    (derived from Block B's in-degree power-law fit).
-    #    Laplace smoothing (start at 1) ensures every vertex is reachable.
-    #
-    #    When mean_functionality < 1, each (s, p) slot produces more than
-    #    one object on average — matching Block B's edge multiplicity.
-    #    Inverse functionality cap: limits how many subjects can share the
-    #    same (predicate, object) pair, from Block B's inverse_functionality.
+    # 4. Wire content edges: per-relation multiplicity-then-PA with edge
+    #    conservation. For each relation r, allocate |edges_r| (from the
+    #    relation weights) across its subjects S_r via a multinomial whose
+    #    weights are power-law(α_r) (per-relation multiplicity tail, Block B)
+    #    × cs_size^a_obj (G2b out-degree offset). Each allocated edge then
+    #    picks an object by preferential attachment (in_degree^in_pa_exponent,
+    #    Laplace-smoothed), with the optional inverse-functionality / max-in-
+    #    degree caps from Block B.
     # ------------------------------------------------------------------
     in_degrees = np.ones(actual_V, dtype=float)
     # unique_src_count[o] = number of distinct subjects that point to o (any pred)
@@ -224,55 +300,128 @@ def instantiate(
     # seen_src[o] = set of sources that already point to o (for unique_src_count)
     seen_src: list[set] = [set() for _ in range(actual_V)]
 
-    # Inverse functionality cap: only active when mean_inv_func < 0.7 AND
-    # ceil(1/x) >= 2, so the cap actually allows sharing.
-    # (round(1/0.77) = 1 would block all sharing; that bug is fixed here.)
-    max_subj_per_po: int | None = None
-    if schema.mean_inv_functionality < 0.7:
-        cap = math.ceil(1.0 / schema.mean_inv_functionality)
-        if cap >= 2:
-            max_subj_per_po = cap
-    po_subj_counts: dict[tuple[str, int], int] = {}
-
+    # Subject pool S_r per relation (entities whose CS contains r), from the
+    # sampled CS membership above.
+    subjects_by_rel: dict[int, list[int]] = {}
     for v, cs in enumerate(entity_cs):
         for rel_idx in cs:
-            predicate = schema.relations[int(rel_idx)]
-            # Geometric(p) has mean 1/p; p = mean_functionality gives
-            # mean 1/mean_functionality objects per (subject, predicate) slot.
-            n_obj = int(rng.geometric(schema.mean_functionality)) if schema.mean_functionality < 1.0 else 1
-            for _ in range(n_obj):
-                weights = in_degrees ** schema.in_pa_exponent
-                # Cap on unique sources to match the undirected in-degree target
-                if schema.max_in_degree > 0:
-                    weights[unique_src_count >= schema.max_in_degree] = 0.0
-                weights[v] = 0.0
-                total = weights.sum()
-                if total == 0.0:
+            subjects_by_rel.setdefault(int(rel_idx), []).append(v)
+
+    # Per-relation edge budget: renormalise the relation weights over relations that
+    # actually appear in some CS (an absent relation can't receive edges), so the
+    # spendable budget still sums to ~content_E_target.
+    present = sorted(subjects_by_rel)
+    if present:
+        w_present = np.array([schema.relation_weights[r] for r in present], dtype=float)
+        w_sum = w_present.sum()
+        w_present = w_present / w_sum if w_sum > 0 else np.full(len(present), 1.0 / len(present))
+        edge_budget = {r: int(round(content_E_target * w_present[i])) for i, r in enumerate(present)}
+    else:
+        edge_budget = {}
+
+    all_objs = np.arange(actual_V)
+    _MAX_PAIR_RETRY = 16
+
+    def _relation_alpha(skew) -> float:
+        """One per-relation exponent drawn from a multiplicity-α skew-normal (NaN → flat)."""
+        vals = sample_skewnorm_trunc(skew, 1, rng)
+        return float(vals[0]) if vals is not None else float("nan")
+
+    for rel_idx in present:
+        S_r = subjects_by_rel[rel_idx]
+        edges_r = edge_budget.get(rel_idx, 0)
+        if edges_r <= 0 or not S_r:
+            continue
+        predicate = schema.relations[rel_idx]
+
+        # Out-side: edges per subject = power-law(α_obj) multiplicity tail × cs_size^a_obj (G2b).
+        # Every subject has r in its CS, so its object-multiplicity is ≥1 — floor each subject
+        # at one edge (so the relation stays in its realised CS, matching num_distinct_cs),
+        # then distribute the surplus by the multiplicity weight. If the budget is below
+        # |S_r|, only edges_r subjects (chosen by weight) can be served.
+        n_sr = len(S_r)
+        w_out = sample_powerlaw(_relation_alpha(schema.obj_alpha_skew), n_sr, rng)
+        cs_sizes = np.array([len(entity_cs[s]) for s in S_r], dtype=float)
+        w_out = w_out * np.power(np.maximum(cs_sizes, 1.0), schema.a_obj)
+        sw_out = w_out.sum()
+        w_out = w_out / sw_out if sw_out > 0 else np.full(n_sr, 1.0 / n_sr)
+        if edges_r >= n_sr:
+            m_obj = np.ones(n_sr, dtype=np.int64) + rng.multinomial(edges_r - n_sr, w_out)
+        else:
+            m_obj = np.zeros(n_sr, dtype=np.int64)
+            m_obj[rng.choice(n_sr, size=edges_r, replace=False, p=w_out)] = 1
+
+        # In-side: edges per object = power-law(α_subj) subject-multiplicity tail × PA hub
+        # preference (in_degree^pa, accumulated across relations), masked by max_in_degree.
+        # This replaces the old hard inverse-functionality cap: the object-stub multiset is
+        # the subject-multiplicity distribution itself (head = inverse-functionality + tail).
+        w_in = sample_powerlaw(_relation_alpha(schema.subj_alpha_skew), actual_V, rng)
+        w_in = w_in * (in_degrees ** schema.in_pa_exponent)
+        if schema.max_in_degree > 0:
+            w_in[unique_src_count >= schema.max_in_degree] = 0.0
+        sw_in = w_in.sum()
+        if sw_in <= 0.0:
+            continue
+        m_in = rng.multinomial(edges_r, w_in / sw_in)
+
+        # Realizability cap: an object can receive at most |S_r| distinct-subject edges for
+        # this relation, so cap each object's allocation at |S_r| and redistribute the
+        # overflow (by w_in) to non-saturated objects. Without this, a heavy subject-mult
+        # tail (α_subj < 2) or superlinear PA (in_pa > 1, condensation) dumps almost all of
+        # |edges_r| onto one object → the excess is unplaceable duplicates and the budget
+        # collapses. The cap is also the physical bound: #subjects ≤ |S_r|.
+        cap = len(S_r)
+        if edges_r > cap:
+            for _ in range(8):
+                overflow = int(np.maximum(m_in - cap, 0).sum())
+                if overflow == 0:
                     break
-                weights /= total
-                obj = int(rng.choice(actual_V, p=weights))
-                # Skip if this (predicate, object) pair already has too many subjects
-                if max_subj_per_po is not None:
-                    po_key = (predicate, obj)
-                    if po_subj_counts.get(po_key, 0) >= max_subj_per_po:
-                        continue
-                    po_subj_counts[po_key] = po_subj_counts.get(po_key, 0) + 1
-                triple = (v, obj, predicate)
-                if triple not in seen:
-                    seen.add(triple)
-                    content_edges.append(triple)
-                    in_degrees[obj] += 1.0
-                    if v not in seen_src[obj]:
-                        seen_src[obj].add(v)
-                        unique_src_count[obj] += 1
+                np.minimum(m_in, cap, out=m_in)
+                free = np.where(m_in < cap)[0]
+                if free.size == 0:
+                    break
+                wf = w_in[free]
+                swf = wf.sum()
+                pf = wf / swf if swf > 0 else np.full(free.size, 1.0 / free.size)
+                m_in[free] += rng.multinomial(overflow, pf)
+            np.minimum(m_in, cap, out=m_in)  # final clip; tiny residual overflow dropped
+
+        # Pair subject-stubs with object-stubs (configuration model). Each object stub is
+        # consumed once (preserving m_in); on a self-loop or duplicate (s, o) we swap in
+        # another still-pending object stub (retry) so the edge is re-routed, not dropped.
+        subj_stubs = np.repeat(np.asarray(S_r, dtype=np.int64), m_obj)
+        obj_stubs = np.repeat(all_objs, m_in)
+        rng.shuffle(obj_stubs)
+        placed_pairs: set[tuple[int, int]] = set()
+        # Both ≈ edges_r; use the shorter in case the in-side cap clipped a residual.
+        n_stubs = min(int(subj_stubs.shape[0]), int(obj_stubs.shape[0]))
+        for i in range(n_stubs):
+            s = int(subj_stubs[i])
+            for attempt in range(_MAX_PAIR_RETRY):
+                j = i if attempt == 0 else int(rng.integers(i, n_stubs))
+                o = int(obj_stubs[j])
+                if o == s or (s, o) in placed_pairs:
+                    continue
+                obj_stubs[i], obj_stubs[j] = obj_stubs[j], obj_stubs[i]  # consume stub at i
+                placed_pairs.add((s, o))
+                content_edges.append((s, o, predicate))
+                seen.add((s, o, predicate))
+                in_degrees[o] += 1.0
+                if s not in seen_src[o]:
+                    seen_src[o].add(s)
+                    unique_src_count[o] += 1
+                break
+            # else: no valid object found within retries → drop this stub (rare)
 
     # ------------------------------------------------------------------
     # 5. Throttle content edges down to budget if over target
     # ------------------------------------------------------------------
+    log.info("Stage 2: wired %d content edges (pre-throttle)", len(content_edges))
     if len(content_edges) > content_E_target > 0:
         keep = rng.choice(len(content_edges), size=content_E_target, replace=False)
         keep_set = set(keep.tolist())
         content_edges = [e for i, e in enumerate(content_edges) if i in keep_set]
+        log.info("Stage 2: throttled content edges down to %d", len(content_edges))
 
     # ------------------------------------------------------------------
     # 5b. Connectivity guarantee: bridge any isolated components to the giant
@@ -309,4 +458,8 @@ def instantiate(
         g.add_edges([(s, o) for s, o, _ in all_edges])
         g.es["predicate"] = [p for _, _, p in all_edges]
 
+    log.info(
+        "Stage 2: built graph V=%d, E=%d (%d content + %d type)",
+        total_V, len(all_edges), len(content_edges), len(type_edges),
+    )
     return g

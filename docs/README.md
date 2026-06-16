@@ -10,6 +10,11 @@ build records) in [`notes/`](notes/).
   (`src/signature_reduced/`): the implemented module reference **and** the reasoning behind
   it (non-over-determination, the derivability criterion, the multiplicity↔degree
   investigation, and the per-group G0–G6 justification). Start here.
+- **[generator.md](generator.md)** — the `kgsynth` generator (`src/generator/`): the three-stage
+  algorithm (schema sampler → CS-first instantiation → Maslov–Sneppen refinement) step by step,
+  which signature fields drive each step, the reduced-signature adapters, and the evolution/fixes
+  (P(r\|t) de-conflation, per-relation multiplicity-then-PA with edge conservation, the
+  realizability cap, and the `num_distinct_cs` fixes).
 - **[block-refactoring-guide.md](block-refactoring-guide.md)** — the `SignatureBlock` class
   pattern shared by every block (lifecycle methods, the `_NOT_CALCULATED` sentinel,
   property guards, `visualize` split, logging conventions, selective block computation).
