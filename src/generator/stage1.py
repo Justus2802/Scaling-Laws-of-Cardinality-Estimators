@@ -19,7 +19,7 @@ import math
 
 import numpy as np
 
-from signature_reduced import BlockA, BlockB, BlockC, BlockD
+from signature_reduced import BlockA, BlockB, BlockC, BlockD, BlockF
 
 from ._adapters import (
     _functionality_from_alpha,
@@ -39,6 +39,9 @@ MIN_ALPHA_FOR_PA = 2.0             # α_in must exceed this for a finite-mean po
 MIN_ALPHA_FOR_MAX_DEGREE = 1.1     # α_in threshold for the extreme-value max-in-degree estimate
 MAX_IN_DEGREE_FLOOR = 10           # floor on the expected max in-degree
 FUNCTIONALITY_FLOOR = 0.1          # clamp floor for mean_functionality (out-side)
+# Connectivity fallbacks when Block F is absent (fully-connected behaviour).
+DEFAULT_NUM_COMPONENTS = 1
+DEFAULT_LCC = 1.0
 # Number of co-occurrence groups synthesised from the Block C M_subj / M_obj spectra.
 # Fixed at the Block C measurement cap (10 SVs) rather than derived from spectral
 # entropy: spectral entropy conflates group *count* with weight *uniformity* — a KG
@@ -177,6 +180,7 @@ def sample_schema(
     *,
     d: BlockD = None,
     b: BlockB = None,
+    f: BlockF = None,
     relation_zipf_exponent: float = DEFAULT_ZIPF_EXPONENT,
     seed: int = 0,
 ) -> Schema:
@@ -202,6 +206,11 @@ def sample_schema(
         functionality is derived from the object-multiplicity α skew-normal to
         sample more than one object per (s,p) pair, matching the target's edge
         multiplicity.
+    f : BlockF, optional
+        Connectivity / path statistics.  When provided, the measured
+        ``num_components`` and ``largest_component_fraction`` are forwarded to
+        the Schema so Stage 2 can leave the correct number of satellite
+        components disconnected instead of fully connecting the graph.
     relation_zipf_exponent : float
         Zipf exponent for relation frequency weights.  Controls how skewed
         relation usage is; real KGs typically fall in [1.5, 2.5].
@@ -355,6 +364,18 @@ def sample_schema(
         mean_functionality, in_pa_exponent, max_in_degree, cs_num_templates,
         a_obj, obj_alpha_skew[0],
     )
+    target_num_components = int(f.num_components) if f is not None else DEFAULT_NUM_COMPONENTS
+    target_lcc = float(f.largest_component_fraction) if f is not None else DEFAULT_LCC
+
+    # --- Path-length targets from Block F shortest_path_skew ---
+    path_mean_target = float("nan")
+    path_hi_target = 0
+    if f is not None:
+        path_mean_target = _skewnorm_mean(f.shortest_path_skew)
+        hi_val = f.shortest_path_skew.hi
+        if not math.isnan(hi_val) and hi_val > 0:
+            path_hi_target = int(hi_val)
+
     return Schema(
         relations=relations,
         relation_weights=relation_weights,
@@ -381,4 +402,8 @@ def sample_schema(
         subj_group_weights=subj_group_weights,
         obj_group_probs=obj_group_probs,
         obj_group_weights=obj_group_weights,
+        target_num_components=target_num_components,
+        target_lcc=target_lcc,
+        path_mean_target=path_mean_target,
+        path_hi_target=path_hi_target,
     )

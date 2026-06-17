@@ -48,11 +48,15 @@ from one integer: Stage 1 `seed`, Stage 2 `seed+1`, Stage 3 `seed+2`.
 | D | `inv_cs_size_skew`, `inv_num_distinct_cs`, `inv_cs_freq_fit.alpha` | inverse CS templates (object side): size, count, reuse skew |
 | E | motif counts | Stage-3 targets (triangles, 4-cycle, diamond, k4, tailed) |
 | F | `degree_assortativity` | Stage-3 target |
+| F | `num_components`, `largest_component_fraction` | Stage-2 connectivity target (nc, LCC fraction) |
+| F | `shortest_path_skew` (hi) | Stage-2 diameter cap (`path_hi_target = int(hi)`) |
+| F | `shortest_path_skew` (loc, scale, shape → **mean**) | Stage-2 mean path-length target (`_skewnorm_mean`) |
 
 **Validation-only (measured, deliberately *not* used constructively):** C `subj/obj_cooc_density`,
-`subj/obj_row_entropy_skew`, `per_type_entropy_exp`; D `two_step_fit`; F `num_components`,
-`largest_component_fraction`, `clustering_coefficient`, `shortest_path_skew`. These are
-diagnostics the brief marks "get near," not directly steered. Tuning constants for each stage
+`subj/obj_row_entropy_skew`, `per_type_entropy_exp`; D `two_step_fit`; F
+`clustering_coefficient`, `shortest_path_loc/scale/shape` (only the derived mean and hi are
+consumed; loc/scale/shape are treated as emergent). These are diagnostics the brief marks "get
+near," not directly steered. Tuning constants for each stage
 are module-level at the top of `stage1.py`/`stage2.py`/`stage3.py`.
 
 ---
@@ -74,7 +78,10 @@ needs. All randomness from one seeded `np.random.Generator`.
 5. **CS structure (Block D).** `cs_num_templates = num_distinct_cs`;
    `cs_template_zipf = cs_freq_fit.alpha` (CS reuse skew); `cs_size_skew` passed through; the
    CS-size-skew mean gates whether template mode is enabled.
-6. **Co-occurrence group prototypes (Block C).** When `subj_cooc_exp` / `obj_cooc_exp` have a
+6. **Path-length targets (Block F).** Derive `path_mean_target = _skewnorm_mean(f.shortest_path_skew)`
+   (NaN when Block F absent) and `path_hi_target = int(f.shortest_path_skew.hi)` (0 when absent or
+   NaN). Both are stored in `Schema` and consumed by Stage 2 step 7b.
+7. **Co-occurrence group prototypes (Block C).** When `subj_cooc_exp` / `obj_cooc_exp` have a
    usable fit, reconstruct `COOC_NUM_GROUPS = 10` singular values and call
    `_sample_type_relation_probs` to build one `(k, R)` group-prototype matrix per side, plus a
    normalized weight vector from the singular values. Stage 2 draws entity CSes from these
@@ -134,6 +141,15 @@ where most of the fidelity fixes live.
    - **Pair** subject-stubs with object-stubs within `S_r × O_r` (configuration model); on a
      self-loop or duplicate `(s,o)` **retry** by swapping in another pending object stub.
 7. **Connect components** — bridge isolated components into the giant.
+7b. **Path-length steering** (`_steer_path_lengths`) — runs only when `path_mean_target` or
+    `path_hi_target` are set. Builds a temporary undirected igraph entity graph (igraph C backend)
+    and runs up to 4 rounds of estimate → inject shortcuts:
+    - *Diameter (hi):* find farthest-pair from a random BFS; add
+      `⌈(diam − hi_target)/2⌉` shortcuts, each source→its-farthest-node, until `diam ≤ hi_target`.
+    - *Mean:* sample 50 BFS sources; if `mean > mean_target + 0.5`, inject
+      `max(1, round(√V · (mean − mean_target) / mean))` shortcuts between nodes sampled ∝ degree.
+    Each shortcut is added to both the igraph object and `content_edges`; `in_degrees` and `seen`
+    are updated. See [§ Path-length steering](#path-length-steering) for design rationale.
 8. **`rdf:type` edges** for typed entities; assemble the `igraph.Graph` with the `kg_io.load_kg`
    attribute contract (so `compute_reduced_signature` can read it back).
 
@@ -264,6 +280,53 @@ uses the full available signal without over-extrapolating.
 
 `per_type_entropy_exp` and class sizes now emerge from post-hoc type assignment (no longer
 directly controlled).
+
+---
+
+## Path-length steering
+
+### Why mean, not loc/scale/shape
+
+`shortest_path_skew` stores a skew-normal fit with five parameters. The full shape
+(loc/scale/shape) is emergent — it is determined by density (Block A) and degree structure
+(Block B). Trying to steer all five parameters independently would require expensive BFS-in-the-
+wiring-loop feedback and would conflict with the degree/CS targets already set.
+
+Instead, the generator targets only two derived scalars:
+- **`path_hi_target`** (`int(skew.hi)`) — the observed maximum path length (diameter cap).
+  Controllable directly via shortcuts.
+- **`path_mean_target`** (`_skewnorm_mean(skew)`) — the mean of the untruncated skew-normal.
+  Partially controllable by adding hub-to-hub shortcuts that compress long paths.
+
+`loc`, `scale`, and `shape` emerge from density + degree structure and are validated in the
+roundtrip report but not explicitly steered.
+
+### Mechanism
+
+`_steer_path_lengths` runs after `_connect_components` (step 7b) so BFS distances are
+well-defined on the connected entity subgraph. It builds a **temporary undirected igraph object**
+from `content_edges` so igraph's C-backend `diameter()` and `distances()` can be used without
+switching to the final graph representation early.
+
+Each round:
+1. Estimate current diameter (`ig.diameter()`) and mean (sampled BFS from 50 random sources).
+2. If `diameter > hi_target`: add `⌈(diam − hi_target)/2⌉` shortcuts; each connects a random
+   source to its farthest reachable node (different source each time → parallel coverage).
+3. If `mean > mean_target + 0.5`: add `max(1, round(√V · (mean − mean_target) / mean))`
+   shortcuts between nodes sampled with probability ∝ degree. Hub-to-hub links act as
+   long-range relays that globally compress path lengths.
+4. Shortcuts are added to both the igraph object and `content_edges`; the next round
+   re-estimates on the updated graph without rebuilding.
+
+### Limitations
+
+- **One-sided:** shortcuts can only reduce mean/diameter, not increase them. If the synthetic
+  graph has shorter paths than the target (unusual — typical issue is too-long paths), no
+  correction is possible without removing edges.
+- **Heuristic count for mean:** `√V · relative_overshoot` is not derived analytically; it is
+  a coarse estimate. Multiple rounds (up to 4) course-correct.
+- **loc/scale/shape remain unsteered:** only mean and hi are targeted. The skew of the
+  path-length distribution (shape parameter) is emergent and will track the degree structure.
 
 ---
 

@@ -8,7 +8,7 @@ Turns a Schema into an igraph.Graph by
   - wiring edges with preferential attachment to reproduce heavy-tailed
     in-degree distributions,
   - adding rdf:type edges for all typed entities,
-  - bridging isolated components so the graph is (weakly) connected.
+  - selectively bridging isolated components to match target num_components / LCC fraction.
 """
 
 import math
@@ -123,6 +123,103 @@ def _connect_components(
             seen.add(triple)
             content_edges.append(triple)
             in_degrees[bridge] += 1.0
+
+
+def _steer_path_lengths(
+    content_edges: list,
+    actual_V: int,
+    schema: "Schema",
+    rng: "np.random.Generator",
+    seen: set,
+    in_degrees: "np.ndarray",
+) -> None:
+    """Steer mean path length and diameter toward Block F targets via hub shortcuts.
+
+    Builds a temporary undirected igraph entity graph for efficient C-backend
+    diameter and distance estimation; adds shortcut edges to both the igraph
+    object and content_edges so each round re-estimates on the updated graph.
+    Runs at most 4 estimation + injection rounds.
+
+    No-ops when schema.path_mean_target is NaN and schema.path_hi_target is 0.
+    """
+    path_mean_target = schema.path_mean_target
+    path_hi_target = schema.path_hi_target
+    has_mean = not math.isnan(path_mean_target)
+    has_hi = path_hi_target > 0
+
+    if (not has_mean and not has_hi) or actual_V < 3:
+        return
+
+    ig = igraph.Graph(n=actual_V, directed=False)
+    ig.add_edges([(s, o) for s, o, _ in content_edges
+                  if s < actual_V and o < actual_V and s != o])
+
+    def estimate_stats(k: int = 50) -> tuple[int, float]:
+        diam = ig.diameter(directed=False, unconn=True)
+        srcs = rng.choice(actual_V, size=min(k, actual_V), replace=False)
+        tot = cnt = 0
+        for src in srcs:
+            for d in ig.distances(source=[int(src)], mode="all")[0]:
+                if 0 < d < float("inf"):
+                    tot += d; cnt += 1
+        return int(diam), (tot / cnt if cnt > 0 else float("nan"))
+
+    def add_shortcut(u: int, v: int) -> bool:
+        if u == v:
+            return False
+        pred = schema.relations[int(rng.integers(len(schema.relations)))]
+        triple = (u, v, pred)
+        if triple in seen:
+            return False
+        seen.add(triple)
+        content_edges.append(triple)
+        in_degrees[v] += 1.0
+        ig.add_edge(u, v)
+        return True
+
+    diam0, mean0 = estimate_stats()
+
+    for _ in range(4):
+        diam, mean_path = estimate_stats()
+        hi_ok = not has_hi or diam <= path_hi_target
+        mean_ok = not has_mean or math.isnan(mean_path) or mean_path <= path_mean_target + 0.5
+        if hi_ok and mean_ok:
+            break
+
+        if not hi_ok:
+            # Add several shortcuts per round: sample different remote pairs so the
+            # diameter converges from multiple directions simultaneously.
+            n_hi = max(1, (diam - path_hi_target + 1) // 2)
+            for _ in range(n_hi):
+                src = int(rng.integers(actual_V))
+                row = ig.distances(source=[src], mode="all")[0]
+                far = int(max(range(actual_V),
+                              key=lambda v, r=row: r[v] if r[v] < float("inf") else -1))
+                add_shortcut(src, far)
+
+        if not mean_ok:
+            deg = np.array(ig.degree(), dtype=np.float64)
+            deg_sum = deg.sum()
+            if deg_sum > 0:
+                p = deg / deg_sum
+                n_sc = max(1, round(actual_V ** 0.5 * (mean_path - path_mean_target) / mean_path))
+                added = 0
+                for _ in range(n_sc * 8):
+                    if added >= n_sc:
+                        break
+                    if add_shortcut(int(rng.choice(actual_V, p=p)),
+                                    int(rng.choice(actual_V, p=p))):
+                        added += 1
+
+    diam1, mean1 = estimate_stats(k=30)
+    log.info(
+        "Stage 2: path steering — diameter %d→%d (target %s), mean %.2f→%.2f (target %s)",
+        diam0, diam1,
+        str(path_hi_target) if has_hi else "—",
+        mean0 if not math.isnan(mean0) else float("nan"),
+        mean1 if not math.isnan(mean1) else float("nan"),
+        f"{path_mean_target:.2f}" if has_mean else "—",
+    )
 
 
 def instantiate(
@@ -575,6 +672,11 @@ def instantiate(
         target_nc=schema.target_num_components,
         target_lcc=schema.target_lcc,
     )
+
+    # ------------------------------------------------------------------
+    # 5b. Path-length steering (diameter cap + mean compression via shortcuts)
+    # ------------------------------------------------------------------
+    _steer_path_lengths(content_edges, actual_V, schema, rng, seen, in_degrees)
 
     # ------------------------------------------------------------------
     # 6. Build rdf:type edges

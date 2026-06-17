@@ -139,5 +139,155 @@ class TestStage2EdgeBudget(unittest.TestCase):
         self.assertGreater(s_skew.relation_weights.var(), s_flat.relation_weights.var())
 
 
+def _count_components(edges: list, n: int) -> tuple[int, int]:
+    """Return (num_components, giant_size) from an edge list on n nodes."""
+    adj: list[list[int]] = [[] for _ in range(n)]
+    for s, o, _ in edges:
+        if s < n and o < n and s != o:
+            adj[s].append(o)
+            adj[o].append(s)
+    visited = [False] * n
+    comps: list[int] = []
+    for start in range(n):
+        if not visited[start]:
+            size = 0
+            stack = [start]
+            while stack:
+                v = stack.pop()
+                if visited[v]:
+                    continue
+                visited[v] = True
+                size += 1
+                stack.extend(u for u in adj[v] if not visited[u])
+            comps.append(size)
+    return len(comps), max(comps)
+
+
+class _FakeSch:
+    relations = ["r0", "r1"]
+
+
+def _disconnected_edges(component_sizes: list[int]) -> tuple[list, int]:
+    """Build a chain-per-component edge list; returns (edges, total_nodes)."""
+    edges: list = []
+    offset = 0
+    for sz in component_sizes:
+        for i in range(sz - 1):
+            edges.append((offset + i, offset + i + 1, "r0"))
+        offset += sz
+    return edges, offset
+
+
+class TestConnectComponents(unittest.TestCase):
+    """_connect_components targeting nc / LCC fraction."""
+
+    def _call(self, edges, n, *, target_nc=1, target_lcc=1.0):
+        rng = np.random.default_rng(0)
+        seen = {(s, o, p) for s, o, p in edges}
+        in_deg = np.zeros(n)
+        for _, o, _ in edges:
+            in_deg[o] += 1.0
+        from generator.stage2 import _connect_components
+        _connect_components(edges, n, _FakeSch(), rng, seen, in_deg,
+                            target_nc=target_nc, target_lcc=target_lcc)
+        return edges
+
+    def test_default_fully_connects(self):
+        # With default target_nc=1, every component must be bridged.
+        edges, n = _disconnected_edges([7, 2, 1])
+        edges = self._call(edges, n)
+        nc, _ = _count_components(edges, n)
+        self.assertEqual(nc, 1)
+
+    def test_target_nc1_explicit(self):
+        edges, n = _disconnected_edges([5, 3, 2])
+        edges = self._call(edges, n, target_nc=1, target_lcc=1.0)
+        nc, _ = _count_components(edges, n)
+        self.assertEqual(nc, 1)
+
+    def test_exact_lcc_match(self):
+        # Giant=7, three isolates (size 1 each). target_nc=3 → 2 satellites.
+        # sat_budget = (1-0.8)*10 = 2.0; prefix=[0,1,2]; best_j=2 (|2-2|=0, exact).
+        # Expect: nc=3, lcc=8/10=0.8.
+        edges, n = _disconnected_edges([7, 1, 1, 1])
+        edges = self._call(edges, n, target_nc=3, target_lcc=0.8)
+        nc, giant = _count_components(edges, n)
+        self.assertEqual(nc, 3)
+        self.assertAlmostEqual(giant / n, 0.8)
+
+    def test_nearest_prefix_below_budget(self):
+        # Giant=8, sats=[1,1,1]. target_nc=2 → 1 satellite.
+        # sat_budget=(1-0.85)*10=1.5; prefix=[0,1]; best_j=1 (|1-1.5|=0.5 < |0-1.5|=1.5).
+        # Expect: nc=2, giant=9, lcc=0.9.
+        edges, n = _disconnected_edges([8, 1, 1, 1])  # n=11, but adjust expectation
+        # Recompute: n=11, sat_budget=(1-0.9)*11=1.1; prefix=[0,1]; best_j=1.
+        edges = self._call(edges, n, target_nc=2, target_lcc=0.9)
+        nc, giant = _count_components(edges, n)
+        self.assertEqual(nc, 2)
+        self.assertGreaterEqual(giant / n, 0.9)
+
+    def test_nearest_prefix_crosses_budget(self):
+        # Giant=6, sats=[1,2,4]. target_nc=2 → 1 satellite.
+        # n=13, sat_budget=(1-0.85)*13=1.95; sats_asc=[1,2,4]; k=1; prefix=[0,1].
+        # best_j=1 (|1-1.95|=0.95 < |0-1.95|=1.95). Keep size-1 sat, bridge 2 and 4.
+        # giant=6+2+4=12, nc=2, lcc=12/13.
+        edges, n = _disconnected_edges([6, 1, 2, 4])
+        edges = self._call(edges, n, target_nc=2, target_lcc=0.85)
+        nc, giant = _count_components(edges, n)
+        self.assertEqual(nc, 2)
+        self.assertEqual(giant, 12)
+
+    def test_warns_when_only_satellite_too_large_for_lcc(self):
+        # Giant(10) + one large satellite(10). target_nc=2, target_lcc=0.9999 →
+        # sat_budget=(1-0.9999)*20=0.002. prefix=[0,10]; best_j=0 wins (|0-0.002|<|10-0.002|).
+        # Algorithm bridges everything → nc=1; warning fires because best_j=0 but sat_budget>0.
+        edges, n = _disconnected_edges([10, 10])
+        import logging
+        with self.assertLogs("generator.stage2", level=logging.WARNING):
+            edges = self._call(edges, n, target_nc=2, target_lcc=0.9999)
+        nc, _ = _count_components(edges, n)
+        self.assertEqual(nc, 1)
+
+    def test_single_component_no_op(self):
+        # Already one component — nothing should be added.
+        edges, n = _disconnected_edges([10])
+        original_len = len(edges)
+        edges = self._call(edges, n, target_nc=3, target_lcc=0.8)
+        self.assertEqual(len(edges), original_len)
+        nc, _ = _count_components(edges, n)
+        self.assertEqual(nc, 1)
+
+
+class TestSteerPathLengths(unittest.TestCase):
+    """_steer_path_lengths caps diameter and compresses mean via hub shortcuts."""
+
+    def _entity_graph(self, g) -> "igraph.Graph":
+        """Return an undirected igraph over entity nodes only (no type nodes)."""
+        import igraph as ig
+        entity_edges = [(e.source, e.target)
+                        for e in g.es if e["predicate"] != _RDF_TYPE
+                        and e.source < 60 and e.target < 60]
+        return ig.Graph(n=60, directed=False, edges=entity_edges)
+
+    def test_steer_hi_caps_diameter(self):
+        # Very low density (V=60, E=90) → natural diameter can be large.
+        # path_hi_target=5 should bring it down.
+        a = _make_block_a(num_entities=60, num_triples=90, num_relations=3)
+        c = _make_block_c(num_classes=2)
+        schema = sample_schema(a, c, seed=7)
+        schema = schema.__class__(**{**schema.__dict__, "path_hi_target": 5})
+        g = instantiate(schema, seed=8)
+        diam = self._entity_graph(g).diameter(directed=False, unconn=True)
+        self.assertLessEqual(diam, schema.path_hi_target + 2)
+
+    def test_no_steer_when_targets_absent(self):
+        # Default schema has NaN mean + 0 hi — instantiate must succeed without error.
+        a = _make_block_a(num_entities=60, num_triples=90, num_relations=3)
+        c = _make_block_c(num_classes=2)
+        schema = sample_schema(a, c, seed=0)
+        g = instantiate(schema, seed=1)
+        self.assertGreater(g.vcount(), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

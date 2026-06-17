@@ -6,8 +6,8 @@ import unittest
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from signature_reduced import BlockA, BlockC
-from signature_reduced._fits import ExpDecayFit, nan_exp_decay
+from signature_reduced import BlockA, BlockC, BlockF
+from signature_reduced._fits import ExpDecayFit, SkewNormFit, nan_exp_decay
 from signature._utils import PowerLawStats
 from generator import Schema, sample_schema
 from generator.stage1 import COOC_NUM_GROUPS
@@ -263,6 +263,44 @@ class TestSampleSchemaCoocGroups(unittest.TestCase):
         schema = sample_schema(a, c, seed=0)
         self.assertIsNone(schema.subj_group_probs)
         self.assertIsNone(schema.obj_group_probs)
+
+
+def _make_block_f(loc=4.0, scale=1.0, shape=0.0, lo=2.0, hi=8.0) -> BlockF:
+    """Build a BlockF stub by setting _shortest_path_skew directly."""
+    f = BlockF()
+    f._shortest_path_skew = SkewNormFit(loc=loc, scale=scale, shape=shape, lo=lo, hi=hi)
+    f._num_components = 1
+    f._largest_component_fraction = 1.0
+    f._clustering_coefficient = 0.1
+    f._degree_assortativity = 0.0
+    return f
+
+
+class TestSampleSchemaPathTargets(unittest.TestCase):
+    """Path-length targets derived from BlockF.shortest_path_skew."""
+
+    def setUp(self):
+        self.a = _make_block_a()
+        self.c = _make_block_c()
+
+    def test_path_mean_derived_from_skewnorm(self):
+        # shape=0 → pure normal → mean ≈ loc
+        f = _make_block_f(loc=4.0, scale=1.0, shape=0.0)
+        schema = sample_schema(self.a, self.c, f=f, seed=0)
+        self.assertAlmostEqual(schema.path_mean_target, 4.0, delta=0.5)
+
+    def test_path_hi_derived_from_skewnorm_hi(self):
+        f = _make_block_f(hi=8.0)
+        schema = sample_schema(self.a, self.c, f=f, seed=0)
+        self.assertEqual(schema.path_hi_target, 8)
+
+    def test_nan_block_f_gives_nan_mean(self):
+        schema = sample_schema(self.a, self.c, seed=0)
+        self.assertTrue(math.isnan(schema.path_mean_target))
+
+    def test_nan_block_f_gives_zero_hi(self):
+        schema = sample_schema(self.a, self.c, seed=0)
+        self.assertEqual(schema.path_hi_target, 0)
 
 
 if __name__ == "__main__":
