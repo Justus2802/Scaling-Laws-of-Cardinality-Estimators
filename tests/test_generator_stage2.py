@@ -6,7 +6,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from signature_reduced import BlockA, BlockB, BlockC, BlockD  # noqa: E402
-from signature_reduced._fits import ExpDecayFit, SkewNormFit, ZipfFit  # noqa: E402
+from signature_reduced._fits import ExpDecayFit, SkewNormFit, ZipfFit, nan_exp_decay  # noqa: E402
 from signature._utils import PowerLawStats  # noqa: E402
 from generator import sample_schema, instantiate  # noqa: E402
 
@@ -30,6 +30,8 @@ def _make_block_c(num_classes=3, class_size_zipf=2.0) -> BlockC:
     c._num_classes = num_classes
     c._class_size_fit = _pls(class_size_zipf)
     c._type_rel_spectrum_exp = ExpDecayFit(rate=0.5, scale=100.0)
+    c._subj_cooc_exp = nan_exp_decay()
+    c._obj_cooc_exp  = nan_exp_decay()
     return c
 
 
@@ -108,7 +110,10 @@ class TestStage2EdgeBudget(unittest.TestCase):
         g = instantiate(schema, seed=1)
         content = _content_edges(g)
         target = schema.num_triples - schema.num_entities
-        self.assertLessEqual(len(content), target)
+        # _connect_components may add a small number of bridge edges (one per
+        # isolated component) beyond the budget to guarantee connectivity.
+        num_components = len(g.connected_components(mode="weak"))
+        self.assertLessEqual(len(content), target + num_components)
         self.assertGreaterEqual(len(content), 0.7 * target)
 
     def test_no_subject_multiplicity_cap(self):

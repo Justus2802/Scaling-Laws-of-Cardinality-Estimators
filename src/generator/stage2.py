@@ -39,15 +39,28 @@ def _connect_components(
     rng: "np.random.Generator",
     seen: set,
     in_degrees: "np.ndarray",
+    target_nc: int = 1,
+    target_lcc: float = 1.0,
 ) -> None:
-    """Bridge isolated entity components into one weakly connected component.
+    """Bridge isolated entity components, targeting a specific component count and LCC fraction.
 
-    Adds one directed edge from each isolated component to the largest
-    component (giant).  Uses manual BFS to avoid igraph cluster API overhead.
+    Selects satellites (components left disconnected) so that their combined
+    size is as close as possible to ``(1 - target_lcc) * actual_V``, subject
+    to keeping at most ``target_nc - 1`` satellites.  All remaining components
+    are bridged to the giant with one directed edge each.
+
+    Uses manual BFS to avoid igraph cluster API overhead.
+
+    Parameters
+    ----------
+    target_nc : int
+        Desired number of weakly-connected components.  1 → fully connect.
+    target_lcc : float
+        Desired fraction of entity nodes in the largest component.
     """
     if actual_V < 2:
         return
-    # Build undirected adjacency for connectivity check
+
     adj: list[list[int]] = [[] for _ in range(actual_V)]
     for s, o, _ in content_edges:
         if s < actual_V and o < actual_V and s != o:
@@ -72,12 +85,37 @@ def _connect_components(
     if len(comps) <= 1:
         return
 
-    giant = max(comps, key=len)
-    for comp in comps:
-        if comp is giant:
+    comps.sort(key=len, reverse=True)
+    giant = comps[0]
+    satellites_to_keep: set[int] = set()
+
+    max_satellites = target_nc - 1
+    if max_satellites > 0 and len(comps) > 1:
+        # Sort satellite candidates smallest-first: prefix sums over the j smallest
+        # give fine-grained control and match typical KG structure (many tiny isolates).
+        sats_asc = sorted(comps[1:], key=len)
+        k = min(max_satellites, len(sats_asc))
+        sat_budget = (1.0 - target_lcc) * actual_V
+
+        prefix = [0] * (k + 1)
+        for i, s in enumerate(sats_asc[:k]):
+            prefix[i + 1] = prefix[i] + len(s)
+
+        # j* minimises |prefix[j] - sat_budget| — "as near as possible".
+        best_j = min(range(k + 1), key=lambda j: abs(prefix[j] - sat_budget))
+
+        if best_j == 0 and sat_budget > 0:
+            log.warning(
+                "_connect_components: target_nc=%d target_lcc=%.4f but only %d natural "
+                "components available — nc will be 1",
+                target_nc, target_lcc, len(comps),
+            )
+        satellites_to_keep = {id(c) for c in sats_asc[:best_j]}
+
+    for comp in comps[1:]:
+        if id(comp) in satellites_to_keep:
             continue
         src = comp[0]
-        # Pick a random node in the giant to avoid creating a star hub
         bridge = giant[int(rng.integers(len(giant)))]
         pred = schema.relations[int(rng.integers(len(schema.relations)))]
         triple = (src, bridge, pred)
@@ -437,7 +475,16 @@ def instantiate(
         w_present = np.array([schema.relation_weights[r] for r in present], dtype=float)
         w_sum = w_present.sum()
         w_present = w_present / w_sum if w_sum > 0 else np.full(len(present), 1.0 / len(present))
-        edge_budget = {r: int(round(content_E_target * w_present[i])) for i, r in enumerate(present)}
+        # Largest-remainder allocation: floor each share, then give the remaining
+        # integer edge(s) to relations with the biggest fractional parts.  This
+        # guarantees sum(edge_budget.values()) == content_E_target exactly.
+        raw = [content_E_target * float(w_present[i]) for i in range(len(present))]
+        floored = [int(r) for r in raw]
+        shortfall = content_E_target - sum(floored)
+        order = sorted(range(len(present)), key=lambda i: raw[i] - floored[i], reverse=True)
+        for i in order[:shortfall]:
+            floored[i] += 1
+        edge_budget = {r: floored[i] for i, r in enumerate(present)}
     else:
         edge_budget = {}
 
@@ -523,7 +570,11 @@ def instantiate(
     # ------------------------------------------------------------------
     # 5. Connectivity guarantee: bridge any isolated components to the giant
     # ------------------------------------------------------------------
-    _connect_components(content_edges, actual_V, schema, rng, seen, in_degrees)
+    _connect_components(
+        content_edges, actual_V, schema, rng, seen, in_degrees,
+        target_nc=schema.target_num_components,
+        target_lcc=schema.target_lcc,
+    )
 
     # ------------------------------------------------------------------
     # 6. Build rdf:type edges
