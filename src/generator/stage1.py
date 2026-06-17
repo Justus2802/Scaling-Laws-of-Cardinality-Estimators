@@ -39,6 +39,13 @@ MIN_ALPHA_FOR_PA = 2.0             # α_in must exceed this for a finite-mean po
 MIN_ALPHA_FOR_MAX_DEGREE = 1.1     # α_in threshold for the extreme-value max-in-degree estimate
 MAX_IN_DEGREE_FLOOR = 10           # floor on the expected max in-degree
 FUNCTIONALITY_FLOOR = 0.1          # clamp floor for mean_functionality (out-side)
+# Number of co-occurrence groups synthesised from the Block C M_subj / M_obj spectra.
+# Fixed at the Block C measurement cap (10 SVs) rather than derived from spectral
+# entropy: spectral entropy conflates group *count* with weight *uniformity* — a KG
+# with 5 groups where one dominates gives k_eff ≈ 1.4 instead of 5.  The exp-decay
+# weights already encode skewness; k just needs to be "large enough not to miss
+# structure", which the measurement cap satisfies.  See docs/generator.md §"Co-occurrence groups".
+COOC_NUM_GROUPS = 10
 
 
 # ---------------------------------------------------------------------------
@@ -262,6 +269,30 @@ def sample_schema(
             num_types, num_relations, relation_weights, target_svs, rng,
         )
 
+    # --- Co-occurrence group prototypes from Block C spectra ---
+    # subj_cooc_exp / obj_cooc_exp are the exp-decay fits of the V-normalised
+    # singular spectra of the R×R entity co-occurrence matrices.  We reconstruct
+    # COOC_NUM_GROUPS singular values and build one group-prototype P(r|group) row
+    # per group using the same low-rank random factorisation as _sample_type_relation_probs.
+    # Stage 2 will draw entity CSes from these prototypes and assign types post-hoc.
+    def _build_group_probs(cooc_exp):
+        """Build (probs, weights) group prototypes from an exp-decay cooc fit, or (None, None)."""
+        svs = _reconstruct_singular_values(cooc_exp, k=COOC_NUM_GROUPS)
+        if svs.size == 0 or num_relations == 0:
+            return None, None
+        probs = _sample_type_relation_probs(len(svs), num_relations, relation_weights, svs, rng)
+        return probs, svs / svs.sum()
+
+    subj_group_probs, subj_group_weights = _build_group_probs(c.subj_cooc_exp)
+    obj_group_probs,  obj_group_weights  = _build_group_probs(c.obj_cooc_exp)
+    log.info(
+        "Stage 1: cooc groups — subj %s (%s), obj %s (%s)",
+        "built" if subj_group_probs is not None else "unavailable",
+        f"k={len(subj_group_weights)}" if subj_group_weights is not None else "NaN fit",
+        "built" if obj_group_probs is not None else "unavailable",
+        f"k={len(obj_group_weights)}" if obj_group_weights is not None else "NaN fit",
+    )
+
     # --- CS structure from Block D ---
     cs_size_mean_val = _skewnorm_mean(d.cs_size_skew) if d is not None else float("nan")
     if d is not None and not math.isnan(cs_size_mean_val) and cs_size_mean_val > 0:
@@ -346,4 +377,8 @@ def sample_schema(
         inv_cs_size_skew=inv_cs_size_skew,
         inv_cs_num_templates=inv_cs_num_templates,
         inv_cs_template_zipf=inv_cs_template_zipf,
+        subj_group_probs=subj_group_probs,
+        subj_group_weights=subj_group_weights,
+        obj_group_probs=obj_group_probs,
+        obj_group_weights=obj_group_weights,
     )

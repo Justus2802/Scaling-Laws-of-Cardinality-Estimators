@@ -41,16 +41,19 @@ from one integer: Stage 1 `seed`, Stage 2 `seed+1`, Stage 3 `seed+2`.
 | B | `a_subj` | G2b inverse CS-size→multiplicity offset (`inv_cs_size^a_subj`) |
 | B | `in_degree_fit.alpha` | PA exponent + expected max in-degree |
 | C | `num_classes`, `class_size_fit.alpha` | type count + type-size weights |
-| C | `type_rel_spectrum_exp` | `P(r\|t)` low-rank reconstruction |
+| C | `type_rel_spectrum_exp` | `P(r\|t)` low-rank reconstruction (used for post-hoc type scoring) |
+| C | `subj_cooc_exp` | forward co-occurrence group prototypes (CS source) |
+| C | `obj_cooc_exp` | inverse co-occurrence group prototypes (inverse-CS source) |
 | D | `cs_size_skew`, `num_distinct_cs`, `cs_freq_fit.alpha` | forward CS templates: size, count, reuse skew |
 | D | `inv_cs_size_skew`, `inv_num_distinct_cs`, `inv_cs_freq_fit.alpha` | inverse CS templates (object side): size, count, reuse skew |
 | E | motif counts | Stage-3 targets (triangles, 4-cycle, diamond, k4, tailed) |
 | F | `degree_assortativity` | Stage-3 target |
 
-**Validation-only (measured, deliberately *not* used constructively):** C `subj/obj_cooc_*`,
-row-entropy; D `two_step_fit`; F `num_components`, `largest_component_fraction`,
-`clustering_coefficient`, `shortest_path_skew`. These are diagnostics the brief marks "get near,"
-not steered. Tuning constants for each stage are module-level at the top of `stage1.py`/`stage2.py`/`stage3.py`.
+**Validation-only (measured, deliberately *not* used constructively):** C `subj/obj_cooc_density`,
+`subj/obj_row_entropy_skew`, `per_type_entropy_exp`; D `two_step_fit`; F `num_components`,
+`largest_component_fraction`, `clustering_coefficient`, `shortest_path_skew`. These are
+diagnostics the brief marks "get near," not directly steered. Tuning constants for each stage
+are module-level at the top of `stage1.py`/`stage2.py`/`stage3.py`.
 
 ---
 
@@ -71,7 +74,13 @@ needs. All randomness from one seeded `np.random.Generator`.
 5. **CS structure (Block D).** `cs_num_templates = num_distinct_cs`;
    `cs_template_zipf = cs_freq_fit.alpha` (CS reuse skew); `cs_size_skew` passed through; the
    CS-size-skew mean gates whether template mode is enabled.
-6. **Multiplicity / degree (Block B).** `obj_alpha_skew`, `subj_alpha_skew`, `a_obj` passed
+6. **Co-occurrence group prototypes (Block C).** When `subj_cooc_exp` / `obj_cooc_exp` have a
+   usable fit, reconstruct `COOC_NUM_GROUPS = 10` singular values and call
+   `_sample_type_relation_probs` to build one `(k, R)` group-prototype matrix per side, plus a
+   normalized weight vector from the singular values. Stage 2 draws entity CSes from these
+   prototypes (replacing the `P(r|t)` path) and assigns types post-hoc. See
+   [§ Co-occurrence groups](#co-occurrence-groups) below.
+7. **Multiplicity / degree (Block B).** `obj_alpha_skew`, `subj_alpha_skew`, `a_obj` passed
    through; `in_pa_exponent = clip(1/(α_in−2), 0.1, 2)` (Dorogovtsev–Mendes); expected
    `max_in_degree = n^(1/(α_in−1))`.
 
@@ -86,18 +95,31 @@ where most of the fidelity fixes live.
 2. **CS size source.** Each CS's *size* is drawn from `cs_size_skew` (`sample_skewnorm_trunc`),
    falling back to a budget-derived Poisson mean when Block D is absent. CS size sets **relation
    membership only** — the per-relation allocation (step 5) owns the edge budget.
-3. **Type assignment.** Each entity gets a type via `type_weights` (all untyped when `T=0`).
-4. **Distinct CS templates (forward + inverse).** Build `num_distinct_cs` **distinct** forward
-   templates by rejection (`_build_distinct`): draw a CS from `P(r|t)` (typed) / `relation_weights`
-   (untyped), dedup by relation-set, **escalate the minimum size** once small combos saturate.
-   Symmetrically build `inv_num_distinct_cs` **inverse-CS** templates (object side, drawn from
-   `relation_weights`, sized from `inv_cs_size_skew`). Without distinctness, size-1 CSs and
-   frequency-concentrated draws collapse the realised `num_distinct_cs`.
+3. **Type assignment (initial).** Each entity gets a provisional type via `type_weights`
+   (all untyped when `T=0`). If co-occurrence groups are active, this is overwritten post-hoc (step 5b).
+4. **Distinct CS templates (forward + inverse) — two paths:**
+
+   *Group path* (when `subj_group_probs` / `obj_group_probs` are set in Schema):
+   - Assign each entity to a co-occurrence group drawn from the Zipf-weighted group distribution.
+   - Build one template pool per group, sized ∝ group weight (`_build_distinct` from the group prototype).
+   - Assign entities within each group to templates via `_assign_templates`.
+   - (Inverse side mirrors this using `obj_group_probs`.)
+
+   *Type path* (fallback when groups are None):
+   Build `num_distinct_cs` **distinct** forward templates from `P(r|t)` (typed) / `relation_weights`
+   (untyped) and `inv_num_distinct_cs` inverse-CS templates from `relation_weights`, as before.
+
 5. **Entity → template assignment.** Per pool: **floor each template at ≥1 entity** (so every
    distinct CS is realised), then distribute the rest by a `power-law(reuse_zipf)` reuse tail —
    for forward (`cs_template_zipf`) and inverse (`inv_cs_template_zipf`) alike. This steers the
    distinct-CS counts *and* the reuse skews together. No inverse templates → every object eligible
    for every relation (today's behaviour) and `a_subj` stays inert.
+
+   5b. **Post-hoc type assignment** (group path only, when `T>0`): once CSes are fixed, score each
+   entity's CS against every type: `score(v, t) = Σ_{r ∈ CS(v)} log P(r|t)`. Assign
+   `entity_type[v] = argmax_t score`. Entities with empty CSes fall back to sampling from
+   `type_weights`. This makes type labels emerge from relation usage (the real causal direction)
+   rather than being set independently of CS content.
 6. **Per-relation wiring — multiplicity-then-PA with edge conservation, matched within `S_r × O_r`.**
    `S_r` = subjects whose forward CS contains `r`; `O_r` = objects whose inverse CS contains `r`
    (all entities when no inverse templates). For each present relation (`S_r`, `O_r` non-empty;
@@ -196,11 +218,60 @@ In roughly the order they were made:
 
 ---
 
+## Co-occurrence groups
+
+### Why
+
+`subj_cooc_exp` is the exp-decay fit of the V-normalised singular spectrum of M_subj (the R×R
+relation co-occurrence matrix, where M_subj[r1,r2] = # entities using both r1 and r2). Without
+explicit targeting, M_subj's spectrum, density, and row-entropy distribution are not reproduced.
+
+The generator's CS assignment previously used `P(r|t)` (driven by `type_rel_spectrum_exp`, the
+T×R spectrum) as the sole source of entity relation diversity. `P(r|t)`'s spectrum is a different
+quantity from M_subj's spectrum — using one to target the other doesn't work.
+
+### Mechanism
+
+`subj_cooc_exp` / `obj_cooc_exp` are reconstructed into `COOC_NUM_GROUPS = 10` singular values
+and fed into the same `_sample_type_relation_probs` low-rank factorisation used for `P(r|t)`.
+This produces a `(k, R)` group-prototype matrix where each row is a probability distribution over
+relations, and a weight vector (Zipf-shaped, from the spectrum's relative magnitudes).
+
+Stage 2 then:
+1. Assigns each entity to a group via the weight vector.
+2. Draws the entity's CS from the group prototype (instead of `P(r|t)`).
+3. Assigns types post-hoc: `entity_type[v] = argmax_t Σ_{r ∈ CS(v)} log P(r|t)`.
+
+This makes co-occurrence structure primary and type assignment emergent, matching the real causal
+direction in KGs.
+
+### Why k = 10 (fixed)
+
+Spectral entropy (`k_eff = exp(H(p_i ∝ σ_i))`) was considered as the criterion but conflates
+group *count* with weight *uniformity*: a KG with 5 groups where one dominates gives k_eff ≈ 1.4
+instead of 5. The weight distribution already encodes skewness; k only needs to be "large enough
+not to miss structure." Block C measures exactly 10 singular values, so `COOC_NUM_GROUPS = 10`
+uses the full available signal without over-extrapolating.
+
+### Features targeted
+
+| Feature | Path |
+|---|---|
+| `subj_cooc_exp.rate/scale` | Group weight spectrum → M_subj singular value shape |
+| `obj_cooc_exp.rate/scale` | Inverse group weight spectrum → M_obj shape |
+| `subj/obj_cooc_density` | Indirectly: group prototype spread × CS size |
+| `subj/obj_row_entropy_skew` | Indirectly: group prototype concentration |
+
+`per_type_entropy_exp` and class sizes now emerge from post-hoc type assignment (no longer
+directly controlled).
+
+---
+
 ## Known limitations / open items
 
-- **Type-less co-occurrence gap.** With `num_classes=0` there is no `P(r|t)`; forward CS composition
-  uses marginal `relation_weights` only, so relation co-occurrence (`subj_cooc`) isn't reproduced. The
-  `M` co-occurrence spectrum is measured but never consumed.
+- **Co-occurrence density and row-entropy not analytically pinned.** These emerge from
+  group prototype concentration and CS size but have no independent control knob. Remaining
+  deviations require either softmax temperature tuning per group or Stage-3 obj-side steering.
 - **Inverse `num_distinct_cs` partially hit.** The inverse-CS templates fix `a_subj` and improve the
   inverse count, but the *realised* `inv_num_distinct_cs` undershoots the target (an object's realised
   inverse CS ⊆ its assigned template, since the in-side allocation can give 0 edges for some of its

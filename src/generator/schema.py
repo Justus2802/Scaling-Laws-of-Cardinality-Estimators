@@ -65,3 +65,11 @@ class Schema:
     inv_cs_size_skew: tuple = field(default_factory=lambda: _NAN_SKEW)
     inv_cs_num_templates: int = 0        # 0 → no inverse-CS restriction
     inv_cs_template_zipf: float = 2.0    # inverse-CS reuse skew (inv_cs_freq α)
+    # Co-occurrence group prototypes (Block C subj_cooc_exp / obj_cooc_exp).
+    # When set, Stage 2 uses these to generate entity CSes (instead of type_relation_probs)
+    # and assigns types post-hoc via log P(CS|t) argmax.  None → fall back to the
+    # type-based CS path (existing behaviour).  See docs/generator.md §"Co-occurrence groups".
+    subj_group_probs: np.ndarray | None = None    # (COOC_NUM_GROUPS, |R|) forward group prototypes
+    subj_group_weights: np.ndarray | None = None  # (COOC_NUM_GROUPS,) Zipf weights from subj spectrum
+    obj_group_probs: np.ndarray | None = None     # (COOC_NUM_GROUPS, |R|) inverse group prototypes
+    obj_group_weights: np.ndarray | None = None   # (COOC_NUM_GROUPS,) Zipf weights from obj spectrum

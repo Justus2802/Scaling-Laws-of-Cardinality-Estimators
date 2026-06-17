@@ -276,7 +276,54 @@ def instantiate(
 
     # --- 3a. Forward CS membership (out-relations per entity) ---
     entity_cs: list = [None] * actual_V
-    if schema.cs_num_templates > 0 and num_relations > 0:
+    if schema.subj_group_probs is not None and num_relations > 0:
+        # Group-based forward CS: assign each entity to a co-occurrence group drawn
+        # from the exp-decay spectrum weights, then build CS from that group's prototype.
+        n_sg = schema.subj_group_probs.shape[0]
+        entity_subj_group = rng.choice(n_sg, size=actual_V, p=schema.subj_group_weights)
+
+        if schema.cs_num_templates > 0:
+            # One template pool per group, sized ∝ group weight.
+            group_fwd_pools: list[list[np.ndarray]] = []
+            for g in range(n_sg):
+                probs_g = schema.subj_group_probs[g].copy()
+                nz_g = int((probs_g > 0).sum())
+                n_t_g = max(1, round(schema.cs_num_templates * float(schema.subj_group_weights[g])))
+                group_fwd_pools.append(_build_distinct(probs_g, nz_g, schema.cs_size_skew, n_t_g))
+            buckets_sg: dict[int, list[int]] = {}
+            for v in range(actual_V):
+                buckets_sg.setdefault(int(entity_subj_group[v]), []).append(v)
+            for g in range(n_sg):
+                _assign_templates(buckets_sg.get(g, []), group_fwd_pools[g],
+                                  schema.cs_template_zipf, entity_cs)
+            used = len({frozenset(int(x) for x in entity_cs[v])
+                        for v in range(actual_V) if entity_cs[v] is not None and len(entity_cs[v])})
+            log.info("Stage 2: group forward CS (target %d templates, realised %d)",
+                     schema.cs_num_templates, used)
+        else:
+            # Per-entity sampling directly from each entity's group prototype.
+            for v in range(actual_V):
+                probs_g = schema.subj_group_probs[int(entity_subj_group[v])].copy()
+                nz_g = int((probs_g > 0).sum())
+                k = min(nz_g, _draw_size(schema.cs_size_skew))
+                entity_cs[v] = (rng.choice(num_relations, size=k, replace=False, p=probs_g)
+                                if k > 0 else np.array([], dtype=int))
+            log.info("Stage 2: group forward CS (per-entity mode)")
+
+        # Post-hoc type assignment: score each entity's realised CS against P(r|t)
+        # and assign the highest-likelihood type.  This makes type labels emerge from
+        # relation usage (the real causal direction) rather than being set independently.
+        if num_types > 0:
+            log_ptr = np.log(np.maximum(schema.type_relation_probs, 1e-12))  # (T, R)
+            for v in range(actual_V):
+                cs = entity_cs[v]
+                if cs is None or len(cs) == 0:
+                    entity_types[v] = int(rng.choice(num_types, p=schema.type_weights))
+                else:
+                    entity_types[v] = int(np.argmax(log_ptr[:, cs].sum(axis=1)))
+            log.info("Stage 2: post-hoc type assignment from CS (log P(CS|type) argmax)")
+
+    elif schema.cs_num_templates > 0 and num_relations > 0:
         # DISTINCT templates per type (drawn from each type's P(r|t)), sized proportionally.
         type_templates: list[list[np.ndarray]] = []
         for t in range(num_types):
@@ -302,10 +349,42 @@ def instantiate(
             entity_cs[v] = _sample_cs_for_type(int(entity_types[v]))
 
     # --- 3b. Inverse CS membership (in-relations per entity), symmetric to forward ---
-    # No inverse templates → entity_inv_cs is None → every object is eligible for every
-    # relation (today's behaviour) and the a_subj factor stays inert.
+    # No inverse templates and no obj groups → entity_inv_cs is None → every object is
+    # eligible for every relation (today's behaviour) and the a_subj factor stays inert.
     entity_inv_cs: list | None = None
-    if schema.inv_cs_num_templates > 0 and num_relations > 0:
+    if schema.obj_group_probs is not None and num_relations > 0:
+        # Group-based inverse CS, symmetric to the forward group path above.
+        n_og = schema.obj_group_probs.shape[0]
+        entity_obj_group = rng.choice(n_og, size=actual_V, p=schema.obj_group_weights)
+
+        entity_inv_cs = [None] * actual_V
+        if schema.inv_cs_num_templates > 0:
+            group_inv_pools: list[list[np.ndarray]] = []
+            for g in range(n_og):
+                probs_g = schema.obj_group_probs[g].copy()
+                nz_g = int((probs_g > 0).sum())
+                n_t_g = max(1, round(schema.inv_cs_num_templates * float(schema.obj_group_weights[g])))
+                group_inv_pools.append(_build_distinct(probs_g, nz_g, schema.inv_cs_size_skew, n_t_g))
+            buckets_og: dict[int, list[int]] = {}
+            for v in range(actual_V):
+                buckets_og.setdefault(int(entity_obj_group[v]), []).append(v)
+            for g in range(n_og):
+                _assign_templates(buckets_og.get(g, []), group_inv_pools[g],
+                                  schema.inv_cs_template_zipf, entity_inv_cs)
+            inv_used = len({frozenset(int(x) for x in entity_inv_cs[v])
+                            for v in range(actual_V) if entity_inv_cs[v] is not None and len(entity_inv_cs[v])})
+            log.info("Stage 2: group inverse CS (target %d templates, realised %d)",
+                     schema.inv_cs_num_templates, inv_used)
+        else:
+            for v in range(actual_V):
+                probs_g = schema.obj_group_probs[int(entity_obj_group[v])].copy()
+                nz_g = int((probs_g > 0).sum())
+                k = min(nz_g, _draw_size(schema.inv_cs_size_skew))
+                entity_inv_cs[v] = (rng.choice(num_relations, size=k, replace=False, p=probs_g)
+                                    if k > 0 else np.array([], dtype=int))
+            log.info("Stage 2: group inverse CS (per-entity mode)")
+
+    elif schema.inv_cs_num_templates > 0 and num_relations > 0:
         inv_probs = schema.relation_weights.copy()
         s = inv_probs.sum()
         inv_probs = inv_probs / s if s > 0 else np.full(num_relations, 1.0 / num_relations)

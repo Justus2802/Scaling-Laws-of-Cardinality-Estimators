@@ -10,6 +10,7 @@ from signature_reduced import BlockA, BlockC
 from signature_reduced._fits import ExpDecayFit, nan_exp_decay
 from signature._utils import PowerLawStats
 from generator import Schema, sample_schema
+from generator.stage1 import COOC_NUM_GROUPS
 
 # Default P(r|t) type-relation spectrum: a positive, decaying exp curve that
 # reconstructs to a usable low-rank signal for P(r|t) synthesis.
@@ -37,12 +38,16 @@ def _make_block_c(
     num_classes: int = 5,
     class_size_zipf: float = 2.0,
     spectrum: ExpDecayFit = _DEFAULT_SPECTRUM,
+    subj_cooc: ExpDecayFit | None = None,
+    obj_cooc: ExpDecayFit | None = None,
 ) -> BlockC:
     """Build a reduced BlockC by setting the fields sample_schema reads.
 
     ``class_size_zipf`` becomes the class-size power-law α; ``spectrum`` is the
     P(r|t) type-relation exp-decay spectrum the generator reconstructs singular
     values from. Pass ``nan_exp_decay()`` to model "no P(r|t) signal".
+    ``subj_cooc`` / ``obj_cooc`` set the co-occurrence spectra; default to NaN
+    (no group prototypes built).
     """
     c = BlockC()
     c._num_classes = num_classes
@@ -50,6 +55,8 @@ def _make_block_c(
         class_size_zipf, 1.0, float("nan"), float("nan"), float("nan"), float("nan")
     )
     c._type_rel_spectrum_exp = spectrum
+    c._subj_cooc_exp = subj_cooc if subj_cooc is not None else nan_exp_decay()
+    c._obj_cooc_exp  = obj_cooc  if obj_cooc  is not None else nan_exp_decay()
     return c
 
 
@@ -211,6 +218,51 @@ class TestSampleSchemaZipfEffect(unittest.TestCase):
         low = sample_schema(a, c, relation_zipf_exponent=1.0, seed=7)
         high = sample_schema(a, c, relation_zipf_exponent=4.0, seed=7)
         self.assertGreater(high.relation_weights.var(), low.relation_weights.var())
+
+
+class TestSampleSchemaCoocGroups(unittest.TestCase):
+    """Co-occurrence group prototypes built from subj_cooc_exp / obj_cooc_exp."""
+
+    _COOC = ExpDecayFit(rate=0.5, scale=100.0)
+
+    def _schema_with_groups(self, num_relations=10, num_classes=5):
+        a = _make_block_a(num_relations=num_relations)
+        c = _make_block_c(num_classes=num_classes, subj_cooc=self._COOC, obj_cooc=self._COOC)
+        return sample_schema(a, c, seed=0)
+
+    def test_group_probs_built_when_cooc_available(self):
+        schema = self._schema_with_groups()
+        self.assertIsNotNone(schema.subj_group_probs)
+        self.assertIsNotNone(schema.obj_group_probs)
+
+    def test_group_probs_shape(self):
+        num_relations = 8
+        schema = self._schema_with_groups(num_relations=num_relations)
+        self.assertEqual(schema.subj_group_probs.shape, (COOC_NUM_GROUPS, num_relations))
+        self.assertEqual(schema.obj_group_probs.shape,  (COOC_NUM_GROUPS, num_relations))
+
+    def test_group_probs_rows_sum_to_one(self):
+        schema = self._schema_with_groups()
+        np.testing.assert_allclose(schema.subj_group_probs.sum(axis=1), 1.0, atol=1e-10)
+        np.testing.assert_allclose(schema.obj_group_probs.sum(axis=1),  1.0, atol=1e-10)
+
+    def test_group_weights_sum_to_one(self):
+        schema = self._schema_with_groups()
+        self.assertAlmostEqual(schema.subj_group_weights.sum(), 1.0, places=10)
+        self.assertAlmostEqual(schema.obj_group_weights.sum(),  1.0, places=10)
+
+    def test_group_weights_all_positive(self):
+        schema = self._schema_with_groups()
+        self.assertTrue(np.all(schema.subj_group_weights > 0))
+        self.assertTrue(np.all(schema.obj_group_weights  > 0))
+
+    def test_nan_cooc_exp_gives_none_groups(self):
+        # Default _make_block_c has NaN cooc fits → no groups built.
+        a = _make_block_a()
+        c = _make_block_c()
+        schema = sample_schema(a, c, seed=0)
+        self.assertIsNone(schema.subj_group_probs)
+        self.assertIsNone(schema.obj_group_probs)
 
 
 if __name__ == "__main__":
