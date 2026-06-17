@@ -48,13 +48,18 @@ def _make_block_b(
     return b
 
 
-def _make_block_d(cs_size_loc=3.0, num_distinct_cs=12, cs_freq_alpha=2.0) -> BlockD:
-    """Reduced BlockD with the fields sample_schema reads."""
+def _make_block_d(
+    cs_size_loc=3.0, num_distinct_cs=12, cs_freq_alpha=2.0,
+    inv_cs_size_loc=2.0, inv_num_distinct_cs=8, inv_cs_freq_alpha=2.0,
+) -> BlockD:
+    """Reduced BlockD with the fields sample_schema reads (forward + inverse CS)."""
     d = BlockD()
     d._cs_size_skew = SkewNormFit(loc=cs_size_loc, scale=1.0, shape=0.0, lo=1.0, hi=8.0)
-    d._inv_cs_size_skew = SkewNormFit(loc=2.0, scale=1.0, shape=0.0, lo=1.0, hi=8.0)
+    d._inv_cs_size_skew = SkewNormFit(loc=inv_cs_size_loc, scale=1.0, shape=0.0, lo=1.0, hi=8.0)
     d._num_distinct_cs = num_distinct_cs
     d._cs_freq_fit = _pls(cs_freq_alpha)
+    d._inv_num_distinct_cs = inv_num_distinct_cs
+    d._inv_cs_freq_fit = _pls(inv_cs_freq_alpha)
     return d
 
 

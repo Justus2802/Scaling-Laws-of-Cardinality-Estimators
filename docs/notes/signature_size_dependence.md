@@ -1,6 +1,6 @@
 # Size dependence of the reduced signature features
 
-Which of the 96 reduced-signature features (`src/signature_reduced/`, blocks A/B/C/D/E/F)
+Which of the 99 reduced-signature features (`src/signature_reduced/`, blocks A/B/C/D/E/F)
 **scale with graph size** and which are **size-free**. This is the distinction the
 Stage-1 *conditional-on-size* model needs: extensive features must be conditioned on `V`;
 intensive ones form the size-free shape. See [signature.md](../signature.md) for the
@@ -21,6 +21,7 @@ feature reference.
 | `num_relations` (R) | A | vocabulary count — unbounded, grows with size |
 | `num_classes` (T) | C | type-vocabulary count |
 | `num_distinct_cs` | D | count of distinct characteristic sets |
+| `inv_num_distinct_cs` | D | count of distinct inverse characteristic sets |
 | `num_components` | F | raw component count |
 | `triangle_count`, `four_cycle_count`, `five_cycle_count`, `six_cycle_count`, `diamond_count`, `k4_count`, `tailed_triangle_count` | E | **raw motif counts** — scale strongly (≈ super-linear in E); the most size-dependent block by design (see below) |
 | `two_step_vmax` | D | upper truncation cutoff of the path-count set → bounded by `freq(q*)·freq(p*)·E² ≤ E²` (see below) |
@@ -44,7 +45,7 @@ The remaining ~74 features:
 
 - **`mean_degree`** (A) — `E/V`, the deliberately size-stable edge handle.
 - **All exponents** — `out_degree_alpha`, `in_degree_alpha`, `relation_zipf_exponent`,
-  `class_size_alpha`, `cs_freq_alpha`, `two_step_alpha`, and the Block E template Zipf
+  `class_size_alpha`, `cs_freq_alpha`, `inv_cs_freq_alpha`, `two_step_alpha`, and the Block E template Zipf
   exponents (`path_template_zipf_k2..k10`, `tree_template_zipf`) — label-sequence skew, a
   shape independent of how many paths/trees exist.
 - **All exp-decay rates** — `subj_cooc_rate`, `obj_cooc_rate`, `type_rel_spectrum_rate`,
@@ -208,7 +209,7 @@ existing generator path outweighs the symmetry/diagonal cost.
 ## Takeaways
 
 - The reduction worked as intended: the extensive features are almost entirely the raw
-  counts (`V, R, T, num_distinct_cs, num_components`, and the Block E motif counts) plus the
+  counts (`V, R, T, num_distinct_cs, inv_num_distinct_cs, num_components`, and the Block E motif counts) plus the
   path-count cutoff (`two_step_vmax`). The `x_min` thresholds and `shortest_path_loc` are a
   soft middle ground. Everything stored *as a distribution shape* is genuinely size-free —
   which is why Stage-1 can fit shape independently of `V`.

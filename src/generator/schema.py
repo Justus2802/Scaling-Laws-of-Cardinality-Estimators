@@ -58,4 +58,10 @@ class Schema:
     obj_alpha_skew: tuple = field(default_factory=lambda: _NAN_SKEW)   # per-relation obj-mult α
     a_obj: float = 0.0                   # G2b cs_size^a out-degree offset (0 → no effect)
     subj_alpha_skew: tuple = field(default_factory=lambda: _NAN_SKEW)  # per-relation subj-mult α
-    cs_size_skew: tuple = field(default_factory=lambda: _NAN_SKEW)     # CS-size distribution
+    a_subj: float = 0.0                  # G2b inv_cs_size^a in-degree offset (0 → no effect)
+    cs_size_skew: tuple = field(default_factory=lambda: _NAN_SKEW)     # forward CS-size distribution
+    # Inverse CS (object side), symmetric to forward CS. 0 templates → every object
+    # eligible for every relation (today's behaviour) and the a_subj factor is inert.
+    inv_cs_size_skew: tuple = field(default_factory=lambda: _NAN_SKEW)
+    inv_cs_num_templates: int = 0        # 0 → no inverse-CS restriction
+    inv_cs_template_zipf: float = 2.0    # inverse-CS reuse skew (inv_cs_freq α)

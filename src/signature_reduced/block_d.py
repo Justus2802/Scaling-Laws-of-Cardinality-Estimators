@@ -52,6 +52,8 @@ class BlockD(SignatureBlock):
         self._num_distinct_cs = _NOT_CALCULATED
         self._cs_freq_fit = _NOT_CALCULATED
         self._cs_size_skew = _NOT_CALCULATED
+        self._inv_num_distinct_cs = _NOT_CALCULATED
+        self._inv_cs_freq_fit = _NOT_CALCULATED
         self._inv_cs_size_skew = _NOT_CALCULATED
         self._two_step_fit = _NOT_CALCULATED
         # unsummarised data kept for visualization
@@ -73,6 +75,14 @@ class BlockD(SignatureBlock):
     @property
     def cs_size_skew(self) -> SkewNormFit:
         return SkewNormFit(*self._require("cs_size_skew", self._cs_size_skew))
+
+    @property
+    def inv_num_distinct_cs(self) -> int:
+        return self._require("inv_num_distinct_cs", self._inv_num_distinct_cs)
+
+    @property
+    def inv_cs_freq_fit(self) -> PowerLawStats:
+        return self._require("inv_cs_freq_fit", self._inv_cs_freq_fit)
 
     @property
     def inv_cs_size_skew(self) -> SkewNormFit:
@@ -97,10 +107,11 @@ class BlockD(SignatureBlock):
         self._inv_cs_sizes = inv_cs_sizes
 
         self._num_distinct_cs = len(set(cs_of.values())) if cs_of else 0
+        self._inv_num_distinct_cs = len(set(inv_cs_of.values())) if inv_cs_of else 0
         self._cs_size_skew = fit_skewnorm(cs_sizes) if cs_sizes.size else nan_skewnorm()
         self._inv_cs_size_skew = fit_skewnorm(inv_cs_sizes) if inv_cs_sizes.size else nan_skewnorm()
 
-        # CS frequency: how often each distinct CS recurs → power-law.
+        # CS frequency: how often each distinct (inverse-)CS recurs → power-law.
         if cs_of:
             freq = Counter(cs_of.values())
             self._cs_freq_fit = _fit_powerlaw(
@@ -108,6 +119,13 @@ class BlockD(SignatureBlock):
             )
         else:
             self._cs_freq_fit = _nan_power_law_stats()
+        if inv_cs_of:
+            inv_freq = Counter(inv_cs_of.values())
+            self._inv_cs_freq_fit = _fit_powerlaw(
+                np.fromiter(inv_freq.values(), dtype=int, count=len(inv_freq))
+            )
+        else:
+            self._inv_cs_freq_fit = _nan_power_law_stats()
 
         # Two-step path counts → truncated power-law over the full value set.
         pair_counts, top_pairs = self._two_step_pair_counts(g)
@@ -118,22 +136,27 @@ class BlockD(SignatureBlock):
         )
 
         log.info(
-            "Block D: num_distinct_cs=%d, cs_freq(alpha=%.3f), two_step(alpha=%.3f)",
-            self._num_distinct_cs, self._cs_freq_fit.alpha, self._two_step_fit.alpha,
+            "Block D: num_distinct_cs=%d, cs_freq(alpha=%.3f), inv_num_distinct_cs=%d, "
+            "inv_cs_freq(alpha=%.3f), two_step(alpha=%.3f)",
+            self._num_distinct_cs, self._cs_freq_fit.alpha, self._inv_num_distinct_cs,
+            self._inv_cs_freq_fit.alpha, self._two_step_fit.alpha,
         )
         return self
 
     def as_vector(self) -> list[float]:
-        """Flatten to a fixed-length 16-vector for cross-KG comparison.
+        """Flatten to a fixed-length 19-vector for cross-KG comparison.
 
-        Layout: num_distinct_cs; CS-frequency power-law (alpha, xmin); CS-size
-        skew-normal (5); inverse-CS-size skew-normal (5); two-step truncated
-        power-law (alpha, v_min, v_max).
+        Layout (forward then inverse, symmetric): num_distinct_cs; CS-frequency
+        power-law (alpha, xmin); CS-size skew-normal (5); inv_num_distinct_cs;
+        inverse-CS-frequency power-law (alpha, xmin); inverse-CS-size skew-normal
+        (5); two-step truncated power-law (alpha, v_min, v_max).
         """
         return [
             float(self.num_distinct_cs),
             self.cs_freq_fit.alpha, self.cs_freq_fit.xmin,
             *self.cs_size_skew,
+            float(self.inv_num_distinct_cs),
+            self.inv_cs_freq_fit.alpha, self.inv_cs_freq_fit.xmin,
             *self.inv_cs_size_skew,
             *self.two_step_fit,
         ]
@@ -142,18 +165,16 @@ class BlockD(SignatureBlock):
     def feature_names(cls) -> list[str]:
         """Return feature names in the same order as :meth:`as_vector`."""
         names = ["num_distinct_cs", "cs_freq_alpha", "cs_freq_xmin"]
-        for side in ("cs_size", "inv_cs_size"):
-            names += [
-                f"{side}_loc", f"{side}_scale", f"{side}_shape",
-                f"{side}_lo", f"{side}_hi",
-            ]
+        names += [f"cs_size_{s}" for s in ("loc", "scale", "shape", "lo", "hi")]
+        names += ["inv_num_distinct_cs", "inv_cs_freq_alpha", "inv_cs_freq_xmin"]
+        names += [f"inv_cs_size_{s}" for s in ("loc", "scale", "shape", "lo", "hi")]
         names += ["two_step_alpha", "two_step_vmin", "two_step_vmax"]
         return names
 
     @classmethod
     def get_na_vec(cls) -> list[float]:
-        """Return a 16-element NaN vector (same length as as_vector())."""
-        return [float("nan")] * 16
+        """Return a 19-element NaN vector (same length as as_vector())."""
+        return [float("nan")] * 19
 
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
         """Display or save diagnostics for reduced Block D.
@@ -210,6 +231,8 @@ class BlockD(SignatureBlock):
             f"  num_distinct_cs    : {self.num_distinct_cs}",
             f"  CS frequency       : power-law(alpha={self.cs_freq_fit.alpha:.4f}, xmin={self.cs_freq_fit.xmin})",
             f"  CS size            : skew-normal(loc={cs.loc:.3f}, scale={cs.scale:.3f}, shape={cs.shape:.3f}, cutoffs=[{cs.lo:.1f},{cs.hi:.1f}])",
+            f"  inv_num_distinct_cs: {self.inv_num_distinct_cs}",
+            f"  inverse-CS freq    : power-law(alpha={self.inv_cs_freq_fit.alpha:.4f}, xmin={self.inv_cs_freq_fit.xmin})",
             f"  inverse-CS size    : skew-normal(loc={inv.loc:.3f}, scale={inv.scale:.3f}, shape={inv.shape:.3f}, cutoffs=[{inv.lo:.1f},{inv.hi:.1f}])",
             f"  two-step path count: trunc. power-law(alpha={ts.alpha:.4f}, range=[{ts.v_min:.0f},{ts.v_max:.0f}])",
         ]

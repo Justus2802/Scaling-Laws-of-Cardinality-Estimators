@@ -37,20 +37,20 @@ from one integer: Stage 1 `seed`, Stage 2 `seed+1`, Stage 3 `seed+2`.
 | B | `relation_zipf` | relation-frequency weights (Zipf exponent) |
 | B | `obj_alpha_skew` | per-relation **object**-multiplicity tail α (out-degree shape) |
 | B | `subj_alpha_skew` | per-relation **subject**-multiplicity tail α (in-side shape) |
-| B | `a_obj` | G2b CS-size→multiplicity offset (`cs_size^a_obj`) |
+| B | `a_obj` | G2b forward CS-size→multiplicity offset (`cs_size^a_obj`) |
+| B | `a_subj` | G2b inverse CS-size→multiplicity offset (`inv_cs_size^a_subj`) |
 | B | `in_degree_fit.alpha` | PA exponent + expected max in-degree |
 | C | `num_classes`, `class_size_fit.alpha` | type count + type-size weights |
 | C | `type_rel_spectrum_exp` | `P(r\|t)` low-rank reconstruction |
-| D | `cs_size_skew` | CS size per template |
-| D | `num_distinct_cs` | number of distinct CS templates |
-| D | `cs_freq_fit.alpha` | CS reuse skew (`cs_template_zipf`) |
+| D | `cs_size_skew`, `num_distinct_cs`, `cs_freq_fit.alpha` | forward CS templates: size, count, reuse skew |
+| D | `inv_cs_size_skew`, `inv_num_distinct_cs`, `inv_cs_freq_fit.alpha` | inverse CS templates (object side): size, count, reuse skew |
 | E | motif counts | Stage-3 targets (triangles, 4-cycle, diamond, k4, tailed) |
 | F | `degree_assortativity` | Stage-3 target |
 
 **Validation-only (measured, deliberately *not* used constructively):** C `subj/obj_cooc_*`,
-row-entropy; D `inv_cs_size_skew`, `two_step_fit`; F `num_components`, `largest_component_fraction`,
+row-entropy; D `two_step_fit`; F `num_components`, `largest_component_fraction`,
 `clustering_coefficient`, `shortest_path_skew`. These are diagnostics the brief marks "get near,"
-not steered. `a_subj` is currently best-effort (not wired — see Limitations).
+not steered. Tuning constants for each stage are module-level at the top of `stage1.py`/`stage2.py`/`stage3.py`.
 
 ---
 
@@ -87,32 +87,37 @@ where most of the fidelity fixes live.
    falling back to a budget-derived Poisson mean when Block D is absent. CS size sets **relation
    membership only** — the per-relation allocation (step 5) owns the edge budget.
 3. **Type assignment.** Each entity gets a type via `type_weights` (all untyped when `T=0`).
-4. **Distinct CS templates.** Build `num_distinct_cs` **distinct** templates by rejection
-   (`_build_distinct_templates`): draw a CS from `P(r|t)` (typed) / `relation_weights` (untyped),
-   dedup by relation-set, and **escalate the minimum size** once small combos saturate (so the
-   count keeps climbing up to each type's `P(r|t)` support). Without distinctness, size-1 CSs and
+4. **Distinct CS templates (forward + inverse).** Build `num_distinct_cs` **distinct** forward
+   templates by rejection (`_build_distinct`): draw a CS from `P(r|t)` (typed) / `relation_weights`
+   (untyped), dedup by relation-set, **escalate the minimum size** once small combos saturate.
+   Symmetrically build `inv_num_distinct_cs` **inverse-CS** templates (object side, drawn from
+   `relation_weights`, sized from `inv_cs_size_skew`). Without distinctness, size-1 CSs and
    frequency-concentrated draws collapse the realised `num_distinct_cs`.
-5. **Entity → template assignment.** Per type pool: **floor each template at ≥1 entity** (so every
-   distinct CS is realised), then distribute the remaining entities by a `power-law(cs_template_zipf)`
-   reuse tail. This steers `num_distinct_cs` *and* the `cs_freq` reuse skew together.
-6. **Per-relation wiring — multiplicity-then-PA with edge conservation.** For each relation `r`
-   present in some CS (relation weights **renormalised over present relations**):
-   - `|edges_r| = round(renorm_weight[r] · content_E)`.
-   - **Out-side** (edges per subject `S_r`): weight `power-law(α_obj_r) · cs_size^a_obj` (G2 tail ×
-     G2b offset). **Floor each subject at 1 edge** (an entity with `r` in its CS has
-     object-multiplicity ≥1), then allocate the surplus by `multinomial`.
-   - **In-side** (edges per object): weight `power-law(α_subj_r) · in_degree^pa` (per-relation
-     subject-multiplicity tail × aggregate-hub preference), masked by `max_in_degree`; allocate by
-     `multinomial`. **Cap each object at `|S_r|`** (an object can't have more distinct subjects than
-     exist) and **redistribute the overflow** — this is what prevents condensation (`α_subj<2` or
-     superlinear PA) from dumping the whole budget onto one object.
-   - **Pair** subject-stubs with object-stubs (configuration model); on a self-loop or duplicate
-     `(s,o)` **retry** by swapping in another still-pending object stub, so edges are re-routed, not
-     dropped.
-7. **Throttle** to `content_E` (safety net; the per-relation allocation already targets it).
-8. **Connect components** — bridge isolated components into the giant.
-9. **`rdf:type` edges** for typed entities; assemble the `igraph.Graph` with the `kg_io.load_kg`
+5. **Entity → template assignment.** Per pool: **floor each template at ≥1 entity** (so every
+   distinct CS is realised), then distribute the rest by a `power-law(reuse_zipf)` reuse tail —
+   for forward (`cs_template_zipf`) and inverse (`inv_cs_template_zipf`) alike. This steers the
+   distinct-CS counts *and* the reuse skews together. No inverse templates → every object eligible
+   for every relation (today's behaviour) and `a_subj` stays inert.
+6. **Per-relation wiring — multiplicity-then-PA with edge conservation, matched within `S_r × O_r`.**
+   `S_r` = subjects whose forward CS contains `r`; `O_r` = objects whose inverse CS contains `r`
+   (all entities when no inverse templates). For each present relation (`S_r`, `O_r` non-empty;
+   weights renormalised over them):
+   - `|edges_r| = min(round(renorm_weight[r]·content_E), |S_r|·|O_r|)` (capacity bound).
+   - **Out-side** (per subject): weight `power-law(α_obj_r) · cs_size^a_obj` (G2 tail × G2b). **Floor
+     each subject at 1**, allocate the surplus by `multinomial`, then **cap at `|O_r|`** + redistribute.
+   - **In-side** (per object over `O_r`): weight `power-law(α_subj_r) · in_degree^pa · inv_cs_size^a_subj`
+     (subject-multiplicity tail × hub preference × **G2b in-side offset**), masked by `max_in_degree`;
+     allocate by `multinomial`, then **cap at `|S_r|`** + redistribute. The cap prevents condensation
+     (`α_subj<2` or superlinear PA) from dumping the whole budget onto one object.
+   - **Pair** subject-stubs with object-stubs within `S_r × O_r` (configuration model); on a
+     self-loop or duplicate `(s,o)` **retry** by swapping in another pending object stub.
+7. **Connect components** — bridge isolated components into the giant.
+8. **`rdf:type` edges** for typed entities; assemble the `igraph.Graph` with the `kg_io.load_kg`
    attribute contract (so `compute_reduced_signature` can read it back).
+
+The `_cap_redistribute` helper implements the symmetric cap (object ≤ `|S_r|`, subject ≤ `|O_r|`).
+Stage-2 tuning constants (`MAX_PAIR_RETRY`, `CAP_REDISTRIBUTE_PASSES`, `SIZE_ESCAPE_FAILS`,
+`TEMPLATE_ATTEMPT_*`, `FALLBACK_CS_MEAN_FLOOR`) are module-level at the top of `stage2.py`.
 
 ---
 
@@ -180,19 +185,29 @@ In roughly the order they were made:
    Fixed with (a) distinct templates by rejection + size-escape, (b) **floored** entity→template
    assignment (≥1 entity per template) + power-law reuse tail, (c) **out-side floor** (every subject
    of `r` gets ≥1 edge). Realised `num_distinct_cs` on fb237-like went 229 → ~1030 (target 1298).
+8. **Symmetric inverse CS + `a_subj` wiring.** Restored `inv_num_distinct_cs` + `inv_cs_freq` to the
+   reduced Block D (Block D 16→19; total signature 96→99) and added inverse-CS templates (object
+   side) — so edges are matched within `S_r × O_r` and the in-side weight gains the
+   `inv_cs_size^a_subj` G2b factor. The old hard inverse-functionality cap is replaced by the in-side
+   allocation; the out-side gains a symmetric cap at `|O_r|`. Re-measured `a_subj` tracks target
+   (e.g. 0.6 → ~0.65).
+9. **Configurable constants.** All tuning magic numbers hoisted to module-level constants at the top
+   of `stage1.py` / `stage2.py` / `stage3.py`.
 
 ---
 
 ## Known limitations / open items
 
-- **Type-less co-occurrence gap.** With `num_classes=0` there is no `P(r|t)`; CS composition uses
-  marginal `relation_weights` only, so relation co-occurrence (`subj_cooc`) isn't reproduced. The
+- **Type-less co-occurrence gap.** With `num_classes=0` there is no `P(r|t)`; forward CS composition
+  uses marginal `relation_weights` only, so relation co-occurrence (`subj_cooc`) isn't reproduced. The
   `M` co-occurrence spectrum is measured but never consumed.
-- **Aggregate vs per-relation in-degree.** The in-side now prioritises per-relation `subj_alpha`;
+- **Inverse `num_distinct_cs` partially hit.** The inverse-CS templates fix `a_subj` and improve the
+  inverse count, but the *realised* `inv_num_distinct_cs` undershoots the target (an object's realised
+  inverse CS ⊆ its assigned template, since the in-side allocation can give 0 edges for some of its
+  relations — there is no symmetric in-side floor). Forward side is closer (it has the out-side floor).
+- **Aggregate vs per-relation in-degree.** The in-side prioritises per-relation `subj_alpha`;
   aggregate `in_degree.alpha` emerges (best-effort). Superlinear PA from `1/(α_in−2)` for
   `2<α_in<3` is condensation-prone — clamping `in_pa≤1` is the lever if it drifts.
-- **`a_subj` (G2b in-side) not wired** — needs the object's emergent inverse-CS size; left
-  best-effort.
 - **Stage-3 motif over-shoot.** When Stage 2 produces a graph already far from the motif targets, a
   small `rewire-budget` can't close the gap; motif counts can land well above target. Larger budget
   / better Stage-2 clustering control is the open item.

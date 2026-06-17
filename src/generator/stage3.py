@@ -15,6 +15,10 @@ from ._constants import _RDF_TYPE
 from ._logging import get_logger
 from .stage2 import _connect_components
 
+# ── Tuning constants (Stage-3 refinement) — adjust here ─────────────────────────
+MAX_TARGETED_SWAP_PROB = 0.5   # cap on the probability of attempting a triangle-closing swap
+TEMP_FLOOR = 1e-10             # numerical floor on the SA temperature in the accept test
+
 log = get_logger(__name__)
 
 # Lazily discovered mapping: 4-node degree-sequence tuple → igraph motifs_randesu index.
@@ -296,7 +300,7 @@ def refine(
         # Attempt targeted triangle-creating swap when triangles are below target.
         # The probability scales with how large the deficit is (max 50%).
         tri_deficit = target_tri - current_tri
-        p_targeted = float(min(0.5, tri_deficit / max(1, target_tri)))
+        p_targeted = float(min(MAX_TARGETED_SWAP_PROB, tri_deficit / max(1, target_tri)))
         targeted = tri_deficit > 0 and rng.random() < p_targeted
         if targeted:
             result = _targeted_swap()
@@ -326,7 +330,7 @@ def refine(
             accept = True
         else:
             diff = new_loss - current_loss
-            accept = bool(rng.random() < math.exp(-diff / max(temp, 1e-10)))
+            accept = bool(rng.random() < math.exp(-diff / max(temp, TEMP_FLOOR)))
 
         if accept:
             content_edge_data[i1] = (s1, o2, p1)

@@ -26,11 +26,11 @@ counts, path lengths) on the object for `visualize`.
 | **A** — G0 | 3 | `num_entities`, `num_relations`, **mean degree** `E/V` |
 | **B** — G1/G2/G2b | 18 | out/in-degree power-law (target); relation-usage **Zipf**; obj/subj multiplicity-α **skew-normal** (cutoffs [1.4,3.0]); CS-size offsets `a_obj`, `a_subj` |
 | **C** — G3 | 23 | class-size **power-law**; subj/obj co-occurrence **exp-decay** + density; row entropy **skew-normal**; `P(r\|t)` spectrum **exp-decay**; per-type entropy **exp-decay** |
-| **D** — G3 | 16 | `num_distinct_cs`; CS-freq **power-law**; CS-size & inverse-CS-size **skew-normal**; two-step path-count **truncated power-law** |
+| **D** — G3 | 19 | `num_distinct_cs`; CS-freq **power-law**; CS-size **skew-normal**; symmetric inverse side (`inv_num_distinct_cs`, inverse-CS-freq **power-law**, inverse-CS-size **skew-normal**); two-step path-count **truncated power-law** |
 | **E** — G5 | 27 | raw motif counts (triangle, 4-/5-/6-cycle, diamond, k4, tailed triangle); path-template **Zipf** + entropy (k=2..10); tree-template Zipf + entropy. `star_count_k*` dropped (non-induced stars `= Σ C(deg,k)`, fixed by the degree distribution) |
 | **F** — G4 | 9 | components, LCC fraction, avg-local clustering, assortativity; shortest-path **skew-normal** |
 
-Total **96** features (A3 + B18 + C23 + D16 + E27 + F9).
+Total **99** features (A3 + B18 + C23 + D19 + E27 + F9).
 The fits are stored as NamedTuples that restore as plain tuples through the JSON
 round-trip, so each block property re-wraps them to preserve attribute access.
 

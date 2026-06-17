@@ -31,6 +31,15 @@ from .schema import Schema, _NAN_SKEW
 
 log = get_logger(__name__)
 
+# ── Tuning constants (Stage-1 schema) — adjust here ─────────────────────────────
+DEFAULT_ZIPF_EXPONENT = 2.0        # fallback for relation- / CS-frequency Zipf exponents
+PA_EXPONENT_BOUNDS = (0.1, 2.0)    # clamp on the in-degree PA exponent (Dorogovtsev–Mendes)
+PA_EXPONENT_DEFAULT = 0.5          # fallback PA exponent when in-degree α is unusable
+MIN_ALPHA_FOR_PA = 2.0             # α_in must exceed this for a finite-mean power-law tail
+MIN_ALPHA_FOR_MAX_DEGREE = 1.1     # α_in threshold for the extreme-value max-in-degree estimate
+MAX_IN_DEGREE_FLOOR = 10           # floor on the expected max in-degree
+FUNCTIONALITY_FLOOR = 0.1          # clamp floor for mean_functionality (out-side)
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -161,7 +170,7 @@ def sample_schema(
     *,
     d: BlockD = None,
     b: BlockB = None,
-    relation_zipf_exponent: float = 2.0,
+    relation_zipf_exponent: float = DEFAULT_ZIPF_EXPONENT,
     seed: int = 0,
 ) -> Schema:
     """Stage 1: derive an abstract schema from a target BlockA + BlockC.
@@ -260,35 +269,35 @@ def sample_schema(
         cs_num_templates = max(1, int(d.num_distinct_cs))
         cs_template_zipf = (
             float(d.cs_freq_fit.alpha)
-            if not math.isnan(d.cs_freq_fit.alpha) else 2.0
+            if not math.isnan(d.cs_freq_fit.alpha) else DEFAULT_ZIPF_EXPONENT
         )
     else:
         cs_size_mean = 0.0   # signal instantiate to derive from E/V budget
         cs_num_templates = 0
-        cs_template_zipf = 2.0
+        cs_template_zipf = DEFAULT_ZIPF_EXPONENT
 
     # --- Edge multiplicity, PA exponent, inverse functionality from Block B ---
     if b is not None:
-        mean_functionality = _functionality_from_alpha(b.obj_alpha_skew, floor=0.1)
+        mean_functionality = _functionality_from_alpha(b.obj_alpha_skew, floor=FUNCTIONALITY_FLOOR)
     else:
         mean_functionality = 1.0
 
     if b is not None:
         alpha_in = b.in_degree_fit.alpha
         # Dorogovtsev-Mendes relation: α = 2 + 1/β → β = 1/(α−2)
-        # α must be > 2 for a finite-mean power law; clamp β to [0.1, 2.0].
-        if not math.isnan(alpha_in) and alpha_in > 2.0:
-            in_pa_exponent = float(np.clip(1.0 / (alpha_in - 2.0), 0.1, 2.0))
+        # α must be > MIN_ALPHA_FOR_PA for a finite-mean power law; clamp β to PA_EXPONENT_BOUNDS.
+        if not math.isnan(alpha_in) and alpha_in > MIN_ALPHA_FOR_PA:
+            in_pa_exponent = float(np.clip(1.0 / (alpha_in - 2.0), *PA_EXPONENT_BOUNDS))
         else:
-            in_pa_exponent = 0.5
+            in_pa_exponent = PA_EXPONENT_DEFAULT
         # Expected maximum in-degree: n^(1/(α−1)) (extreme-value statistic)
         n_ent = a.num_entities
-        if not math.isnan(alpha_in) and alpha_in > 1.1 and n_ent > 0:
-            max_in_degree = max(10, int(round(n_ent ** (1.0 / (alpha_in - 1.0)))))
+        if not math.isnan(alpha_in) and alpha_in > MIN_ALPHA_FOR_MAX_DEGREE and n_ent > 0:
+            max_in_degree = max(MAX_IN_DEGREE_FLOOR, int(round(n_ent ** (1.0 / (alpha_in - 1.0)))))
         else:
             max_in_degree = 0
     else:
-        in_pa_exponent = 0.5
+        in_pa_exponent = PA_EXPONENT_DEFAULT
         max_in_degree = 0
 
     # --- Per-relation multiplicity shape (G2) + CS-size offset (G2b) + CS-size shape ---
@@ -297,7 +306,17 @@ def sample_schema(
     obj_alpha_skew = tuple(b.obj_alpha_skew) if b is not None else _NAN_SKEW
     subj_alpha_skew = tuple(b.subj_alpha_skew) if b is not None else _NAN_SKEW
     a_obj = float(b.a_obj) if (b is not None and not math.isnan(b.a_obj)) else 0.0
+    a_subj = float(b.a_subj) if (b is not None and not math.isnan(b.a_subj)) else 0.0
     cs_size_skew = tuple(d.cs_size_skew) if d is not None else _NAN_SKEW
+    # Inverse CS (object side), symmetric to forward CS structure (Block D).
+    inv_cs_size_skew = tuple(d.inv_cs_size_skew) if d is not None else _NAN_SKEW
+    inv_cs_num_templates = (
+        max(1, int(d.inv_num_distinct_cs)) if (d is not None and d.inv_num_distinct_cs > 0) else 0
+    )
+    inv_cs_template_zipf = (
+        float(d.inv_cs_freq_fit.alpha)
+        if (d is not None and not math.isnan(d.inv_cs_freq_fit.alpha)) else DEFAULT_ZIPF_EXPONENT
+    )
 
     log.info(
         "Stage 1: schema ready — mean_functionality=%.3f, in_pa_exponent=%.3f, "
@@ -322,5 +341,9 @@ def sample_schema(
         obj_alpha_skew=obj_alpha_skew,
         a_obj=a_obj,
         subj_alpha_skew=subj_alpha_skew,
+        a_subj=a_subj,
         cs_size_skew=cs_size_skew,
+        inv_cs_size_skew=inv_cs_size_skew,
+        inv_cs_num_templates=inv_cs_num_templates,
+        inv_cs_template_zipf=inv_cs_template_zipf,
     )
