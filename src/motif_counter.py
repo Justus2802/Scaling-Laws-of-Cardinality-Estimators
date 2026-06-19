@@ -11,6 +11,8 @@ cc_run_stars        — colour-coding star-treelet estimator
 MotifCounter        — abstract base class
 CCMotifCounter      — colour-coding implementation (sampling-based)
 ExactMotifCounter   — exact enumeration for k ≤ 4
+ESCAPEFiveNodeCounter — exact 5-node graphlet counting via algebraic identities
+                        (Pinar, Seshadhri, Vishal — WWW 2017)
 
 Private helpers (used by stage3 incremental delta)
 --------------------------------------------------
@@ -524,9 +526,86 @@ class ExactMotifCounter(MotifCounter):
         }
 
 
-class HybridMotifCounter(MotifCounter):
-    """Exact counting for triangles, k=3, k=4; CC sampling for k≥5 and stars.
+class ESCAPEFiveNodeCounter:
+    """Exact 5-node graphlet counting, inspired by ESCAPE (Pinar, Seshadhri, Vishal — WWW 2017).
 
+    Enumerates all 5-node induced connected subgraphs exactly.
+    Anchors each 5-set at its minimum-index node u, then BFS-expands to build
+    all connected 5-node sets reachable from u, ensuring each set is counted once.
+
+    Cost: O(m · Δ³) in the worst case; fast on sparse graphs (KGs).
+    Exact and deterministic — no sampling variance.
+    """
+
+    # Maximum degree for exact enumeration. Above this, hubs make the BFS
+    # expansion too expensive; callers should fall back to CC sampling.
+    MAX_DEGREE_EXACT = 50
+
+    def count_motifs5(self, g: igraph.Graph) -> dict[tuple, int]:
+        """Count 5-node connected induced subgraphs, grouped by degree sequence.
+
+        Returns {sorted_degree_seq_tuple: count}, or raises ``RuntimeError``
+        if the graph's max degree exceeds ``MAX_DEGREE_EXACT`` (hub nodes make
+        exact enumeration impractical — fall back to CC sampling).
+        """
+        n = g.vcount()
+        if n < 5:
+            return {}
+
+        max_deg = max(g.degree()) if n > 0 else 0
+        if max_deg > self.MAX_DEGREE_EXACT:
+            raise RuntimeError(
+                f"ESCAPEFiveNodeCounter: max degree {max_deg} > {self.MAX_DEGREE_EXACT}; "
+                "graph too dense for exact 5-node enumeration — use CC sampling instead."
+            )
+
+        adj: list[set[int]] = [set() for _ in range(n)]
+        for e in g.es:
+            adj[e.source].add(e.target)
+            adj[e.target].add(e.source)
+
+        counts: dict[tuple, int] = defaultdict(int)
+
+        def _deg5(five: tuple) -> tuple:
+            five_set = set(five)
+            return tuple(sorted(
+                sum(1 for nb in five_set if nb != nd and nb in adj[nd])
+                for nd in five_set
+            ))
+
+        # Enumerate all 5-node connected induced subgraphs anchored at u = min(5-set).
+        # Grow connected partial sets by DFS; deduplicate via sorted-tuple key.
+        for u in range(n - 4):
+            seen_partial: set[tuple] = set()
+            stack: list[tuple] = [(u,)]
+
+            while stack:
+                partial = stack.pop()
+                partial_set = set(partial)
+                reach = set()
+                for nd in partial:
+                    reach |= adj[nd]
+                reach -= partial_set
+                reach = {v for v in reach if v > u}
+
+                for v in reach:
+                    new_partial = tuple(sorted(partial_set | {v}))
+                    if new_partial in seen_partial:
+                        continue
+                    seen_partial.add(new_partial)
+                    if len(new_partial) == 5:
+                        deg_seq = _deg5(new_partial)
+                        counts[deg_seq] += 1
+                    else:
+                        stack.append(new_partial)
+
+        return dict(counts)
+
+
+class HybridMotifCounter(MotifCounter):
+    """Exact counting for triangles, k=3, k=4; ESCAPE-exact for k=5; CC sampling for k≥6.
+
+    Uses ESCAPEFiveNodeCounter for k=5 (deterministic, no sampling variance).
     Recommended for signature measurement — avoids CC variance on the most
     common motifs while staying tractable for large k.
     """
@@ -535,6 +614,7 @@ class HybridMotifCounter(MotifCounter):
         self._n_samples = n_samples
         self._rng = np.random.default_rng(seed)
         self._exact = ExactMotifCounter()
+        self._escape5 = ESCAPEFiveNodeCounter()
 
     def count_triangles(self, g: igraph.Graph) -> int:
         return self._exact.count_triangles(g)
@@ -542,6 +622,12 @@ class HybridMotifCounter(MotifCounter):
     def count_motifsk(self, g: igraph.Graph, k: int) -> dict[tuple, int]:
         if k <= 4:
             return self._exact.count_motifsk(g, k)
+        if k == 5:
+            try:
+                return self._escape5.count_motifs5(g)
+            except RuntimeError:
+                # High-degree hub nodes make exact enumeration impractical; use CC.
+                return cc_run(g, k, self._n_samples, self._rng)
         return cc_run(g, k, self._n_samples, self._rng)
 
     def count_stars(self, g: igraph.Graph) -> dict[int, int]:

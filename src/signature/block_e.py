@@ -21,7 +21,8 @@ _LARGE_N       = 50_000   # above this, sample an induced subgraph for structura
 _SAMPLE_N      = 10_000   # seed nodes when n > _LARGE_N (expanded to full neighborhoods)
 
 # Counter used for all motif measurement in BlockE.calculate().
-# HybridMotifCounter: exact for triangles/k=3/k=4, CC sampling for k≥5 and stars.
+# HybridMotifCounter: exact for k≤4 and (when max_degree ≤ 50) k=5 via ESCAPEFiveNodeCounter;
+# falls back to CC sampling for k=5 on dense graphs, and always uses CC for k≥6 and stars.
 MOTIF_COUNTER: MotifCounter = HybridMotifCounter(n_samples=_SAMPLE_BUDGET, seed=1)
 
 

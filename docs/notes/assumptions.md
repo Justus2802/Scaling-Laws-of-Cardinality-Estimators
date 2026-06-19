@@ -142,6 +142,28 @@ Only `lcc.vs` entries with `is_literal == False` are eligible as sources or targ
 ### Bootstrap SE is configurable via `n_bootstrap`
 `block_f` accepts `n_bootstrap: int = _N_BOOTSTRAP` (default 999). `scipy.stats.bootstrap` is called with `n_resamples=n_bootstrap` and a fixed `rng=42` for reproducibility. Warnings from scipy (e.g. the BCa degeneracy warning that fires when all sampled distances are equal) are suppressed with `warnings.catch_warnings` — consistent with how Block B silences powerlaw output. When `finite` has fewer than 2 values, the SE is set to NaN without calling bootstrap.
 
+## Block E — Motif counting
+
+### 5-node graphlets: exact enumeration with degree-based fallback
+`HybridMotifCounter.count_motifsk(g, 5)` calls `ESCAPEFiveNodeCounter.count_motifs5`, which
+enumerates all 5-node connected induced subgraphs exactly by DFS-expanding connected partial
+sets anchored at the minimum-index node (each 5-set visited once, no sampling).  Inspired by
+ESCAPE (Pinar, Seshadhri, Vishal — WWW 2017) but implemented entirely in Python via adjacency
+set iteration rather than the algebraic matrix identity approach in the paper.
+
+When the graph's maximum undirected degree exceeds `ESCAPEFiveNodeCounter.MAX_DEGREE_EXACT` (50),
+the hub nodes make BFS expansion exponentially expensive; the counter raises `RuntimeError` and
+`HybridMotifCounter` automatically falls back to the existing colour-coding (CC) sampler.  This
+covers all KGs in `data/graphs/` whose undirected simplification has max-degree ≤ 50 after
+Block E's `_LARGE_N` subgraph sampling.
+
+### 6-node graphlets: CC sampling (unchanged)
+`count_motifsk(g, 6)` always uses the CC sampler (Bressan et al. 2021).  MOTIVO/ESCAPE for
+k = 6 would require compiling external C++ binaries; CC at 100k samples is adequate for the
+path-template entropy statistics that are the primary Block E consumer for k = 6.
+
+---
+
 ## Generator (`src/generator.py`)
 
 ### Deterministic graph sizes
