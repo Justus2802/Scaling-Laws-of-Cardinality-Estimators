@@ -181,6 +181,8 @@ def main():
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--rewire-budget", type=int, default=5_000)
+    parser.add_argument("--convergence-log", default=None,
+                        help="Write Stage 3 convergence CSV to this path.")
     args = parser.parse_args()
 
     # ── Step 1: obtain the target signature ──────────────────────────────────
@@ -206,8 +208,10 @@ def main():
     g_synth = Generator(target_sig).sample(
         seed=args.seed,
         rewire_budget=args.rewire_budget,
+        convergence_log=args.convergence_log,
     )
     print(f"  {g_synth.vcount():,} nodes  {g_synth.ecount():,} edges")
+    print(f"  best loss {g_synth['stage3_best_loss']:.6f} reached at accepted swap {g_synth['stage3_best_accepted']}")
 
     # ── Step 3: save synthetic graph ─────────────────────────────────────────
     save_kg(g_synth, out_path)
@@ -219,8 +223,8 @@ def main():
     sb = BlockB().calculate(g_synth)
     sc = BlockC().calculate(g_synth)
     sd = BlockD().calculate(g_synth)
-    se = BlockE().calculate(g_synth)
-    sf = BlockF().calculate(g_synth)
+    se = BlockE().calculate(g_synth, skip_stars_and_paths=True)
+    sf = BlockF().calculate(g_synth, skip_shortest_paths=True)
 
     # ── Step 5: full reduced-signature comparison ────────────────────────────
     # Every feature of every block (the complete reduced signature vector), via each

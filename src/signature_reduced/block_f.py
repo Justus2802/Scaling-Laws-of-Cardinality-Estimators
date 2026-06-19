@@ -71,6 +71,7 @@ class BlockF(SignatureBlock):
         g: igraph.Graph,
         sample_k: int = _SAMPLE_K,
         n_bootstrap: int = _N_BOOTSTRAP,
+        skip_shortest_paths: bool = False,
     ) -> "BlockF":
         """Compute reduced Block F (connectivity).
 
@@ -78,8 +79,14 @@ class BlockF(SignatureBlock):
         shortest-path lengths, average-local clustering and degree assortativity,
         then fits a skew-normal to the sampled finite path lengths instead of
         storing a mean ± SE.
+
+        Parameters
+        ----------
+        skip_shortest_paths : bool
+            When True, skip path-length sampling; shortest_path_skew will be NaN.
         """
-        orig = _OrigBlockF().calculate(g, sample_k=sample_k, n_bootstrap=n_bootstrap)
+        orig = _OrigBlockF().calculate(g, sample_k=sample_k, n_bootstrap=n_bootstrap,
+                                       skip_shortest_paths=skip_shortest_paths)
         self._num_components = orig.num_components
         self._largest_component_fraction = orig.largest_component_fraction
         self._clustering_coefficient = orig.clustering_coefficient

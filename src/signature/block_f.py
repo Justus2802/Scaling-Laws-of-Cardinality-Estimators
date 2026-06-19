@@ -67,6 +67,7 @@ class BlockF(SignatureBlock):
         g: igraph.Graph,
         sample_k: int = _SAMPLE_K,
         n_bootstrap: int = _N_BOOTSTRAP,
+        skip_shortest_paths: bool = False,
     ) -> "BlockF":
         """Compute Block F (connectivity) of the graph signature.
 
@@ -79,6 +80,12 @@ class BlockF(SignatureBlock):
 
         Clustering and assortativity both use the undirected simplification of g
         (same pattern as Block E).
+
+        Parameters
+        ----------
+        skip_shortest_paths : bool
+            When True, skip the path-length sampling. Clustering coefficient,
+            assortativity and component stats are still computed.
         """
         if g.vcount() == 0:
             self._num_components = 0
@@ -101,43 +108,47 @@ class BlockF(SignatureBlock):
         )
 
         # --- Sampled avg shortest-path length ---
-        non_lit: list[int] = [v.index for v in lcc.vs if not v["is_literal"]]
         avg_sp = float("nan")
         sp_se = float("nan")
-        if len(non_lit) >= 2:
-            n_samples: int = 10 ** sample_k
-            rng = np.random.default_rng(42)
-            src_idx = rng.choice(len(non_lit), size=n_samples, replace=True)
-            tgt_idx = rng.choice(len(non_lit), size=n_samples, replace=True)
-            srcs: list[int] = [non_lit[i] for i in src_idx]
-            tgts: list[int] = [non_lit[i] for i in tgt_idx]
+        if skip_shortest_paths:
+            log.info("Block F: skipping shortest-path sampling.")
+            self._pair_dists_finite = np.array([], dtype=float)
+        else:
+            non_lit: list[int] = [v.index for v in lcc.vs if not v["is_literal"]]
+            if len(non_lit) >= 2:
+                n_samples: int = 10 ** sample_k
+                rng = np.random.default_rng(42)
+                src_idx = rng.choice(len(non_lit), size=n_samples, replace=True)
+                tgt_idx = rng.choice(len(non_lit), size=n_samples, replace=True)
+                srcs: list[int] = [non_lit[i] for i in src_idx]
+                tgts: list[int] = [non_lit[i] for i in tgt_idx]
 
-            unique_srcs: list[int] = list(dict.fromkeys(srcs))
-            unique_tgts: list[int] = list(dict.fromkeys(tgts))
-            mat = np.array(
-                lcc.distances(source=unique_srcs, target=unique_tgts, mode="all"),
-                dtype=float,
-            )
-            src_pos: dict[int, int] = {v: i for i, v in enumerate(unique_srcs)}
-            tgt_pos: dict[int, int] = {v: i for i, v in enumerate(unique_tgts)}
-            pair_dists = np.array(
-                [mat[src_pos[s], tgt_pos[t]] for s, t in zip(srcs, tgts)],
-                dtype=float,
-            )
-            pair_dists[pair_dists == np.inf] = np.nan
-            finite = pair_dists[pair_dists > 0]  # exclude self-pairs (distance == 0)
-            self._pair_dists_finite = finite
-            if finite.size >= 2:
-                avg_sp = float(np.mean(finite))
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    res = scipy.stats.bootstrap(
-                        (finite,), np.mean, n_resamples=n_bootstrap, rng=42
-                    )
-                sp_se = float(res.standard_error)
-            elif finite.size == 1:
-                avg_sp = float(finite[0])
-                sp_se = float("nan")
+                unique_srcs: list[int] = list(dict.fromkeys(srcs))
+                unique_tgts: list[int] = list(dict.fromkeys(tgts))
+                mat = np.array(
+                    lcc.distances(source=unique_srcs, target=unique_tgts, mode="all"),
+                    dtype=float,
+                )
+                src_pos: dict[int, int] = {v: i for i, v in enumerate(unique_srcs)}
+                tgt_pos: dict[int, int] = {v: i for i, v in enumerate(unique_tgts)}
+                pair_dists = np.array(
+                    [mat[src_pos[s], tgt_pos[t]] for s, t in zip(srcs, tgts)],
+                    dtype=float,
+                )
+                pair_dists[pair_dists == np.inf] = np.nan
+                finite = pair_dists[pair_dists > 0]  # exclude self-pairs (distance == 0)
+                self._pair_dists_finite = finite
+                if finite.size >= 2:
+                    avg_sp = float(np.mean(finite))
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        res = scipy.stats.bootstrap(
+                            (finite,), np.mean, n_resamples=n_bootstrap, rng=42
+                        )
+                    sp_se = float(res.standard_error)
+                elif finite.size == 1:
+                    avg_sp = float(finite[0])
+                    sp_se = float("nan")
 
         self._avg_shortest_path_length = avg_sp
         self._avg_shortest_path_length_se = sp_se

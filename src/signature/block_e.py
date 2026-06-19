@@ -98,7 +98,12 @@ class BlockE(SignatureBlock):
     def tree_template_entropy(self) -> float:
         return self._require("tree_template_entropy", self._tree_template_entropy)
 
-    def calculate(self, g: igraph.Graph, sample_budget: int = _SAMPLE_BUDGET) -> "BlockE":
+    def calculate(
+        self,
+        g: igraph.Graph,
+        sample_budget: int = _SAMPLE_BUDGET,
+        skip_stars_and_paths: bool = False,
+    ) -> "BlockE":
         """Compute Block E (motif distribution) of the graph signature.
 
         Exact counts for 3- and 4-node motifs on the undirected simplification.
@@ -106,6 +111,12 @@ class BlockE(SignatureBlock):
         For large graphs (n >= _LARGE_N), 4-node and 5/6-cycle counts are
         estimated via color coding (Bressan et al. 2021) on the full graph.
         The CC DP scales with m (edges), not n^k, so no subgraph sampling needed.
+
+        Parameters
+        ----------
+        skip_stars_and_paths : bool
+            When True, skip the star, 5/6-cycle, path-template and tree-template
+            computations. Useful when only triangle/4-node motif counts are needed.
         """
         g_und = g.as_undirected(combine_edges="first").simplify()
         n = g_und.vcount()
@@ -159,72 +170,82 @@ class BlockE(SignatureBlock):
         log.info("Block E: computed k4_count (%d)", self._k4_count)
         log.info("Block E: computed tailed_triangle_count (%d)", self._tailed_triangle_count)
 
-        log.info("Block E: computing stars (CC star treelet, k=2..10, %d samples)…", _n_samples)
-        self._star_counts = self._cc_run_stars(g_und, _n_samples, _rng, _A=_A, _adj=_adj)
-        log.info(
-            "Block E: computed star_counts (k=2..10 totals=%s)",
-            [self._star_counts.get(k, 0) for k in range(2, 11)],
-        )
+        if skip_stars_and_paths:
+            log.info("Block E: skipping stars, 5/6-cycle, path templates, tree templates.")
+            self._star_counts = {k: 0 for k in range(2, 11)}
+            self._five_cycle_count = 0
+            self._six_cycle_count = 0
+            self._path_template_zipf = {}
+            self._path_template_entropy = {}
+            self._tree_template_zipf = float("nan")
+            self._tree_template_entropy = float("nan")
+        else:
+            log.info("Block E: computing stars (CC star treelet, k=2..10, %d samples)…", _n_samples)
+            self._star_counts = self._cc_run_stars(g_und, _n_samples, _rng, _A=_A, _adj=_adj)
+            log.info(
+                "Block E: computed star_counts (k=2..10 totals=%s)",
+                [self._star_counts.get(k, 0) for k in range(2, 11)],
+            )
 
-        log.info("Block E: computing 5-cycle (CC k=5, %d samples)…", _n_samples)
-        motifs5 = BlockE._cc_run(g_und, 5, _n_samples, _rng, _A=_A, _adj=_adj)
-        self._five_cycle_count = motifs5.get((2, 2, 2, 2, 2), 0)
-        log.info("Block E: computed five_cycle_count (~%d)", self._five_cycle_count)
+            log.info("Block E: computing 5-cycle (CC k=5, %d samples)…", _n_samples)
+            motifs5 = BlockE._cc_run(g_und, 5, _n_samples, _rng, _A=_A, _adj=_adj)
+            self._five_cycle_count = motifs5.get((2, 2, 2, 2, 2), 0)
+            log.info("Block E: computed five_cycle_count (~%d)", self._five_cycle_count)
 
-        log.info("Block E: computing 6-cycle (CC k=6, %d samples)…", _n_samples)
-        motifs6 = BlockE._cc_run(g_und, 6, _n_samples, _rng, _A=_A, _adj=_adj)
-        self._six_cycle_count = motifs6.get((2, 2, 2, 2, 2, 2), 0)
-        log.info("Block E: computed six_cycle_count (~%d)", self._six_cycle_count)
+            log.info("Block E: computing 6-cycle (CC k=6, %d samples)…", _n_samples)
+            motifs6 = BlockE._cc_run(g_und, 6, _n_samples, _rng, _A=_A, _adj=_adj)
+            self._six_cycle_count = motifs6.get((2, 2, 2, 2, 2, 2), 0)
+            log.info("Block E: computed six_cycle_count (~%d)", self._six_cycle_count)
 
-        # Path templates: for each k, compute Zipf + entropy of the CC graphlet-type
-        # distribution at that size.  k=2..6 always run.  k=7..10 are run only when
-        # the DP fits in ~1 GB: n × 2^k × k × 4 bytes ≤ 1 GB → n ≤ 1e9 / (k×2^k×4).
-        log.info("Block E: computing path templates (color coding k=2..10)…")
-        motifs2 = BlockE._cc_run(g_und, 2, _n_samples, _rng, _A=_A, _adj=_adj)
-        _cc_by_k = {2: motifs2, 3: motifs3, 4: motifs4, 5: motifs5, 6: motifs6}
-        for _k in range(7, 11):
-            _dp_bytes = n * (1 << _k) * _k * 4
-            if _dp_bytes <= 1_000_000_000:
-                log.info("Block E: computing path template k=%d (color coding)…", _k)
-                _cc_by_k[_k] = BlockE._cc_run(g_und, _k, _n_samples, _rng, _A=_A, _adj=_adj)
-            else:
-                log.info(
-                    "Block E: skipping path template k=%d (DP would need %.1f GB > 1 GB limit)",
-                    _k, _dp_bytes / 1e9,
-                )
+            # Path templates: for each k, compute Zipf + entropy of the CC graphlet-type
+            # distribution at that size.  k=2..6 always run.  k=7..10 are run only when
+            # the DP fits in ~1 GB: n × 2^k × k × 4 bytes ≤ 1 GB → n ≤ 1e9 / (k×2^k×4).
+            log.info("Block E: computing path templates (color coding k=2..10)…")
+            motifs2 = BlockE._cc_run(g_und, 2, _n_samples, _rng, _A=_A, _adj=_adj)
+            _cc_by_k = {2: motifs2, 3: motifs3, 4: motifs4, 5: motifs5, 6: motifs6}
+            for _k in range(7, 11):
+                _dp_bytes = n * (1 << _k) * _k * 4
+                if _dp_bytes <= 1_000_000_000:
+                    log.info("Block E: computing path template k=%d (color coding)…", _k)
+                    _cc_by_k[_k] = BlockE._cc_run(g_und, _k, _n_samples, _rng, _A=_A, _adj=_adj)
+                else:
+                    log.info(
+                        "Block E: skipping path template k=%d (DP would need %.1f GB > 1 GB limit)",
+                        _k, _dp_bytes / 1e9,
+                    )
 
-        self._path_template_zipf    = {}
-        self._path_template_entropy = {}
-        for _k in range(2, 11):
-            if _k in _cc_by_k:
-                _z, _e = BlockE._template_stats(_cc_by_k[_k])
-            else:
-                _z, _e = float("nan"), float("nan")
-            self._path_template_zipf[_k]    = _z
-            self._path_template_entropy[_k] = _e
-        log.info(
-            "Block E: computed path_template_zipf (k=2..10 alphas=%s)",
-            [round(self._path_template_zipf.get(k, float("nan")), 4) for k in range(2, 11)],
-        )
-        log.info(
-            "Block E: computed path_template_entropy (k=2..10 entropies=%s)",
-            [round(self._path_template_entropy.get(k, float("nan")), 4) for k in range(2, 11)],
-        )
+            self._path_template_zipf    = {}
+            self._path_template_entropy = {}
+            for _k in range(2, 11):
+                if _k in _cc_by_k:
+                    _z, _e = BlockE._template_stats(_cc_by_k[_k])
+                else:
+                    _z, _e = float("nan"), float("nan")
+                self._path_template_zipf[_k]    = _z
+                self._path_template_entropy[_k] = _e
+            log.info(
+                "Block E: computed path_template_zipf (k=2..10 alphas=%s)",
+                [round(self._path_template_zipf.get(k, float("nan")), 4) for k in range(2, 11)],
+            )
+            log.info(
+                "Block E: computed path_template_entropy (k=2..10 entropies=%s)",
+                [round(self._path_template_entropy.get(k, float("nan")), 4) for k in range(2, 11)],
+            )
 
-        # Tree templates: Zipf + entropy of how total motif counts scale across k.
-        # Using total-count-per-k (rather than per-type) avoids NaN on small graphs
-        # where CC returns only 1-2 distinct graphlet types.
-        log.info("Block E: computing tree templates (CC total counts per k)…")
-        _totals_by_k: dict[int, int] = {
-            _k: sum(_cc_by_k[_k].values())
-            for _k in _cc_by_k
-            if sum(_cc_by_k[_k].values()) > 0
-        }
-        self._tree_template_zipf, self._tree_template_entropy = BlockE._template_stats(_totals_by_k)
-        log.info(
-            "Block E: computed tree_template stats (zipf_alpha=%.4f, entropy=%.4f)",
-            self._tree_template_zipf, self._tree_template_entropy,
-        )
+            # Tree templates: Zipf + entropy of how total motif counts scale across k.
+            # Using total-count-per-k (rather than per-type) avoids NaN on small graphs
+            # where CC returns only 1-2 distinct graphlet types.
+            log.info("Block E: computing tree templates (CC total counts per k)…")
+            _totals_by_k: dict[int, int] = {
+                _k: sum(_cc_by_k[_k].values())
+                for _k in _cc_by_k
+                if sum(_cc_by_k[_k].values()) > 0
+            }
+            self._tree_template_zipf, self._tree_template_entropy = BlockE._template_stats(_totals_by_k)
+            log.info(
+                "Block E: computed tree_template stats (zipf_alpha=%.4f, entropy=%.4f)",
+                self._tree_template_zipf, self._tree_template_entropy,
+            )
 
         return self
 

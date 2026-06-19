@@ -91,15 +91,27 @@ class BlockE(SignatureBlock):
 
     # ── core ──────────────────────────────────────────────────────────────────
 
-    def calculate(self, g: igraph.Graph, sample_budget: int = _SAMPLE_BUDGET) -> "BlockE":
+    def calculate(
+        self,
+        g: igraph.Graph,
+        sample_budget: int = _SAMPLE_BUDGET,
+        skip_stars_and_paths: bool = False,
+    ) -> "BlockE":
         """Compute reduced Block E (motif distribution).
 
         Composes the original Block E to reuse its color-coding motif counts and
         path/tree template statistics, then keeps everything except the
         ``star_count_k*`` features (non-induced stars are exactly ``Σ C(deg, k)``,
         already determined by the Block B degree distribution).
+
+        Parameters
+        ----------
+        skip_stars_and_paths : bool
+            When True, skip star, 5/6-cycle, path-template and tree-template
+            computations. Speeds up analysis when only steered motifs are needed.
         """
-        orig = _OrigBlockE().calculate(g, sample_budget=sample_budget)
+        orig = _OrigBlockE().calculate(g, sample_budget=sample_budget,
+                                       skip_stars_and_paths=skip_stars_and_paths)
         self._triangle_count        = orig.triangle_count
         self._four_cycle_count      = orig.four_cycle_count
         self._five_cycle_count      = orig.five_cycle_count

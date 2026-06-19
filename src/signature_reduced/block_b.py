@@ -21,7 +21,7 @@ import numpy as np
 
 from signature._logging import get_logger
 from signature._block_base import SignatureBlock, _NOT_CALCULATED
-from signature._utils import PowerLawStats, _fit_powerlaw
+from signature._utils import MIN_SAMPLES_FOR_FIT, PowerLawStats, _fit_powerlaw
 from signature.block_b import BlockB as _OrigBlockB
 from ._fits import (
     SkewNormFit,
@@ -161,7 +161,21 @@ class BlockB(SignatureBlock):
         self._obj_alphas = np.array([a for a in obj_alphas if np.isfinite(a)], dtype=float)
         self._subj_alphas = np.array([a for a in subj_alphas if np.isfinite(a)], dtype=float)
         self._obj_alpha_skew = fit_skewnorm(self._obj_alphas, lo=_ALPHA_LO, hi=_ALPHA_HI)
+        if np.isnan(self._obj_alpha_skew.loc):
+            log.warning(
+                "Block B: obj_alpha skew-normal fit skipped — only %d finite per-relation "
+                "alphas (need ≥ %d); obj_mult_alpha metrics will be NaN. "
+                "Most likely cause: most relations have constant object-multiplicity (all 1s), "
+                "so per-relation power-law fits are degenerate.",
+                self._obj_alphas.size, MIN_SAMPLES_FOR_FIT,
+            )
         self._subj_alpha_skew = fit_skewnorm(self._subj_alphas, lo=_ALPHA_LO, hi=_ALPHA_HI)
+        if np.isnan(self._subj_alpha_skew.loc):
+            log.warning(
+                "Block B: subj_alpha skew-normal fit skipped — only %d finite per-relation "
+                "alphas (need ≥ %d); subj_mult_alpha metrics will be NaN.",
+                self._subj_alphas.size, MIN_SAMPLES_FOR_FIT,
+            )
 
         # --- G2b: CS-size→multiplicity offset (OLS slope per side) ---
         obj_cs_sizes: list[int] = []

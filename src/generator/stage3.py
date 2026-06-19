@@ -1,53 +1,50 @@
 """Stage 3 — Maslov-Sneppen rewiring with simulated annealing.
 
 Rewires content edges (never rdf:type edges) using degree-preserving
-double-edge swaps to drive the graph's motif counts and degree assortativity
-toward the Block E / Block F targets.
+double-edge swaps to steer the graph toward Block E / Block F targets:
+
+* triangle_count               — exact, incremental
+* four_cycle / diamond / K4 / tailed-triangle counts  — remeasured every
+  ``remeasure_interval`` accepted swaps via the colour-coding sampler
+* CC_avg (average local clustering coefficient)       — exact, incremental;
+  C(k_v, 2) denominators are invariant under degree-preserving swaps
+* degree_assortativity         — exact, incremental; only the cross-product
+  sum Q changes (degree sequence is invariant)
+
+After the SA walk, the best-seen snapshot is returned and component
+connectivity is restored to match the Block F targets.
 """
 
+import csv
 import math
 from collections import defaultdict
+from pathlib import Path
 
 import igraph
 import numpy as np
+
+from signature.block_e import BlockE as _BlockE
 
 from ._constants import _RDF_TYPE
 from ._logging import get_logger
 from .stage2 import _connect_components
 
 # ── Tuning constants (Stage-3 refinement) — adjust here ─────────────────────────
-MAX_TARGETED_SWAP_PROB = 0.5   # cap on the probability of attempting a triangle-closing swap
+MAX_TARGETED_SWAP_PROB = 0.5  # cap on the probability of attempting a triangle-closing swap
 TEMP_FLOOR = 1e-10             # numerical floor on the SA temperature in the accept test
+# CC absolute errors (~0.03-0.05) are much smaller than normalised triangle/motif
+# terms (~0.3-1.0), so ~5× compensates and gives CC comparable influence in the loss.
+CC_LOSS_WEIGHT = 5.0
+# Samples for the colour-coding 4-node motif estimator used during SA remeasure.
+# Lower than block_e's measurement budget (which scales up to n*20) — steering
+# only needs a rough signal, not a precise count.
+CC4_SAMPLES = 10_000
+# True = O(deg²) incremental delta per swap; False = CC sampler every remeasure_interval swaps.
+USE_INCREMENTAL_MOTIF4 = True
+# Accepted-swap interval between convergence CSV rows; 0 disables logging entirely.
+CONVERGENCE_LOG_INTERVAL: int = 1000
 
 log = get_logger(__name__)
-
-# Lazily discovered mapping: 4-node degree-sequence tuple → igraph motifs_randesu index.
-_MOTIF4_IDX: dict[tuple, int] | None = None
-
-
-def _get_motif4_idx() -> dict[tuple, int]:
-    """Discover igraph's 4-node motif index mapping once via small test graphs."""
-    global _MOTIF4_IDX
-    if _MOTIF4_IDX is not None:
-        return _MOTIF4_IDX
-    test_cases = [
-        ([(0, 1), (1, 2), (2, 3)],                             (1, 1, 2, 2)),  # P4
-        ([(0, 1), (0, 2), (0, 3)],                             (1, 1, 1, 3)),  # star K_{1,3}
-        ([(0, 1), (1, 2), (2, 3), (3, 0)],                     (2, 2, 2, 2)),  # C4
-        ([(0, 1), (1, 2), (2, 0), (0, 3)],                     (1, 2, 2, 3)),  # paw
-        ([(0, 1), (0, 2), (1, 2), (1, 3), (2, 3)],             (2, 2, 3, 3)),  # diamond
-        ([(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)],     (3, 3, 3, 3)),  # K4
-    ]
-    mapping: dict[tuple, int] = {}
-    for edges, deg_seq in test_cases:
-        g_test = igraph.Graph(n=4, edges=edges)
-        counts = g_test.motifs_randesu(size=4)
-        for idx, c in enumerate(counts):
-            if c == 1:
-                mapping[deg_seq] = idx
-                break
-    _MOTIF4_IDX = mapping
-    return mapping
 
 
 def _adj_inc(adj: list, u: int, v: int) -> None:
@@ -66,25 +63,133 @@ def _adj_dec(adj: list, u: int, v: int) -> None:
         del adj[v][u]
 
 
-def _triangle_delta(adj: list, s1: int, o1: int, s2: int, o2: int) -> int:
-    """Compute change in triangle count from swapping o1↔o2 for edges s1→o1, s2→o2.
+def _triangle_node_delta(
+    adj: list, s1: int, o1: int, s2: int, o2: int
+) -> tuple[int, dict[int, int]]:
+    """Compute per-node and aggregate triangle change from swapping o1↔o2.
 
-    Temporarily removes both edges from adj to isolate the common-neighbour
-    calculation, then restores them.  Returns gained_triangles - lost_triangles.
+    For each edge pair removed/added, iterates the common-neighbour set and
+    accumulates Δt_v for every involved node v.  Returns (ΔT, node_deltas)
+    where ΔT = gained − lost triangles (aggregate) and node_deltas maps
+    node → change in its per-node triangle count.
+
+    Same asymptotic cost as the old scalar version — set intersections are
+    already constructed; we just iterate them instead of discarding them.
     """
-    lost1 = len(set(adj[s1]) & set(adj[o1]))
-    lost2 = len(set(adj[s2]) & set(adj[o2]))
+    nd: dict[int, int] = {}
 
+    def _sub(u: int, v: int) -> None:
+        for w in set(adj[u]) & set(adj[v]):
+            nd[u] = nd.get(u, 0) - 1
+            nd[v] = nd.get(v, 0) - 1
+            nd[w] = nd.get(w, 0) - 1
+
+    def _add(u: int, v: int) -> None:
+        for w in set(adj[u]) & set(adj[v]):
+            nd[u] = nd.get(u, 0) + 1
+            nd[v] = nd.get(v, 0) + 1
+            nd[w] = nd.get(w, 0) + 1
+
+    _sub(s1, o1)
+    _sub(s2, o2)
     _adj_dec(adj, s1, o1)
     _adj_dec(adj, s2, o2)
-
-    gained1 = len(set(adj[s1]) & set(adj[o2]))
-    gained2 = len(set(adj[s2]) & set(adj[o1]))
-
+    _add(s1, o2)
+    _add(s2, o1)
     _adj_inc(adj, s1, o1)
     _adj_inc(adj, s2, o2)
 
-    return (gained1 + gained2) - (lost1 + lost2)
+    delta_T = sum(nd.values()) // 3
+    return delta_T, nd
+
+
+_MOTIF4_DS: frozenset = frozenset({(2, 2, 2, 2), (2, 2, 3, 3), (3, 3, 3, 3), (1, 2, 2, 3)})
+
+
+def _count_motifs4_through_edge(adj: list, u: int, v: int) -> dict[tuple, int]:
+    """Count 4-node motif instances containing undirected edge {u, v}.
+
+    The two "extra" nodes of any connected 4-node subgraph containing {u,v}
+    must each lie in N(u)∪N(v).  Iterates unordered pairs from that candidate
+    set, looks up the 5 remaining possible edges in O(1), classifies by sorted
+    degree sequence, and counts matches against the steered motif types.
+    Cost: O((deg_u + deg_v)²).
+    """
+    counts: dict[tuple, int] = {}
+    candidates = list((set(adj[u].keys()) | set(adj[v].keys())) - {u, v})
+    for i in range(len(candidates)):
+        w = candidates[i]
+        for j in range(i + 1, len(candidates)):
+            x = candidates[j]
+            uw = w in adj[u]
+            ux = x in adj[u]
+            vw = w in adj[v]
+            vx = x in adj[v]
+            wx = x in adj[w]
+            dw = uw + vw + wx
+            dx = ux + vx + wx
+            if dw == 0 or dx == 0:
+                continue  # w or x disconnected from the 4-node subgraph
+            du = 1 + uw + ux   # edge {u,v} is always present
+            dv = 1 + vw + vx
+            ds = tuple(sorted((du, dv, dw, dx)))
+            if ds in _MOTIF4_DS:
+                counts[ds] = counts.get(ds, 0) + 1
+    return counts
+
+
+def _motif4_delta(
+    adj: list, s1: int, o1: int, s2: int, o2: int
+) -> dict[tuple, int]:
+    """Compute change in 4-node motif counts from swapping (s1,o1)↔(s2,o2).
+
+    Mirrors _triangle_node_delta: counts motifs through the two removed edges
+    in the current adj, temporarily removes them, counts motifs through the
+    two added edges, then restores adj.  Inclusion-exclusion corrects for
+    4-node subgraphs that span both swapped edges simultaneously.
+    Total cost: O((deg_s1 + deg_o1 + deg_s2 + deg_o2)²).
+    """
+    def _overlap(a: int, b: int, c: int, d: int) -> dict[tuple, int]:
+        """Motifs in the induced subgraph on exactly {a, b, c, d}."""
+        if len({a, b, c, d}) < 4:
+            return {}
+        nodes = [a, b, c, d]
+        degs = [sum(1 for nd2 in nodes if nd2 != nd and nd2 in adj[nd]) for nd in nodes]
+        if min(degs) == 0:
+            return {}
+        ds = tuple(sorted(degs))
+        return {ds: 1} if ds in _MOTIF4_DS else {}
+
+    def _count_pair(ea: tuple, eb: tuple) -> dict[tuple, int]:
+        cu = _count_motifs4_through_edge(adj, *ea)
+        cv = _count_motifs4_through_edge(adj, *eb)
+        ov = _overlap(ea[0], ea[1], eb[0], eb[1])
+        result: dict[tuple, int] = {}
+        for k in set(cu) | set(cv) | set(ov):
+            result[k] = cu.get(k, 0) + cv.get(k, 0) - ov.get(k, 0)
+        return result
+
+    before = _count_pair((s1, o1), (s2, o2))
+
+    _adj_dec(adj, s1, o1)
+    _adj_dec(adj, s2, o2)
+    # Add both new virtual edges so _count_pair sees motifs spanning both simultaneously.
+    # Candidates exclude {u,v} so du=1+... never double-counts the u-v edge.
+    _adj_inc(adj, s1, o2)
+    _adj_inc(adj, s2, o1)
+
+    after = _count_pair((s1, o2), (s2, o1))
+
+    _adj_dec(adj, s1, o2)
+    _adj_dec(adj, s2, o1)
+    _adj_inc(adj, s1, o1)
+    _adj_inc(adj, s2, o2)
+
+    return {
+        k: after.get(k, 0) - before.get(k, 0)
+        for k in set(before) | set(after)
+        if after.get(k, 0) != before.get(k, 0)
+    }
 
 
 def refine(
@@ -95,8 +200,9 @@ def refine(
     budget: int = 10_000,
     initial_temp: float = 1.0,
     cooling_rate: float = 0.999,
-    remeasure_interval: int = 200,
+    remeasure_interval: int = 2000,
     seed: int = 0,
+    convergence_log: "Path | str | None" = None,
 ) -> igraph.Graph:
     """Stage 3: Maslov-Sneppen rewiring + simulated annealing.
 
@@ -104,9 +210,11 @@ def refine(
     double-edge swaps.  The SA objective is a weighted sum of relative errors
     across multiple targets:
 
-    * Triangle count (exact, incremental via _triangle_delta)
+    * Triangle count (exact, incremental via _triangle_node_delta)
+    * Average local clustering coefficient CC_avg (exact, incremental —
+      denominator C(k_v,2) is invariant; per-node Δt_v drives Δ(CC_avg))
     * 4-node motif counts — C4, diamond, K4, paw (remeasured every
-      ``remeasure_interval`` accepted swaps via igraph.motifs_randesu)
+      ``remeasure_interval`` accepted swaps via colour-coding sampler)
     * Degree assortativity (exact, incremental — degree sequence is invariant
       under double-edge swaps, so only the cross-product sum Q changes)
 
@@ -117,7 +225,8 @@ def refine(
     target_e : BlockE
         Block E signature — supplies triangle_count and 4-node motif targets.
     target_f : BlockF, optional
-        Block F signature — supplies degree_assortativity target.
+        Block F signature — supplies degree_assortativity and
+        clustering_coefficient targets.
     budget : int
         Maximum number of rewiring attempts.
     initial_temp : float
@@ -128,6 +237,10 @@ def refine(
         Accepted-swap interval between full 4-node motif remeasurements.
     seed : int
         RNG seed.
+    convergence_log : Path or str, optional
+        If given, write a CSV with per-metric relative errors every
+        ``CONVERGENCE_LOG_INTERVAL`` accepted swaps.  Columns are determined
+        by which targets are active (unsteered motifs produce no columns).
 
     Returns
     -------
@@ -164,8 +277,35 @@ def refine(
     for s, o, _ in content_edge_data:
         _adj_inc(adj, s, o)
 
+    # -------------------------------------- CC_avg state (invariant denominators)
+    # sim_deg[v] = number of *distinct* neighbours (simple undirected graph degree).
+    # This differs from und_deg which counts directed/multi edges; CC_avg uses sim_deg.
+    sim_deg = np.array([len(adj[v]) for v in range(n)], dtype=np.int64)
+    # denom[v] = C(sim_deg[v], 2), floored at 1 to avoid division by zero.
+    denom = np.maximum(sim_deg * (sim_deg - 1) // 2, 1).astype(np.float64)
+
+    # Initialise per-node triangle counts t_node from igraph's local CC:
+    #   t_v = CC_local_v * C(k_v, 2)   (exact for k_v >= 2, 0 for k_v < 2)
+    _und_edges_init: list[tuple[int, int]] = []
+    _seen_und: set[tuple[int, int]] = set()
+    for s, o, _ in content_edge_data:
+        key = (min(s, o), max(s, o))
+        if key not in _seen_und:
+            _seen_und.add(key)
+            _und_edges_init.append(key)
+    _g_init = igraph.Graph(n=n)
+    if _und_edges_init:
+        _g_init.add_edges(_und_edges_init)
+    _cc_local_init = np.array(_g_init.transitivity_local_undirected(mode="zero"), dtype=np.float64)
+    t_node = np.round(_cc_local_init * denom).astype(np.int64)
+
+    target_cc = float(target_f.clustering_coefficient) if target_f is not None else float("nan")
+    use_cc = not math.isnan(target_cc)
+    cc_current = float(np.sum(t_node / denom) / n)
+
     # -------------------------------------------------------- triangle counter
     def _count_triangles() -> int:
+        """Count triangles in the current undirected multi-adjacency ``adj``."""
         total = 0
         for u, nbrs in enumerate(adj):
             for v in nbrs:
@@ -189,7 +329,7 @@ def refine(
             _motif4_targets[deg_seq] = int(val)
 
     def _measure_motifs4() -> dict[tuple, int]:
-        """Rebuild a temporary undirected igraph graph and count 4-node motifs."""
+        """Count 4-node graphlets via the colour-coding sampler (BlockE._cc_run)."""
         edge_set: set[tuple[int, int]] = set()
         und_edges: list[tuple[int, int]] = []
         for s, o, _ in content_edge_data:
@@ -200,13 +340,7 @@ def refine(
         g_tmp = igraph.Graph(n=n)
         if und_edges:
             g_tmp.add_edges(und_edges)
-        idx_map = _get_motif4_idx()
-        raw = g_tmp.motifs_randesu(size=4)
-        result: dict[tuple, int] = {}
-        for ds, idx in idx_map.items():
-            c = raw[idx] if idx < len(raw) else 0
-            result[ds] = 0 if (isinstance(c, float) and math.isnan(c)) else int(c)
-        return result
+        return _BlockE._cc_run(g_tmp, 4, CC4_SAMPLES, rng)
 
     current_motifs4 = _measure_motifs4() if _motif4_targets else {}
 
@@ -226,28 +360,125 @@ def refine(
     Q_deg = float(sum(und_deg[s] * und_deg[o] for s, o, _ in content_edge_data))
 
     def _assort_from_Q(Q: float) -> float:
+        """Newman degree-assortativity from the cross-product sum Q.
+
+        r = (2M·Q − (S/2)²) / (M·T − (S/2)²)
+        where M = edge count, S = Σ_e(d_u+d_v), T = Σ_e(d_u²+d_v²).
+        S and T are invariant; only Q changes with each swap.
+        """
         denom = M_e * T_deg - S_deg ** 2 / 2.0
         if denom == 0.0:
             return 0.0
         return (2.0 * M_e * Q - S_deg ** 2 / 2.0) / denom
 
     # ------------------------------------------------------- loss function
-    def _loss(tri: int, motifs: dict, Q: float) -> float:
+    def _loss(tri: int, motifs: dict, Q: float, cc: float) -> float:
+        """SA objective: sum of relative errors across all active targets.
+
+        Triangle and motif terms are normalised by target value.
+        Assortativity and CC_avg terms are absolute (both already in [−1, 1]
+        and [0, 1] respectively, so no denominator is needed).
+        """
         loss = abs(tri - target_tri) / max(1, target_tri)
         for ds, tgt in _motif4_targets.items():
             loss += abs(motifs.get(ds, 0) - tgt) / tgt
         if use_assort:
             loss += abs(_assort_from_Q(Q) - target_r)
+        if use_cc:
+            loss += CC_LOSS_WEIGHT * abs(cc - target_cc)
         return loss
 
-    current_loss = _loss(current_tri, current_motifs4, Q_deg)
+    current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current)
     best_loss = current_loss
     best_content = list(content_edge_data)
+    best_accepted = 0
+    temp = initial_temp
+    accepted = 0
+
+    # ------------------------------------------------- convergence CSV setup
+    _DS_NAME = {(2, 2, 2, 2): "c4_err", (2, 2, 3, 3): "diamond_err",
+                (3, 3, 3, 3): "k4_err",  (1, 2, 2, 3): "paw_err"}
+    # Block E attribute name → (deg_seq key into _motif4_targets, sig column name)
+    _SIG_ATTRS = [
+        ("triangle_count",       None,            "sig_tri_err"),
+        ("four_cycle_count",     (2, 2, 2, 2),    "sig_c4_err"),
+        ("diamond_count",        (2, 2, 3, 3),    "sig_diamond_err"),
+        ("k4_count",             (3, 3, 3, 3),    "sig_k4_err"),
+        ("tailed_triangle_count",(1, 2, 2, 3),    "sig_paw_err"),
+    ]
+
+    _conv_fields = ["accepted", "loss", "tri_err"]
+    _conv_fields += [_DS_NAME[ds] for ds in _motif4_targets if ds in _DS_NAME]
+    if use_cc:
+        _conv_fields.append("cc_err")
+    if use_assort:
+        _conv_fields.append("assort_err")
+    # sig_ columns: triangle always included; 4-motif only when the target is active
+    _conv_fields.append("sig_tri_err")
+    for attr, ds, col in _SIG_ATTRS[1:]:
+        if ds in _motif4_targets:
+            _conv_fields.append(col)
+
+    _conv_fh = open(convergence_log, "w", newline="") if convergence_log else None  # noqa: SIM115
+    _conv_writer = csv.DictWriter(_conv_fh, fieldnames=_conv_fields) if _conv_fh else None
+    if _conv_writer:
+        _conv_writer.writeheader()
+
+    def _build_und_graph() -> igraph.Graph:
+        """Build a simple undirected igraph.Graph from current content edges."""
+        edge_set: set[tuple[int, int]] = set()
+        und_edges: list[tuple[int, int]] = []
+        for s, o, _ in content_edge_data:
+            key = (min(s, o), max(s, o))
+            if key not in edge_set:
+                edge_set.add(key)
+                und_edges.append(key)
+        g_tmp = igraph.Graph(n=n)
+        if und_edges:
+            g_tmp.add_edges(und_edges)
+        return g_tmp
+
+    def _write_conv_row() -> None:
+        if not _conv_writer:
+            return
+        row: dict = {
+            "accepted": accepted,
+            "loss":     round(current_loss, 6),
+            "tri_err":  round(abs(current_tri - target_tri) / max(1, target_tri), 6),
+        }
+        for ds, name in _DS_NAME.items():
+            if name in _conv_fields:
+                row[name] = round(
+                    abs(current_motifs4.get(ds, 0) - _motif4_targets[ds])
+                    / max(1, _motif4_targets[ds]), 6
+                )
+        if use_cc:
+            row["cc_err"] = round(abs(cc_current - target_cc), 6)
+        if use_assort:
+            row["assort_err"] = round(abs(_assort_from_Q(Q_deg) - target_r), 6)
+
+        # Ground-truth errors via BlockE signature measurement on current graph
+        blk = _BlockE().calculate(_build_und_graph(), skip_stars_and_paths=True)
+        blk_vals = dict(zip(blk.feature_names(), blk.as_vector()))
+        tri_sig = blk_vals.get("triangle_count", 0)
+        row["sig_tri_err"] = round(abs(tri_sig - target_tri) / max(1, target_tri), 6)
+        for attr, ds, col in _SIG_ATTRS[1:]:
+            if col in _conv_fields:
+                sig_val = blk_vals.get(attr, 0)
+                tgt = _motif4_targets[ds]
+                row[col] = round(abs(sig_val - tgt) / max(1, tgt), 6)
+
+        _conv_writer.writerow(row)
+
+    _write_conv_row()  # row 0: baseline before any swap
+
     log.info(
         "Stage 3: refining (seed=%d, budget=%d) — target triangles=%d, motif4 targets=%s, "
-        "assortativity=%s; initial loss=%.4f (triangles=%d)",
+        "assortativity=%s, cc_avg=%s; initial loss=%.4f (triangles=%d, cc_avg=%.4f)",
         seed, budget, target_tri, sorted(_motif4_targets),
-        f"{target_r:.4f}" if use_assort else "off", current_loss, current_tri,
+        f"{target_r:.4f}" if use_assort else "off",
+        f"{target_cc:.4f}" if use_cc else "off",
+        current_loss, current_tri, cc_current,
     )
 
     # -------------------------------------------- triangle-targeting indexes
@@ -293,9 +524,6 @@ def refine(
             return None
         return i1, i2, s1, o1, s2, o2, p1
 
-    temp = initial_temp
-    accepted = 0
-
     for _ in range(budget):
         # Attempt targeted triangle-creating swap when triangles are below target.
         # The probability scales with how large the deficit is (max 50%).
@@ -318,13 +546,20 @@ def refine(
         else:
             i1, i2, s1, o1, s2, o2, p1 = result
 
-        tri_delta = _triangle_delta(adj, s1, o1, s2, o2)
+        tri_delta, node_delta = _triangle_node_delta(adj, s1, o1, s2, o2)
         new_tri = current_tri + tri_delta
+        # CC_avg delta: weighted sum of per-node triangle changes (denom fixed)
+        new_cc = cc_current + sum(dt / denom[v] for v, dt in node_delta.items()) / n
         # Assortativity delta: only Q changes (degrees are invariant)
         dQ = float(und_deg[s1] * und_deg[o2] + und_deg[s2] * und_deg[o1]
                    - und_deg[s1] * und_deg[o1] - und_deg[s2] * und_deg[o2])
         new_Q = Q_deg + dQ
-        new_loss = _loss(new_tri, current_motifs4, new_Q)
+        if USE_INCREMENTAL_MOTIF4 and _motif4_targets:
+            _m4d = _motif4_delta(adj, s1, o1, s2, o2)
+            new_motifs4 = {k: current_motifs4.get(k, 0) + _m4d.get(k, 0) for k in _motif4_targets}
+        else:
+            new_motifs4 = current_motifs4
+        new_loss = _loss(new_tri, new_motifs4, new_Q, new_cc)
 
         if new_loss < current_loss:
             accept = True
@@ -349,22 +584,36 @@ def refine(
 
             current_tri = new_tri
             Q_deg = new_Q
+            for v, dt in node_delta.items():
+                t_node[v] += dt
+            # Recompute from t_node to prevent float drift from accumulated deltas.
+            cc_current = float(np.sum(t_node / denom) / n)
             current_loss = new_loss
             temp *= cooling_rate
             accepted += 1
 
-            # Periodically remeasure 4-node motifs (they have no cheap delta)
-            if _motif4_targets and accepted % remeasure_interval == 0:
+            if USE_INCREMENTAL_MOTIF4 and _motif4_targets:
+                current_motifs4 = new_motifs4
+            elif _motif4_targets and accepted % remeasure_interval == 0:
                 current_motifs4 = _measure_motifs4()
-                current_loss = _loss(current_tri, current_motifs4, Q_deg)
+                current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current)
+
+            if CONVERGENCE_LOG_INTERVAL > 0 and accepted % CONVERGENCE_LOG_INTERVAL == 0:
+                _write_conv_row()
 
             if current_loss < best_loss:
                 best_loss = current_loss
                 best_content = list(content_edge_data)
+                best_accepted = accepted
+
+    if _conv_fh:
+        _conv_fh.close()
 
     log.info(
-        "Stage 3: done — accepted %d/%d swaps, best loss=%.4f, triangles=%d (target %d)",
-        accepted, budget, best_loss, current_tri, target_tri,
+        "Stage 3: done — accepted %d/%d swaps, best loss=%.4f at accepted=%d, "
+        "triangles=%d (target %d), cc_avg=%.4f (target %s)",
+        accepted, budget, best_loss, best_accepted, current_tri, target_tri,
+        cc_current, f"{target_cc:.4f}" if use_cc else "off",
     )
 
     # Re-connect any components that SA swaps may have disconnected
@@ -380,7 +629,11 @@ def refine(
     class _FakeSchema:
         relations = all_preds
 
-    _connect_components(best_content, n, _FakeSchema(), rng, seen_best, in_deg_best)
+    _connect_components(
+        best_content, n, _FakeSchema(), rng, seen_best, in_deg_best,
+        target_nc=int(target_f.num_components) if target_f is not None else 1,
+        target_lcc=float(target_f.largest_component_fraction) if target_f is not None else 1.0,
+    )
 
     # Rebuild igraph from best snapshot, preserving vertex attributes
     all_best = best_content + type_edge_data
@@ -390,5 +643,8 @@ def refine(
     if all_best:
         g_out.add_edges([(s, o) for s, o, _ in all_best])
         g_out.es["predicate"] = [p for _, _, p in all_best]
+
+    g_out["stage3_best_accepted"] = best_accepted
+    g_out["stage3_best_loss"] = round(best_loss, 6)
 
     return g_out

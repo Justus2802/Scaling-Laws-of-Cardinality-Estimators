@@ -34,14 +34,29 @@ class Signature:
     f: "BlockF | None" = None   # optional: enables assortativity targeting in Stage 3
 
     @classmethod
-    def from_graph(cls, g: igraph.Graph) -> "Signature":
+    def from_graph(
+        cls,
+        g: igraph.Graph,
+        skip_stars_and_paths: bool = False,
+        skip_shortest_paths: bool = False,
+    ) -> "Signature":
+        """Measure all six blocks from a graph.
+
+        Parameters
+        ----------
+        skip_stars_and_paths : bool
+            Skip Block E's star, 5/6-cycle, path-template and tree-template
+            computations (speeds up sweep analysis).
+        skip_shortest_paths : bool
+            Skip Block F's shortest-path sampling (speeds up sweep analysis).
+        """
         return cls(
             a=BlockA().calculate(g),
             b=BlockB().calculate(g),
             c=BlockC().calculate(g),
             d=BlockD().calculate(g),
-            e=BlockE().calculate(g),
-            f=BlockF().calculate(g),
+            e=BlockE().calculate(g, skip_stars_and_paths=skip_stars_and_paths),
+            f=BlockF().calculate(g, skip_shortest_paths=skip_shortest_paths),
         )
 
     @classmethod
@@ -75,8 +90,10 @@ class Generator:
         seed: int = 0,
         relation_zipf_exponent: float = 2.0,
         rewire_budget: int = 50_000,
+        remeasure_interval: int = 2000,
         initial_temp: float = 1.0,
         cooling_rate: float = 0.9999,
+        convergence_log: "Path | str | None" = None,
     ) -> igraph.Graph:
         """Generate one synthetic KG from the target signature.
 
@@ -89,8 +106,13 @@ class Generator:
             Passed to Stage 1; controls skewness of relation frequency.
         rewire_budget : int
             Number of rewiring attempts in Stage 3.
+        remeasure_interval : int
+            Accepted-swap interval between full 4-node motif remeasurements in Stage 3.
         initial_temp, cooling_rate : float
             Simulated-annealing parameters for Stage 3.
+        convergence_log : Path or str, optional
+            If given, write per-metric error CSV during Stage 3 rewiring
+            (see ``stage3.CONVERGENCE_LOG_INTERVAL`` for the row interval).
 
         Returns
         -------
@@ -104,6 +126,7 @@ class Generator:
             self.target.c,
             d=self.target.d,
             b=self.target.b,
+            f=self.target.f,
             relation_zipf_exponent=relation_zipf_exponent,
             seed=seed,
         )
@@ -113,9 +136,11 @@ class Generator:
             self.target.e,
             target_f=self.target.f,
             budget=rewire_budget,
+            remeasure_interval=remeasure_interval,
             initial_temp=initial_temp,
             cooling_rate=cooling_rate,
             seed=seed + 2,
+            convergence_log=convergence_log,
         )
         log.info("Generator: done — synthetic KG V=%d, E=%d", g_refined.vcount(), g_refined.ecount())
         return g_refined
