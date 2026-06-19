@@ -7,7 +7,8 @@ from typing import Any
 import igraph
 import matplotlib.pyplot as plt  # type: ignore[import-untyped]
 import numpy as np
-import scipy.sparse
+
+from motif_counter import CCMotifCounter, ExactMotifCounter, HybridMotifCounter, MotifCounter
 
 from ._logging import get_logger
 from ._block_base import SignatureBlock, _NOT_CALCULATED
@@ -18,6 +19,10 @@ _SAMPLE_BUDGET = 100_000  # default walk samples for path/tree templates
 _MAX_K         = 10       # longest path template walk
 _LARGE_N       = 50_000   # above this, sample an induced subgraph for structural counts
 _SAMPLE_N      = 10_000   # seed nodes when n > _LARGE_N (expanded to full neighborhoods)
+
+# Counter used for all motif measurement in BlockE.calculate().
+# HybridMotifCounter: exact for triangles/k=3/k=4, CC sampling for k≥5 and stars.
+MOTIF_COUNTER: MotifCounter = HybridMotifCounter(n_samples=_SAMPLE_BUDGET, seed=1)
 
 
 class BlockE(SignatureBlock):
@@ -142,25 +147,15 @@ class BlockE(SignatureBlock):
             self._tree_template_entropy = float("nan")
             return self
 
-        # Build adjacency structures once and reuse across all CC calls.
-        # Building _adj (n numpy arrays) and _A (sparse matrix) takes O(n+m) and
-        # is otherwise repeated for every k — 4 times in total.
-        _A   = scipy.sparse.csr_matrix(g_und.get_adjacency_sparse()).astype(np.float32)
-        _adj = [np.array(g_und.neighbors(v), dtype=np.int32) for v in range(n)]
-
-        # Triangles: exact via igraph list_triangles() — O(m√m), reliable even on
-        # large sparse graphs where CC misses triangles (too rare to sample).
-        log.info("Block E: computing triangles (exact list_triangles)…")
-        _tris = g_und.list_triangles() if n >= 3 else []
-        self._triangle_count = len(_tris)
+        log.info("Block E: computing triangles…")
+        self._triangle_count = MOTIF_COUNTER.count_triangles(g_und)
         log.info("Block E: computed triangle_count (%d)", self._triangle_count)
 
-        # k=3 CC run for path_template_zipf[3] (triangle count is exact above).
-        log.info("Block E: running CC k=3 for graphlet-type distribution (%d samples)…", _n_samples)
-        motifs3 = BlockE._cc_run(g_und, 3, _n_samples, _rng, _A=_A, _adj=_adj)
+        log.info("Block E: running k=3 graphlet-type distribution (%d samples)…", _n_samples)
+        motifs3 = MOTIF_COUNTER.count_motifs3(g_und)
 
-        log.info("Block E: computing 4-node motifs (CC k=4, %d samples)…", _n_samples)
-        motifs4 = BlockE._cc_run(g_und, 4, _n_samples, _rng, _A=_A, _adj=_adj)
+        log.info("Block E: computing 4-node motifs (%d samples)…", _n_samples)
+        motifs4 = MOTIF_COUNTER.count_motifs4(g_und)
         self._four_cycle_count      = motifs4.get((2, 2, 2, 2), 0)
         self._diamond_count         = motifs4.get((2, 2, 3, 3), 0)
         self._k4_count              = motifs4.get((3, 3, 3, 3), 0)
@@ -180,34 +175,34 @@ class BlockE(SignatureBlock):
             self._tree_template_zipf = float("nan")
             self._tree_template_entropy = float("nan")
         else:
-            log.info("Block E: computing stars (CC star treelet, k=2..10, %d samples)…", _n_samples)
-            self._star_counts = self._cc_run_stars(g_und, _n_samples, _rng, _A=_A, _adj=_adj)
+            log.info("Block E: computing stars (k=2..10)…")
+            self._star_counts = MOTIF_COUNTER.count_stars(g_und)
             log.info(
                 "Block E: computed star_counts (k=2..10 totals=%s)",
                 [self._star_counts.get(k, 0) for k in range(2, 11)],
             )
 
-            log.info("Block E: computing 5-cycle (CC k=5, %d samples)…", _n_samples)
-            motifs5 = BlockE._cc_run(g_und, 5, _n_samples, _rng, _A=_A, _adj=_adj)
+            log.info("Block E: computing 5-cycle (k=5)…")
+            motifs5 = MOTIF_COUNTER.count_motifsk(g_und, 5)
             self._five_cycle_count = motifs5.get((2, 2, 2, 2, 2), 0)
             log.info("Block E: computed five_cycle_count (~%d)", self._five_cycle_count)
 
-            log.info("Block E: computing 6-cycle (CC k=6, %d samples)…", _n_samples)
-            motifs6 = BlockE._cc_run(g_und, 6, _n_samples, _rng, _A=_A, _adj=_adj)
+            log.info("Block E: computing 6-cycle (k=6)…")
+            motifs6 = MOTIF_COUNTER.count_motifsk(g_und, 6)
             self._six_cycle_count = motifs6.get((2, 2, 2, 2, 2, 2), 0)
             log.info("Block E: computed six_cycle_count (~%d)", self._six_cycle_count)
 
-            # Path templates: for each k, compute Zipf + entropy of the CC graphlet-type
+            # Path templates: for each k, compute Zipf + entropy of the graphlet-type
             # distribution at that size.  k=2..6 always run.  k=7..10 are run only when
             # the DP fits in ~1 GB: n × 2^k × k × 4 bytes ≤ 1 GB → n ≤ 1e9 / (k×2^k×4).
-            log.info("Block E: computing path templates (color coding k=2..10)…")
-            motifs2 = BlockE._cc_run(g_und, 2, _n_samples, _rng, _A=_A, _adj=_adj)
+            log.info("Block E: computing path templates (k=2..10)…")
+            motifs2 = MOTIF_COUNTER.count_motifsk(g_und, 2)
             _cc_by_k = {2: motifs2, 3: motifs3, 4: motifs4, 5: motifs5, 6: motifs6}
             for _k in range(7, 11):
                 _dp_bytes = n * (1 << _k) * _k * 4
                 if _dp_bytes <= 1_000_000_000:
-                    log.info("Block E: computing path template k=%d (color coding)…", _k)
-                    _cc_by_k[_k] = BlockE._cc_run(g_und, _k, _n_samples, _rng, _A=_A, _adj=_adj)
+                    log.info("Block E: computing path template k=%d…", _k)
+                    _cc_by_k[_k] = MOTIF_COUNTER.count_motifsk(g_und, _k)
                 else:
                     log.info(
                         "Block E: skipping path template k=%d (DP would need %.1f GB > 1 GB limit)",
@@ -495,392 +490,6 @@ class BlockE(SignatureBlock):
             if pairs:
                 counts[tuple(sorted(pairs))] += 1
         return dict(counts)
-
-    @staticmethod
-    def _cc_run_multi(
-        g_und: igraph.Graph,
-        k: int,
-        n_samples: int,
-        n_colorings: int,
-        rng: np.random.Generator,
-    ) -> dict[tuple[int, ...], int]:
-        """Run _cc_run n_colorings times and return the averaged estimates.
-
-        Each coloring is an independent unbiased estimator; averaging reduces
-        variance by √n_colorings without changing the DP cost (which dominates).
-        The sampling cost O(n_samples × k × avg_deg) is negligible compared to
-        the DP build O(m × 2^k × k), so using more samples per coloring is free.
-        """
-        totals: dict[tuple[int, ...], float] = defaultdict(float)
-        for _ in range(n_colorings):
-            for deg_seq, cnt in BlockE._cc_run(g_und, k, n_samples, rng).items():
-                totals[deg_seq] += cnt
-        return {ds: max(0, int(round(v / n_colorings))) for ds, v in totals.items()}
-
-    @staticmethod
-    def _cc_run(
-        g_und: igraph.Graph,
-        k: int,
-        n_samples: int,
-        rng: np.random.Generator,
-        *,
-        _A: "scipy.sparse.csr_matrix | None" = None,
-        _adj: "list[np.ndarray] | None" = None,
-    ) -> dict[tuple[int, ...], int]:
-        """Color coding estimator for k-node graphlet counts (Bressan et al. 2021).
-
-        Randomly assigns k colors, builds a directed path-treelet DP via sparse
-        matrix products, samples n_samples colorful k-paths by backtracking, and
-        returns {degree_sequence_tuple: estimated_count}.
-
-        Pass pre-built _A (csr_matrix) and _adj (neighbour lists) to avoid
-        rebuilding them for every k — they are identical across all CC calls.
-
-        The σ_H correction (number of directed P_k paths spanning motif H) and
-        the p_k = k!/k^k colorfulness probability are applied so the returned
-        counts estimate the true graphlet frequencies.
-        """
-        # σ_H: number of directed spanning P_k paths for each graphlet type.
-        _SIGMA: dict[tuple[int, ...], int] = {
-            # k=3
-            (2, 2, 2): 6,       # triangle (C3): 3 spanning P3 paths × 2 directions
-            # k=4
-            (1, 1, 2, 2): 2,   # P4 path
-            (2, 2, 2, 2): 8,   # C4
-            (1, 2, 2, 3): 4,   # tailed triangle
-            (2, 2, 3, 3): 8,   # diamond
-            (3, 3, 3, 3): 24,  # K4
-            # k=5
-            (2, 2, 2, 2, 2): 10,  # C5
-            # k=6
-            (2, 2, 2, 2, 2, 2): 12,  # C6
-        }
-        p_k = math.factorial(k) / (k ** k)
-
-        n = g_und.vcount()
-        if n < k:
-            return {}
-
-        # Assign random colors in {0, ..., k-1} to each node.
-        colors = rng.integers(0, k, size=n, dtype=np.int32)
-
-        # Use cached structures if provided; otherwise build them now.
-        n_sets   = 1 << k
-        full_set = n_sets - 1
-        A = _A if _A is not None else scipy.sparse.csr_matrix(
-            g_und.get_adjacency_sparse()
-        ).astype(np.float32)
-
-        # dp[v, S] = number of colorful paths of length |S| ending at v with color set S.
-        dp = np.zeros((n, n_sets), dtype=np.float32)
-        dp[np.arange(n), 1 << colors] = 1.0  # vectorised init — avoids O(n) Python loop
-        dp_levels = [dp]
-
-        for step in range(1, k):
-            dp_next = np.zeros((n, n_sets), dtype=np.float32)
-            for c in range(k):
-                mc = 1 << c
-                # Source sets: size exactly `step`, not containing color c.
-                S_src = np.array(
-                    [S for S in range(n_sets)
-                     if not (S & mc) and bin(S).count('1') == step],
-                    dtype=np.int32,
-                )
-                if len(S_src) == 0:
-                    continue
-                S_dst = S_src | mc
-                # Only nodes with color c can be the new endpoint.
-                node_mask = (colors == c).astype(np.float32)[:, None]
-                dp_next[:, S_dst] += (A @ dp_levels[-1][:, S_src]) * node_mask
-            dp_levels.append(dp_next)
-
-        # Total colorful k-paths (used to scale estimates).
-        t = float(dp_levels[-1][:, full_set].sum())
-        if t == 0:
-            return {}
-
-        # Pre-build neighbor lists for fast sampling.
-        adj = _adj if _adj is not None else [
-            np.array(g_und.neighbors(v), dtype=np.int32) for v in range(n)
-        ]
-
-        # Sampling weights for final level.
-        wfinal = dp_levels[-1][:, full_set].astype(np.float64)
-        wfinal /= wfinal.sum()
-
-        # Pre-sample all leaf nodes at once — rng.choice(n, p=…) is O(n) per call,
-        # so calling it n_samples times in a loop costs O(n × n_samples).
-        v_starts = rng.choice(n, size=n_samples, p=wfinal)
-
-        # ------------------------------------------------------------------
-        # Batched backward reconstruction.
-        # Group samples by (current_node, S_prev) at each level so that
-        # nodes sampled many times (hub nodes with degree 225k) require only
-        # ONE rng.choice(deg, size=count) call instead of count calls.
-        # ------------------------------------------------------------------
-
-        # paths[i] grows from [endpoint] to [endpoint, ..., start]
-        paths_nodes: list[list[int]] = [[int(v)] for v in v_starts]
-        S_arr   = [full_set] * n_samples
-        valid   = [True]     * n_samples
-
-        for bk_level in range(k - 1, 0, -1):
-            groups: dict[tuple[int, int], list[int]] = defaultdict(list)
-            for i in range(n_samples):
-                if not valid[i]:
-                    continue
-                v  = paths_nodes[i][-1]
-                sp = S_arr[i] ^ (1 << int(colors[v]))
-                groups[(v, sp)].append(i)
-
-            for (v, sp), idxs in groups.items():
-                nbrs = adj[v]
-                dv   = len(nbrs)
-                if dv == 0:
-                    for i in idxs: valid[i] = False
-                    continue
-                nw  = dp_levels[bk_level - 1][nbrs, sp].astype(np.float64)
-                tot = nw.sum()
-                if tot == 0:
-                    for i in idxs: valid[i] = False
-                    continue
-                # ONE call regardless of how many samples share this (v, sp):
-                chosen = nbrs[rng.choice(dv, size=len(idxs), p=nw / tot)]
-                for j, i in enumerate(idxs):
-                    paths_nodes[i].append(int(chosen[j]))
-                    S_arr[i] = sp
-
-        # ------------------------------------------------------------------
-        # Pre-build adjacency sets for hub nodes so that path classification
-        # (checking induced-subgraph degrees) is O(k) not O(hub_deg).
-        # ------------------------------------------------------------------
-        _HUB_ADJ_THRESH = 200
-        hub_adj_sets: dict[int, set[int]] = {
-            v: set(adj[v].tolist())
-            for v in range(n)
-            if len(adj[v]) > _HUB_ADJ_THRESH
-        }
-
-        raw_counts: defaultdict[tuple[int, ...], int] = defaultdict(int)
-        n_valid = 0
-
-        for i in range(n_samples):
-            if not valid[i] or len(paths_nodes[i]) != k:
-                continue
-            node_list = paths_nodes[i]
-            node_set  = set(node_list)
-            if len(node_set) != k:
-                continue
-            n_valid += 1
-
-            # Build local adjacency sets once per path node.
-            # Hub nodes reuse the pre-built set; others build a small set.
-            local_adj: dict[int, set[int]] = {
-                v: hub_adj_sets[v] if v in hub_adj_sets else set(adj[v].tolist())
-                for v in node_set
-            }
-            deg_in = tuple(sorted(
-                sum(1 for u in node_set if u != v and u in local_adj[v])
-                for v in node_list
-            ))
-            raw_counts[deg_in] += 1
-
-        if n_valid == 0:
-            return {}
-
-        # Convert raw sample proportions to estimated graphlet counts.
-        result: dict[tuple[int, ...], int] = {}
-        for deg_seq, cnt in raw_counts.items():
-            sigma    = _SIGMA.get(deg_seq, 1)
-            estimated = (cnt / n_valid) * t / sigma / p_k
-            result[deg_seq] = max(0, int(round(estimated)))
-        return result
-
-    @staticmethod
-    def _count_4node_motifs(
-        g_und: igraph.Graph,
-        triangles: list,
-    ) -> tuple[int, int, int, int]:
-        """Count (four_cycle, diamond, k4, tailed_triangle).
-
-        K4 counts use triangle-set-intersection (O(T·d)), not cliques().
-        cliques(min=4,max=4) runs Bron-Kerbosch over all vertices even when
-        the graph is very sparse, costing 40+ s on 100k-node samples.
-
-        k4      — triangle loop: d ∈ N(a)∩N(b)∩N(c), raw÷4
-        diamond — from A²: edge_C − 6·k4
-                  where edge_C = Σ_{edges (u,v)} C(A²[u,v], 2)
-        C4      — from A²: (total_C − edge_C − diamond) / 2
-                  where total_C = Σ_{i<j} C(A²[i,j], 2)
-        tailed  — for each triangle vertex, count nodes adjacent only to
-                  that vertex (exclusive-neighbour set subtraction)
-
-        Identities:
-            total_C = 2·C4 + 2·diamond + 6·K4
-            edge_C  =        diamond   + 6·K4
-            → diamond = edge_C − 6·K4
-            → C4     = (total_C − edge_C − diamond) / 2
-        """
-        n = g_und.vcount()
-
-        # K4 via triangle intersection: for each triangle find the 4th node
-        # adjacent to all three vertices.  Each K4 spans 4 triangles → ÷4.
-        adj = [set(g_und.neighbors(v)) for v in range(n)]
-        k4_raw = 0
-        for a, b, c in triangles:
-            abc  = {a, b, c}
-            all3 = (adj[a] & adj[b] & adj[c]) - abc
-            k4_raw += len(all3)
-        k4 = k4_raw // 4
-
-        # A²: (A²)_{ij} = |N(i) ∩ N(j)|; diagonal = degree
-        A  = scipy.sparse.csr_matrix(g_und.get_adjacency_sparse())
-        A2 = (A @ A).astype(np.float64)
-
-        degrees   = np.array(g_und.degree(), dtype=np.float64)
-        edges_arr = np.array(g_und.get_edgelist())
-        if edges_arr.shape[0] > 0:
-            c_e    = np.asarray(A2[edges_arr[:, 0], edges_arr[:, 1]]).flatten()
-            edge_C = float(np.sum(c_e * (c_e - 1)) / 2.0)
-        else:
-            edge_C = 0.0
-
-        sum_sq  = float(A2.multiply(A2).sum()) - float(np.sum(degrees ** 2))
-        sum_a2  = float(np.sum(degrees * (degrees - 1)))
-        total_C = (sum_sq - sum_a2) / 4.0
-
-        diamond    = max(0, int(round(edge_C - 6.0 * k4)))
-        four_cycle = max(0, int(round((total_C - edge_C - diamond) / 2.0)))
-
-        # Tailed triangle: for each triangle vertex, count nodes adjacent to
-        # that vertex only (not the other two).  Each such node contributes one
-        # tailed-triangle motif, counted exactly once.
-        tailed = 0
-        for a, b, c in triangles:
-            abc = {a, b, c}
-            tailed += len(adj[a] - adj[b] - adj[c] - abc)
-            tailed += len(adj[b] - adj[a] - adj[c] - abc)
-            tailed += len(adj[c] - adj[a] - adj[b] - abc)
-
-        return four_cycle, diamond, k4, tailed
-
-    @staticmethod
-    def _cc_run_stars(
-        g_und: igraph.Graph,
-        n_samples: int,
-        rng: np.random.Generator,
-        *,
-        _A: "scipy.sparse.csr_matrix | None" = None,
-        _adj: "list[np.ndarray] | None" = None,
-    ) -> dict[int, int]:
-        """Color coding estimator for induced k-star counts, k=2..10.
-
-        A k-star = one center connected to k leaves with NO edges between leaves.
-
-        Star treelet DP (one run per k):
-          1. Assign k+1 random colors.
-          2. color_hist[v,c] = # neighbours of v with color c  (sparse mat-mul).
-          3. dp_star[v] = Π_{c ≠ color[v]} color_hist[v,c]
-             (# colourful star choices centred at v).
-          4. Sample n_samples centres ∝ dp_star; for each centre pick one
-             neighbour per non-own colour.
-          5. Classify the induced subgraph: accept as a k-star only if all
-             leaves have internal degree 1 (no leaf-leaf edges).
-          6. Estimate: ĝ = (raw_star/n_valid) × t / σ / p_{k+1}
-             where σ=1 (only the centre can root the star spanning tree)
-             and p_{k+1} = (k+1)!/(k+1)^{k+1}.
-        """
-        n = g_und.vcount()
-        if n == 0:
-            return {k: 0 for k in range(2, 11)}
-
-        A_csr = _A   if _A   is not None else scipy.sparse.csr_matrix(
-            g_und.get_adjacency_sparse()
-        )
-        adj   = _adj if _adj is not None else [
-            np.array(g_und.neighbors(v), dtype=np.int32) for v in range(n)
-        ]
-
-        results: dict[int, int] = {}
-
-        for k in range(2, 11):
-            K   = k + 1                              # total nodes (centre + k leaves)
-            p_K = math.factorial(K) / (K ** K)
-
-            colors = rng.integers(0, K, size=n, dtype=np.int32)
-
-            # color_hist[v, c] = # neighbours of v with color c via sparse mul.
-            one_hot            = np.zeros((n, K), dtype=np.float32)
-            one_hot[np.arange(n), colors] = 1.0
-            color_hist         = (A_csr @ one_hot).astype(np.float64)  # (n, K)
-
-            # dp_star[v] = Π_{c ≠ colors[v]} color_hist[v, c]
-            # Vectorised: for each colour c, multiply into dp_star only for
-            # nodes whose own colour is NOT c.
-            dp_star = np.ones(n, dtype=np.float64)
-            for c in range(K):
-                mask = (colors != c)
-                dp_star[mask] *= color_hist[mask, c]
-
-            t = float(dp_star.sum())
-            if t == 0:
-                results[k] = 0
-                continue
-
-            # Pre-sample all centres at once.
-            w       = dp_star / t
-            centres = rng.choice(n, size=n_samples, p=w)
-
-            # Precompute neighbours-by-colour for every unique centre
-            # (avoids repeating the O(deg) filter for high-degree hubs).
-            unique_centres = np.unique(centres)
-            adj_by_color: dict[int, dict[int, np.ndarray]] = {}
-            for v in unique_centres:
-                v = int(v)
-                nb = adj[v]
-                adj_by_color[v] = {
-                    c: nb[colors[nb] == c] for c in range(K)
-                } if len(nb) > 0 else {c: np.array([], dtype=np.int32) for c in range(K)}
-
-            raw_star = 0
-            n_valid  = 0
-
-            for centre in centres:
-                v  = int(centre)
-                c0 = int(colors[v])
-                leaf_nodes = [v]
-                ok = True
-
-                for c in range(K):
-                    if c == c0:
-                        continue
-                    cands = adj_by_color[v][c]
-                    if len(cands) == 0:
-                        ok = False
-                        break
-                    leaf_nodes.append(int(cands[rng.integers(len(cands))]))
-
-                if not ok or len(set(leaf_nodes)) != K:
-                    continue
-                n_valid += 1
-
-                # Accept as induced k-star only if no leaf is connected to another leaf.
-                leaf_set = set(leaf_nodes)
-                leaves   = leaf_nodes[1:]
-                deg_in   = sorted(
-                    int(np.sum(np.isin(adj[u], list(leaf_set))))
-                    for u in leaf_nodes
-                )
-                if deg_in == [1] * k + [k]:
-                    raw_star += 1
-
-            if n_valid == 0:
-                results[k] = 0
-            else:
-                # σ = 1: only the centre can root the star spanning treelet.
-                results[k] = max(0, int(round((raw_star / n_valid) * t / p_K)))
-
-        return results
 
     @staticmethod
     def _estimate_k_cycle(

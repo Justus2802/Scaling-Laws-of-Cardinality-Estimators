@@ -23,9 +23,8 @@ from pathlib import Path
 import igraph
 import numpy as np
 
-from signature.block_e import BlockE as _BlockE
-
 from ._constants import _RDF_TYPE
+from motif_counter import ExactMotifCounter, MotifCounter, _motif4_delta  # CCMotifCounter available as swap-in
 from ._logging import get_logger
 from .stage2 import _connect_components
 
@@ -43,6 +42,15 @@ CC4_SAMPLES = 10_000
 USE_INCREMENTAL_MOTIF4 = True
 # Accepted-swap interval between convergence CSV rows; 0 disables logging entirely.
 CONVERGENCE_LOG_INTERVAL: int = 1000
+# Motif counter used for the initial measurement at the start of the SA walk.
+#INITIAL_MOTIF_COUNTER: MotifCounter = CCMotifCounter(n_samples=CC4_SAMPLES, seed=42)
+INITIAL_MOTIF_COUNTER: MotifCounter = ExactMotifCounter()
+
+# Motif counter used for periodic remeasurement every remeasure_interval accepted swaps.
+#REMEASURE_MOTIF_COUNTER: MotifCounter = CCMotifCounter(n_samples=CC4_SAMPLES, seed=43)
+REMEASURE_MOTIF_COUNTER: MotifCounter = ExactMotifCounter()
+
+
 
 log = get_logger(__name__)
 
@@ -101,95 +109,6 @@ def _triangle_node_delta(
 
     delta_T = sum(nd.values()) // 3
     return delta_T, nd
-
-
-_MOTIF4_DS: frozenset = frozenset({(2, 2, 2, 2), (2, 2, 3, 3), (3, 3, 3, 3), (1, 2, 2, 3)})
-
-
-def _count_motifs4_through_edge(adj: list, u: int, v: int) -> dict[tuple, int]:
-    """Count 4-node motif instances containing undirected edge {u, v}.
-
-    The two "extra" nodes of any connected 4-node subgraph containing {u,v}
-    must each lie in N(u)∪N(v).  Iterates unordered pairs from that candidate
-    set, looks up the 5 remaining possible edges in O(1), classifies by sorted
-    degree sequence, and counts matches against the steered motif types.
-    Cost: O((deg_u + deg_v)²).
-    """
-    counts: dict[tuple, int] = {}
-    candidates = list((set(adj[u].keys()) | set(adj[v].keys())) - {u, v})
-    for i in range(len(candidates)):
-        w = candidates[i]
-        for j in range(i + 1, len(candidates)):
-            x = candidates[j]
-            uw = w in adj[u]
-            ux = x in adj[u]
-            vw = w in adj[v]
-            vx = x in adj[v]
-            wx = x in adj[w]
-            dw = uw + vw + wx
-            dx = ux + vx + wx
-            if dw == 0 or dx == 0:
-                continue  # w or x disconnected from the 4-node subgraph
-            du = 1 + uw + ux   # edge {u,v} is always present
-            dv = 1 + vw + vx
-            ds = tuple(sorted((du, dv, dw, dx)))
-            if ds in _MOTIF4_DS:
-                counts[ds] = counts.get(ds, 0) + 1
-    return counts
-
-
-def _motif4_delta(
-    adj: list, s1: int, o1: int, s2: int, o2: int
-) -> dict[tuple, int]:
-    """Compute change in 4-node motif counts from swapping (s1,o1)↔(s2,o2).
-
-    Mirrors _triangle_node_delta: counts motifs through the two removed edges
-    in the current adj, temporarily removes them, counts motifs through the
-    two added edges, then restores adj.  Inclusion-exclusion corrects for
-    4-node subgraphs that span both swapped edges simultaneously.
-    Total cost: O((deg_s1 + deg_o1 + deg_s2 + deg_o2)²).
-    """
-    def _overlap(a: int, b: int, c: int, d: int) -> dict[tuple, int]:
-        """Motifs in the induced subgraph on exactly {a, b, c, d}."""
-        if len({a, b, c, d}) < 4:
-            return {}
-        nodes = [a, b, c, d]
-        degs = [sum(1 for nd2 in nodes if nd2 != nd and nd2 in adj[nd]) for nd in nodes]
-        if min(degs) == 0:
-            return {}
-        ds = tuple(sorted(degs))
-        return {ds: 1} if ds in _MOTIF4_DS else {}
-
-    def _count_pair(ea: tuple, eb: tuple) -> dict[tuple, int]:
-        cu = _count_motifs4_through_edge(adj, *ea)
-        cv = _count_motifs4_through_edge(adj, *eb)
-        ov = _overlap(ea[0], ea[1], eb[0], eb[1])
-        result: dict[tuple, int] = {}
-        for k in set(cu) | set(cv) | set(ov):
-            result[k] = cu.get(k, 0) + cv.get(k, 0) - ov.get(k, 0)
-        return result
-
-    before = _count_pair((s1, o1), (s2, o2))
-
-    _adj_dec(adj, s1, o1)
-    _adj_dec(adj, s2, o2)
-    # Add both new virtual edges so _count_pair sees motifs spanning both simultaneously.
-    # Candidates exclude {u,v} so du=1+... never double-counts the u-v edge.
-    _adj_inc(adj, s1, o2)
-    _adj_inc(adj, s2, o1)
-
-    after = _count_pair((s1, o2), (s2, o1))
-
-    _adj_dec(adj, s1, o2)
-    _adj_dec(adj, s2, o1)
-    _adj_inc(adj, s1, o1)
-    _adj_inc(adj, s2, o2)
-
-    return {
-        k: after.get(k, 0) - before.get(k, 0)
-        for k in set(before) | set(after)
-        if after.get(k, 0) != before.get(k, 0)
-    }
 
 
 def refine(
@@ -328,8 +247,8 @@ def refine(
         if val and val > 0:
             _motif4_targets[deg_seq] = int(val)
 
-    def _measure_motifs4() -> dict[tuple, int]:
-        """Count 4-node graphlets via the colour-coding sampler (BlockE._cc_run)."""
+    def _build_und_graph() -> igraph.Graph:
+        """Build a simple undirected igraph.Graph from current content edges."""
         edge_set: set[tuple[int, int]] = set()
         und_edges: list[tuple[int, int]] = []
         for s, o, _ in content_edge_data:
@@ -340,9 +259,9 @@ def refine(
         g_tmp = igraph.Graph(n=n)
         if und_edges:
             g_tmp.add_edges(und_edges)
-        return _BlockE._cc_run(g_tmp, 4, CC4_SAMPLES, rng)
+        return g_tmp
 
-    current_motifs4 = _measure_motifs4() if _motif4_targets else {}
+    current_motifs4 = INITIAL_MOTIF_COUNTER.count_motifs4(_build_und_graph()) if _motif4_targets else {}
 
     # ------------------------------------------------- assortativity tracking
     # Double-edge swaps preserve degree sequences, so only the cross-product
@@ -424,20 +343,6 @@ def refine(
     if _conv_writer:
         _conv_writer.writeheader()
 
-    def _build_und_graph() -> igraph.Graph:
-        """Build a simple undirected igraph.Graph from current content edges."""
-        edge_set: set[tuple[int, int]] = set()
-        und_edges: list[tuple[int, int]] = []
-        for s, o, _ in content_edge_data:
-            key = (min(s, o), max(s, o))
-            if key not in edge_set:
-                edge_set.add(key)
-                und_edges.append(key)
-        g_tmp = igraph.Graph(n=n)
-        if und_edges:
-            g_tmp.add_edges(und_edges)
-        return g_tmp
-
     def _write_conv_row() -> None:
         if not _conv_writer:
             return
@@ -457,16 +362,16 @@ def refine(
         if use_assort:
             row["assort_err"] = round(abs(_assort_from_Q(Q_deg) - target_r), 6)
 
-        # Ground-truth errors via BlockE signature measurement on current graph
-        blk = _BlockE().calculate(_build_und_graph(), skip_stars_and_paths=True)
-        blk_vals = dict(zip(blk.feature_names(), blk.as_vector()))
-        tri_sig = blk_vals.get("triangle_count", 0)
+        # Ground-truth errors via periodic counter (same strategy as remeasure)
+        _g_sig = _build_und_graph()
+        tri_sig = REMEASURE_MOTIF_COUNTER.count_triangles(_g_sig)
         row["sig_tri_err"] = round(abs(tri_sig - target_tri) / max(1, target_tri), 6)
-        for attr, ds, col in _SIG_ATTRS[1:]:
-            if col in _conv_fields:
-                sig_val = blk_vals.get(attr, 0)
-                tgt = _motif4_targets[ds]
-                row[col] = round(abs(sig_val - tgt) / max(1, tgt), 6)
+        if any(col in _conv_fields for _, _, col in _SIG_ATTRS[1:]):
+            _sig_motifs4 = REMEASURE_MOTIF_COUNTER.count_motifs4(_g_sig)
+            for _, ds, col in _SIG_ATTRS[1:]:
+                if col in _conv_fields:
+                    tgt = _motif4_targets[ds]
+                    row[col] = round(abs(_sig_motifs4.get(ds, 0) - tgt) / max(1, tgt), 6)
 
         _conv_writer.writerow(row)
 
@@ -595,7 +500,7 @@ def refine(
             if USE_INCREMENTAL_MOTIF4 and _motif4_targets:
                 current_motifs4 = new_motifs4
             elif _motif4_targets and accepted % remeasure_interval == 0:
-                current_motifs4 = _measure_motifs4()
+                current_motifs4 = REMEASURE_MOTIF_COUNTER.count_motifs4(_build_und_graph())
                 current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current)
 
             if CONVERGENCE_LOG_INTERVAL > 0 and accepted % CONVERGENCE_LOG_INTERVAL == 0:
