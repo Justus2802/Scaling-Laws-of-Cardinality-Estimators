@@ -26,7 +26,7 @@ import igraph
 import numpy as np
 
 from ._constants import _RDF_TYPE
-from motif_counter import CCMotifCounter, ExactMotifCounter, MotifCounter, _motif4_delta, cc_run
+from motif_counter import CCMotifCounter, ESCAPEFiveNodeCounter, ExactMotifCounter, MotifCounter, _motif4_delta, cc_run
 from ._logging import get_logger
 from .stage2 import _connect_components
 
@@ -272,11 +272,17 @@ def refine(
 
     current_motifs4 = INITIAL_MOTIF_COUNTER.count_motifs4(_build_und_graph()) if _motif4_targets else {}
 
-    # ----------------------------------------- 5/6-cycle targets & RNG for CC
+    # ----------------------------------------- 5/6-cycle targets & counters
     # Degree sequences: C5 = (2,2,2,2,2), C6 = (2,2,2,2,2,2)
     _C5_DS = (2, 2, 2, 2, 2)
     _C6_DS = (2, 2, 2, 2, 2, 2)
+    # CC sampling is unreliable for C5 on graphs with few nodes or sparse cycle
+    # structure: the colorfulness probability p_5 = 5!/5^5 ≈ 3.8% means many
+    # coloring draws produce t=0 and the estimator returns {}. Use the exact
+    # ESCAPEFiveNodeCounter instead (same as Block E does), with CC as fallback
+    # for dense graphs where ESCAPE's degree guard fires.
     _cycle_rng = np.random.default_rng(seed + 7)  # separate RNG so cycle samples don't affect swap stream
+    _escape5_sa = ESCAPEFiveNodeCounter()
 
     _target_c5 = int(getattr(target_e, "five_cycle_count", 0) or 0)
     _target_c6 = int(getattr(target_e, "six_cycle_count", 0) or 0)
@@ -284,14 +290,15 @@ def refine(
     use_c6 = _target_c6 > 0
 
     def _measure_cycles(g_und: igraph.Graph) -> tuple[int, int]:
-        """Estimate 5- and 6-cycle counts via CC sampling."""
+        """Count 5-cycles exactly (ESCAPE, CC fallback for dense) and 6-cycles via CC."""
         c5 = c6 = 0
         if use_c5:
-            res5 = cc_run(g_und, 5, CC_CYCLE_SAMPLES, _cycle_rng)
-            c5 = res5.get(_C5_DS, 0)
+            try:
+                c5 = _escape5_sa.count_motifs5(g_und).get(_C5_DS, 0)
+            except RuntimeError:
+                c5 = cc_run(g_und, 5, CC_CYCLE_SAMPLES, _cycle_rng).get(_C5_DS, 0)
         if use_c6:
-            res6 = cc_run(g_und, 6, CC_CYCLE_SAMPLES, _cycle_rng)
-            c6 = res6.get(_C6_DS, 0)
+            c6 = cc_run(g_und, 6, CC_CYCLE_SAMPLES, _cycle_rng).get(_C6_DS, 0)
         return c5, c6
 
     _g_init_und = _build_und_graph() if (use_c5 or use_c6) else None

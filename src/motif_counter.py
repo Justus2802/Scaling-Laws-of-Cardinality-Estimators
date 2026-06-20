@@ -8,6 +8,7 @@ Public API
 ----------
 cc_run              — colour-coding graphlet estimator (Bressan et al. 2021)
 cc_run_stars        — colour-coding star-treelet estimator
+count_stars_exact   — exact induced k-star counts for k=2..10
 MotifCounter        — abstract base class
 CCMotifCounter      — colour-coding implementation (sampling-based)
 ExactMotifCounter   — exact enumeration for k ≤ 4
@@ -391,6 +392,123 @@ def _motif4_delta(
     }
 
 
+# ── Exact star counter ───────────────────────────────────────────────────────
+
+def count_stars_exact(g: igraph.Graph) -> dict[int, int]:
+    """Count induced k-stars exactly for k=2..10.
+
+    A k-star is a centre node v connected to k leaves with NO edges between
+    the leaves (induced subgraph condition).  For each node v with degree d,
+    the count equals the number of size-k independent sets in N(v).
+
+    Algorithm: for each node v, find the edges within N(v) (the
+    neighbourhood-induced edge set E_v).  If E_v is empty, every k-subset
+    is independent: contribute C(d, k).  Otherwise, count non-independent
+    k-subsets via inclusion-exclusion over E_v:
+
+        stars_k(v) = C(d,k) - Σ_{F⊆E_v, F≠∅} (-1)^{|F|+1} · C(d - |V(F)|, k - |V(F)|)
+
+    Each term corresponds to subsets of edges F; V(F) is the set of
+    endpoints of F.  We enumerate subsets of E_v up to size floor(k/2)
+    (larger subsets can't cover a k-set with k nodes).  E_v is small for
+    sparse KGs so this is fast in practice.
+
+    Hub nodes (degree > HUB_THRESH) enumerate k-subsets directly and test
+    independence rather than inclusion-exclusion, avoiding exponential blow-up
+    on complete neighbourhoods.
+
+    Cost: O(m · Δ + hub_count · Δ^MAX_K / MAX_K!) in the worst case; fast for
+    the sparse neighbourhoods typical of KGs.
+    """
+    HUB_THRESH = 50   # above this degree, switch to direct subset enumeration
+    MAX_K = 10
+
+    n = g.vcount()
+    if n == 0:
+        return {k: 0 for k in range(2, MAX_K + 1)}
+
+    # Build undirected neighbour sets (g should already be a simple graph)
+    nbr: list[set[int]] = [set() for _ in range(n)]
+    for e in g.es:
+        nbr[e.source].add(e.target)
+        nbr[e.target].add(e.source)
+
+    totals = [0] * (MAX_K + 1)
+
+    for v in range(n):
+        nb = nbr[v]
+        d = len(nb)
+        if d < 2:
+            continue
+
+        nb_list = list(nb)
+
+        # Find edges within N(v)
+        inner_edges: list[tuple[int, int]] = []
+        for u in nb_list:
+            for w in nbr[u]:
+                if w in nb and w > u:
+                    inner_edges.append((u, w))
+
+        if not inner_edges:
+            # Pure star — every k-subset is independent
+            for k in range(2, min(d, MAX_K) + 1):
+                totals[k] += math.comb(d, k)
+            continue
+
+        if d > HUB_THRESH:
+            # For high-degree nodes enumerate k-subsets and test independence directly.
+            # Costly only for large k, but MAX_K=10 keeps it tractable when d≤500.
+            nb_arr = nb_list
+            inner_set: set[tuple[int, int]] = set(inner_edges)
+            from itertools import combinations
+            for k in range(2, min(d, MAX_K) + 1):
+                cnt = 0
+                for subset in combinations(nb_arr, k):
+                    ok = True
+                    for i in range(k):
+                        for j in range(i + 1, k):
+                            a, b = subset[i], subset[j]
+                            if (min(a, b), max(a, b)) in inner_set:
+                                ok = False
+                                break
+                        if not ok:
+                            break
+                    if ok:
+                        cnt += 1
+                totals[k] += cnt
+            continue
+
+        # Inclusion-exclusion over subsets of inner_edges.
+        # For each non-empty subset F of E_v: V(F) = endpoints of edges in F.
+        # Contribution to stars_k(v): (-1)^{|F|+1} * C(d - |V(F)|, k - |V(F)|).
+        # We only need subsets up to size floor(k/2) since |V(F)| ≥ 2|F|/… but
+        # iterating all 2^|E_v| subsets is fine for small |E_v| (sparse KGs).
+        ie = len(inner_edges)
+        # delta[k] = correction to subtract from C(d,k)
+        correction = [0] * (MAX_K + 1)
+        for mask in range(1, 1 << ie):
+            verts: set[int] = set()
+            bits = mask
+            sign_exp = 0
+            while bits:
+                idx = (bits & -bits).bit_length() - 1
+                u, w = inner_edges[idx]
+                verts.add(u)
+                verts.add(w)
+                sign_exp += 1
+                bits &= bits - 1
+            s = len(verts)
+            sign = (-1) ** (sign_exp + 1)  # inclusion-exclusion sign
+            for k in range(s, min(d, MAX_K) + 1):
+                correction[k] += sign * math.comb(d - s, k - s)
+
+        for k in range(2, min(d, MAX_K) + 1):
+            totals[k] += math.comb(d, k) - correction[k]
+
+    return {k: totals[k] for k in range(2, MAX_K + 1)}
+
+
 # ── Abstract base ────────────────────────────────────────────────────────────
 
 class MotifCounter(ABC):
@@ -448,7 +566,7 @@ class CCMotifCounter(MotifCounter):
         return cc_run(g, k, self._n_samples, self._rng)
 
     def count_stars(self, g: igraph.Graph) -> dict[int, int]:
-        return cc_run_stars(g, self._n_samples, self._rng)
+        return count_stars_exact(g)
 
 
 class ExactMotifCounter(MotifCounter):
@@ -458,7 +576,7 @@ class ExactMotifCounter(MotifCounter):
     counted by direct enumeration.  Cost is O(m·Δ²) for k=4 where Δ is the
     maximum degree.
 
-    Raises ``NotImplementedError`` for k ≥ 5 and for star counting.
+    Raises ``NotImplementedError`` for k ≥ 5.
     """
 
     def count_triangles(self, g: igraph.Graph) -> int:
@@ -477,9 +595,7 @@ class ExactMotifCounter(MotifCounter):
         )
 
     def count_stars(self, g: igraph.Graph) -> dict[int, int]:
-        raise NotImplementedError(
-            "ExactMotifCounter does not implement star counting; use CCMotifCounter"
-        )
+        return count_stars_exact(g)
 
     def _count_motifs3(self, g: igraph.Graph) -> dict[tuple, int]:
         n = g.vcount()
@@ -631,4 +747,4 @@ class HybridMotifCounter(MotifCounter):
         return cc_run(g, k, self._n_samples, self._rng)
 
     def count_stars(self, g: igraph.Graph) -> dict[int, int]:
-        return cc_run_stars(g, self._n_samples, self._rng)
+        return count_stars_exact(g)
