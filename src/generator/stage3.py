@@ -26,16 +26,36 @@ import igraph
 import numpy as np
 
 from ._constants import _RDF_TYPE
-from motif_counter import CCMotifCounter, ESCAPEFiveNodeCounter, ExactMotifCounter, MotifCounter, _motif4_delta, cc_run
+from motif_counter import ExactMotifCounter, HybridMotifCounter, MotifCounter, _motif4_delta  # CCMotifCounter available as swap-in
 from ._logging import get_logger
 from .stage2 import _connect_components
 
 # ── Tuning constants (Stage-3 refinement) — adjust here ─────────────────────────
 MAX_TARGETED_SWAP_PROB = 0.5  # cap on the probability of attempting a triangle-closing swap
 TEMP_FLOOR = 1e-10             # numerical floor on the SA temperature in the accept test
-# CC absolute errors (~0.03-0.05) are much smaller than normalised triangle/motif
-# terms (~0.3-1.0), so ~5× compensates and gives CC comparable influence in the loss.
-CC_LOSS_WEIGHT = 5.0
+
+# ── Loss function weights — one per component ────────────────────────────────
+# Triangle and motif terms are normalised by target value (relative error in [0,∞]).
+# Assortativity is absolute (r ∈ [−1,1]).  CC_avg is absolute (∈ [0,1]) but its
+# absolute errors (~0.03-0.05) are much smaller than normalised motif terms
+# (~0.3-1.0), so the default weight of 5 gives it comparable influence in the loss.
+LOSS_WEIGHT_TRIANGLES:     float = 1.0
+LOSS_WEIGHT_C4:            float = 1.0  # 4-cycle      (2,2,2,2)
+LOSS_WEIGHT_DIAMOND:       float = 1.0  # diamond      (2,2,3,3)
+LOSS_WEIGHT_K4:            float = 1.0  # complete K4  (3,3,3,3)
+LOSS_WEIGHT_PAW:           float = 0  # paw          (1,2,2,3)
+LOSS_WEIGHT_C5:            float = 0
+LOSS_WEIGHT_C6:            float = 0
+LOSS_WEIGHT_ASSORTATIVITY: float = 1.0
+LOSS_WEIGHT_CC_AVG:        float = 1.0
+
+# Lookup table used by _loss; keeps the function body concise.
+_MOTIF4_WEIGHTS: dict[tuple, float] = {
+    (2, 2, 2, 2): LOSS_WEIGHT_C4,
+    (2, 2, 3, 3): LOSS_WEIGHT_DIAMOND,
+    (3, 3, 3, 3): LOSS_WEIGHT_K4,
+    (1, 2, 2, 3): LOSS_WEIGHT_PAW,
+}
 # Samples for the colour-coding motif estimator used during SA remeasure.
 # Lower than block_e's measurement budget (which scales up to n*20) — steering
 # only needs a rough signal, not a precise count.
@@ -53,8 +73,9 @@ CONVERGENCE_LOG_INTERVAL: int = 1000
 INITIAL_MOTIF_COUNTER: MotifCounter = ExactMotifCounter()
 
 # Motif counter used for periodic remeasurement every remeasure_interval accepted swaps.
+# HybridMotifCounter: exact for k≤4, CC with CC_CYCLE_SAMPLES for k=5/6.
 #REMEASURE_MOTIF_COUNTER: MotifCounter = CCMotifCounter(n_samples=CC4_SAMPLES, seed=43)
-REMEASURE_MOTIF_COUNTER: MotifCounter = ExactMotifCounter()
+REMEASURE_MOTIF_COUNTER: MotifCounter = HybridMotifCounter(n_samples=CC_CYCLE_SAMPLES, seed=43)
 
 
 
@@ -231,31 +252,6 @@ def refine(
     use_cc = not math.isnan(target_cc)
     cc_current = float(np.sum(t_node / denom) / n)
 
-    # -------------------------------------------------------- triangle counter
-    def _count_triangles() -> int:
-        """Count triangles in the current undirected multi-adjacency ``adj``."""
-        total = 0
-        for u, nbrs in enumerate(adj):
-            for v in nbrs:
-                if v > u:
-                    total += len(set(adj[u]) & set(adj[v]))
-        return total // 3
-
-    target_tri = int(target_e.triangle_count)
-    current_tri = _count_triangles()
-
-    # ----------------------------------------- 4-node motif targets & counter
-    _motif4_targets: dict[tuple, int] = {}
-    for deg_seq, attr in [
-        ((2, 2, 2, 2), "four_cycle_count"),
-        ((2, 2, 3, 3), "diamond_count"),
-        ((3, 3, 3, 3), "k4_count"),
-        ((1, 2, 2, 3), "tailed_triangle_count"),
-    ]:
-        val = getattr(target_e, attr, 0)
-        if val and val > 0:
-            _motif4_targets[deg_seq] = int(val)
-
     def _build_und_graph() -> igraph.Graph:
         """Build a simple undirected igraph.Graph from current content edges."""
         edge_set: set[tuple[int, int]] = set()
@@ -270,36 +266,32 @@ def refine(
             g_tmp.add_edges(und_edges)
         return g_tmp
 
+    target_tri = int(target_e.triangle_count)
+    current_tri = INITIAL_MOTIF_COUNTER.count_triangles(_build_und_graph())
+
+    # ----------------------------------------- 4-node motif targets & counter
+    _motif4_targets: dict[tuple, int] = {}
+    for deg_seq, attr in [
+        ((2, 2, 2, 2), "four_cycle_count"),
+        ((2, 2, 3, 3), "diamond_count"),
+        ((3, 3, 3, 3), "k4_count"),
+        ((1, 2, 2, 3), "tailed_triangle_count"),
+    ]:
+        val = getattr(target_e, attr, 0)
+        if val and val > 0:
+            _motif4_targets[deg_seq] = int(val)
+
     current_motifs4 = INITIAL_MOTIF_COUNTER.count_motifs4(_build_und_graph()) if _motif4_targets else {}
 
-    # ----------------------------------------- 5/6-cycle targets & counters
-    # Degree sequences: C5 = (2,2,2,2,2), C6 = (2,2,2,2,2,2)
-    _C5_DS = (2, 2, 2, 2, 2)
-    _C6_DS = (2, 2, 2, 2, 2, 2)
-    # CC sampling is unreliable for C5 on graphs with few nodes or sparse cycle
-    # structure: the colorfulness probability p_5 = 5!/5^5 ≈ 3.8% means many
-    # coloring draws produce t=0 and the estimator returns {}. Use the exact
-    # ESCAPEFiveNodeCounter instead (same as Block E does), with CC as fallback
-    # for dense graphs where ESCAPE's degree guard fires.
-    _cycle_rng = np.random.default_rng(seed + 7)  # separate RNG so cycle samples don't affect swap stream
-    _escape5_sa = ESCAPEFiveNodeCounter()
-
+    # ----------------------------------------- 5/6-cycle targets
     _target_c5 = int(getattr(target_e, "five_cycle_count", 0) or 0)
     _target_c6 = int(getattr(target_e, "six_cycle_count", 0) or 0)
     use_c5 = _target_c5 > 0
     use_c6 = _target_c6 > 0
 
     def _measure_cycles(g_und: igraph.Graph) -> tuple[int, int]:
-        """Count 5-cycles exactly (ESCAPE, CC fallback for dense) and 6-cycles via CC."""
-        c5 = c6 = 0
-        if use_c5:
-            try:
-                c5 = _escape5_sa.count_motifs5(g_und).get(_C5_DS, 0)
-            except RuntimeError:
-                c5 = cc_run(g_und, 5, CC_CYCLE_SAMPLES, _cycle_rng).get(_C5_DS, 0)
-        if use_c6:
-            c6 = cc_run(g_und, 6, CC_CYCLE_SAMPLES, _cycle_rng).get(_C6_DS, 0)
-        return c5, c6
+        """Estimate 5- and 6-cycle counts via the remeasure counter."""
+        return REMEASURE_MOTIF_COUNTER.count_cycles(g_und, k5=use_c5, k6=use_c6)
 
     _g_init_und = _build_und_graph() if (use_c5 or use_c6) else None
     current_c5, current_c6 = _measure_cycles(_g_init_und) if _g_init_und is not None else (0, 0)
@@ -333,24 +325,22 @@ def refine(
 
     # ------------------------------------------------------- loss function
     def _loss(tri: int, motifs: dict, Q: float, cc: float, c5: int, c6: int) -> float:
-        """SA objective: sum of relative errors across all active targets.
+        """SA objective: weighted sum of relative errors across all active targets.
 
-        Triangle and motif terms are normalised by target value.
-        Assortativity and CC_avg terms are absolute (both already in [−1, 1]
-        and [0, 1] respectively, so no denominator is needed).
-        5/6-cycle terms are normalised by target value like 4-node motifs.
+        All terms use |current − target| / |target|.  A floor of 1e-9 guards
+        against division by zero when a target is exactly 0.
         """
-        loss = abs(tri - target_tri) / max(1, target_tri)
+        loss = LOSS_WEIGHT_TRIANGLES * abs(tri - target_tri) / max(1, target_tri)
         for ds, tgt in _motif4_targets.items():
-            loss += abs(motifs.get(ds, 0) - tgt) / tgt
+            loss += _MOTIF4_WEIGHTS.get(ds, 1.0) * abs(motifs.get(ds, 0) - tgt) / tgt
         if use_c5:
-            loss += abs(c5 - _target_c5) / _target_c5
+            loss += LOSS_WEIGHT_C5 * abs(c5 - _target_c5) / _target_c5
         if use_c6:
-            loss += abs(c6 - _target_c6) / _target_c6
+            loss += LOSS_WEIGHT_C6 * abs(c6 - _target_c6) / _target_c6
         if use_assort:
-            loss += abs(_assort_from_Q(Q) - target_r)
+            loss += LOSS_WEIGHT_ASSORTATIVITY * abs(_assort_from_Q(Q) - target_r) / max(1e-9, abs(target_r))
         if use_cc:
-            loss += CC_LOSS_WEIGHT * abs(cc - target_cc)
+            loss += LOSS_WEIGHT_CC_AVG * abs(cc - target_cc) / max(1e-9, target_cc)
         return loss
 
     current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6)
@@ -412,9 +402,9 @@ def refine(
         if use_c6:
             row["c6_err"] = round(abs(current_c6 - _target_c6) / max(1, _target_c6), 6)
         if use_cc:
-            row["cc_err"] = round(abs(cc_current - target_cc), 6)
+            row["cc_err"] = round(abs(cc_current - target_cc) / max(1e-9, target_cc), 6)
         if use_assort:
-            row["assort_err"] = round(abs(_assort_from_Q(Q_deg) - target_r), 6)
+            row["assort_err"] = round(abs(_assort_from_Q(Q_deg) - target_r) / max(1e-9, abs(target_r)), 6)
 
         # Ground-truth errors via periodic counter (same strategy as remeasure)
         _g_sig = _build_und_graph()
@@ -486,7 +476,12 @@ def refine(
             return None
         return i1, i2, s1, o1, s2, o2, p1
 
-    for _ in range(budget):
+    for step in range(budget):
+        if step > 0 and step % 5_000 == 0:
+            log.info(
+                "Stage 3: step %d/%d — loss=%.4f, tri=%d (target %d), accepted=%d",
+                step, budget, current_loss, current_tri, target_tri, accepted,
+            )
         # Attempt targeted triangle-creating swap when triangles are below target.
         # The probability scales with how large the deficit is (max 50%).
         tri_deficit = target_tri - current_tri
