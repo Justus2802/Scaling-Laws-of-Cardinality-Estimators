@@ -209,25 +209,32 @@ class TestMotif4Delta(unittest.TestCase):
             if not a[v][u]: del a[v][u]
         dec(s1,o1); dec(s2,o2); inc(s1,o2); inc(s2,o1)
 
-    def _check_delta(self, n, edges, s1, o1, s2, o2):
+    def _check_delta(self, n, edges, s1, o1, s2, o2, types=None):
         a_before = _adj(n, edges)
         before = self._full_count(a_before)
 
-        delta = _motif4_delta(a_before, s1, o1, s2, o2)
+        kwargs = {} if types is None else {"types": types}
+        delta = _motif4_delta(a_before, s1, o1, s2, o2, **kwargs)
 
         a_after = _adj(n, edges)
         self._apply_swap(a_after, s1, o1, s2, o2)
         after = self._full_count(a_after)
 
+        # When a restricted `types` set is requested, only those types are checked.
         all_keys = set(before) | set(after) | set(delta)
+        if types is not None:
+            all_keys &= types
         for ds in all_keys:
             expected = after.get(ds, 0) - before.get(ds, 0)
             got = delta.get(ds, 0)
             self.assertEqual(
                 got, expected,
-                f"delta mismatch for {ds}: expected {expected}, got {got} "
-                f"(before={before}, after={after})",
+                f"delta mismatch for {ds} (types={types}): expected {expected}, "
+                f"got {got} (before={before}, after={after})",
             )
+        # The restricted delta must never report a type outside `types`.
+        if types is not None:
+            self.assertTrue(set(delta) <= types, f"delta leaked types outside {types}: {delta}")
 
     def test_swap_breaks_c4(self):
         # C4: 0-1-2-3-0, swap (0,1) and (2,3) → path 0-3-2-1 (no c4)
@@ -273,6 +280,34 @@ class TestMotif4Delta(unittest.TestCase):
             if new1 in eset or new2 in eset or new1 == new2:
                 continue
             self._check_delta(n, edges, s1, o1, s2, o2)
+
+    def test_random_fuzz_fast_path(self):
+        # Same fuzz, but request only C4/diamond/K4 (paw excluded) → exercises the
+        # fast O(Δ²) pair-enumeration path; must match brute force for those types.
+        fast_types = frozenset({(2, 2, 2, 2), (2, 2, 3, 3), (3, 3, 3, 3)})
+        rng = np.random.default_rng(13579)
+        for _ in range(300):
+            n = int(rng.integers(6, 11))
+            edges = [
+                (u, v)
+                for u in range(n) for v in range(u + 1, n)
+                if rng.random() < 0.35
+            ]
+            if len(edges) < 2:
+                continue
+            i, j = rng.choice(len(edges), size=2, replace=False)
+            s1, o1 = edges[i]
+            s2, o2 = edges[j]
+            if rng.random() < 0.5:
+                s2, o2 = o2, s2
+            if len({s1, o1, s2, o2}) < 4:
+                continue
+            new1 = (min(s1, o2), max(s1, o2))
+            new2 = (min(s2, o1), max(s2, o1))
+            eset = {(min(a, b), max(a, b)) for a, b in edges}
+            if new1 in eset or new2 in eset or new1 == new2:
+                continue
+            self._check_delta(n, edges, s1, o1, s2, o2, types=fast_types)
 
 
 # ── triangle delta ────────────────────────────────────────────────────────────

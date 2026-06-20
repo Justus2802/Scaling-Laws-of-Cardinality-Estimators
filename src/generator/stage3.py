@@ -45,7 +45,7 @@ LOSS_WEIGHT_TRIANGLES:     float = 1.0
 LOSS_WEIGHT_C4:            float = 1.0  # 4-cycle      (2,2,2,2)
 LOSS_WEIGHT_DIAMOND:       float = 1.0  # diamond      (2,2,3,3)
 LOSS_WEIGHT_K4:            float = 1.0  # complete K4  (3,3,3,3)
-LOSS_WEIGHT_PAW:           float = 0  # paw          (1,2,2,3)
+LOSS_WEIGHT_PAW:           float = 1.0  # paw          (1,2,2,3)
 LOSS_WEIGHT_C5:            float = 0
 LOSS_WEIGHT_C6:            float = 0
 LOSS_WEIGHT_ASSORTATIVITY: float = 1.0
@@ -73,7 +73,7 @@ USE_INCREMENTAL_MOTIF4 = True
 # so it is best left off for high-degree graphs.  Only active when a cycle target is set.
 USE_INCREMENTAL_CYCLES = True
 # Accepted-swap interval between convergence CSV rows; 0 disables logging entirely.
-CONVERGENCE_LOG_INTERVAL: int = 1000
+CONVERGENCE_LOG_INTERVAL: int = 10000
 # Motif counter used for the initial measurement at the start of the SA walk.
 #INITIAL_MOTIF_COUNTER: MotifCounter = CCMotifCounter(n_samples=CC4_SAMPLES, seed=42)
 INITIAL_MOTIF_COUNTER: MotifCounter = HybridMotifCounter()
@@ -233,6 +233,10 @@ def refine(
         val = getattr(target_e, attr, 0)
         if val and val > 0 and _MOTIF4_WEIGHTS.get(deg_seq, 0) > 0:
             _motif4_targets[deg_seq] = int(val)
+
+    # Motif types steered this run — passed to _motif4_delta so it can take the
+    # fast O(Δ²) path (valid when the paw is not among them).
+    _m4_types = frozenset(_motif4_targets)
 
     current_motifs4 = INITIAL_MOTIF_COUNTER.count_motifs4(_build_und_graph()) if _motif4_targets else {}
 
@@ -467,7 +471,7 @@ def refine(
                    - und_deg[s1] * und_deg[o1] - und_deg[s2] * und_deg[o2])
         new_Q = Q_deg + dQ
         if USE_INCREMENTAL_MOTIF4 and _motif4_targets:
-            _m4d = _motif4_delta(adj, s1, o1, s2, o2)
+            _m4d = _motif4_delta(adj, s1, o1, s2, o2, types=_m4_types)
             new_motifs4 = {k: current_motifs4.get(k, 0) + _m4d.get(k, 0) for k in _motif4_targets}
         else:
             new_motifs4 = current_motifs4

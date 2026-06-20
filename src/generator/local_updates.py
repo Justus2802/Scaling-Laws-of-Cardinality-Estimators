@@ -9,7 +9,8 @@ Public API
 _adj_inc                    — increment edge count in adj dict
 _adj_dec                    — decrement edge count in adj dict
 _triangle_node_delta        — Δ(triangles) and per-node Δt_v for one swap
-_motifs4_through_nodes      — {4-set: degree-seq} for motifs touching given anchors
+_classify4                  — motif degree-seq of an induced 4-node subgraph
+_motifs4_through_pairs      — {4-set: degree-seq} for motifs containing swap pairs
 _motif4_delta               — Δ(4-node motif counts) for one swap
 _induced_cycles_through_nodes — set of induced k-cycles touching given anchors
 _cycle_delta                — Δ(induced 5-/6-cycle counts) for one swap
@@ -81,86 +82,99 @@ def _triangle_node_delta(
     return delta_T, nd
 
 
-def _motifs4_through_nodes(adj: list, anchors) -> dict[frozenset, tuple]:
-    """Map each 4-node motif touching an anchor to its sorted degree sequence.
+_PAW_DS: tuple = (1, 2, 2, 3)
+# All four connected 4-node motifs (C4, paw, diamond, K4).
+_MOTIF4_ALL: frozenset[tuple] = frozenset({(2, 2, 2, 2), _PAW_DS, (2, 2, 3, 3), (3, 3, 3, 3)})
 
-    Enumerates connected 4-vertex subsets containing each anchor by repeated
-    neighbour-expansion (every connected subgraph containing a node is reachable
-    by growing from it), then classifies each 4-set by its induced degree
-    sequence, keeping only the four connected motifs (C4, diamond, K4, paw).
-    Returns ``{frozenset(4 vertices): degree_seq}`` (one entry per motif 4-set).
-    Cost: O(Δ³) per anchor.
+
+def _classify4(adj: list, a: int, b: int, w: int, x: int) -> "tuple | None":
+    """Return the motif degree sequence of the induced subgraph on {a,b,w,x}.
+
+    Returns one of (2,2,2,2)/(1,2,2,3)/(2,2,3,3)/(3,3,3,3), or ``None`` when the
+    four nodes do not induce a connected 4-node motif.  Treats ``adj`` keys as a
+    simple graph.
+    """
+    e_ab = b in adj[a]; e_aw = w in adj[a]; e_ax = x in adj[a]
+    e_bw = w in adj[b]; e_bx = x in adj[b]; e_wx = x in adj[w]
+    m = e_ab + e_aw + e_ax + e_bw + e_bx + e_wx
+    if m == 6:
+        return (3, 3, 3, 3)
+    if m == 5:
+        return (2, 2, 3, 3)
+    if m == 4:
+        da = e_ab + e_aw + e_ax; db = e_ab + e_bw + e_bx
+        dw = e_aw + e_bw + e_wx; dx = e_ax + e_bx + e_wx
+        return (2, 2, 2, 2) if min(da, db, dw, dx) == 2 else _PAW_DS
+    return None  # m <= 3: tree/disconnected, not a tracked motif
+
+
+def _motifs4_through_pairs(adj: list, pairs, types: frozenset) -> dict[frozenset, tuple]:
+    """Map each motif 4-set (of a requested type) *containing a given pair* to its
+    degree sequence — keyed by ``frozenset`` of its four vertices.
+
+    For each pair {a,b}, the other two vertices are drawn from ``N(a)∪N(b)``.  This
+    is exact for C4/diamond/K4: every vertex of those motifs lies within one hop of
+    any vertex pair.  The paw is the sole exception — when {a,b} are the two
+    triangle vertices whose common apex carries the pendant, that pendant sits two
+    hops away and is missed.  Those paws are recovered by a separate scan (apex
+    ``p ∈ N(a)∩N(b)``, pendant ``s ∈ N(p)`` with ``s ∉ N(a)∪N(b)``) when the paw is
+    requested, keeping the whole routine O(Δ²) per pair.
     """
     result: dict[frozenset, tuple] = {}
-    for q in set(anchors):
-        seen: set[frozenset] = {frozenset((q,))}
-        stack: list[frozenset] = [frozenset((q,))]
-        while stack:
-            subset = stack.pop()
-            if len(subset) == 4:
-                if subset in result:
+    want_paw = _PAW_DS in types
+    for a, b in pairs:
+        na, nb = adj[a], adj[b]
+        cand = (set(na) | set(nb))
+        cand.discard(a); cand.discard(b)
+        cand = list(cand)
+        for i in range(len(cand)):
+            w = cand[i]
+            for j in range(i + 1, len(cand)):
+                x = cand[j]
+                key = frozenset((a, b, w, x))
+                if key in result:
                     continue
-                # Classify the induced 4-subgraph from its internal edge count
-                # and min degree (avoids sorting a 4-tuple per subset).  A
-                # connected 4-node graph has 3–6 internal edges; only C4/paw
-                # (4 edges), diamond (5) and K4 (6) are tracked motifs.
-                d = [sum(1 for u in subset if u != v and u in adj[v]) for v in subset]
-                m4 = (d[0] + d[1] + d[2] + d[3]) >> 1
-                if m4 == 4:
-                    ds = (2, 2, 2, 2) if min(d) == 2 else (1, 2, 2, 3)
-                elif m4 == 5:
-                    ds = (2, 2, 3, 3)
-                elif m4 == 6:
-                    ds = (3, 3, 3, 3)
-                else:
-                    continue
-                result[subset] = ds
-                continue
-            reach: set[int] = set()
-            for v in subset:
-                reach |= set(adj[v].keys())
-            reach -= subset
-            for v in reach:
-                new = subset | {v}
-                if new not in seen:
-                    seen.add(new)
-                    stack.append(new)
+                ds = _classify4(adj, a, b, w, x)
+                if ds is not None and ds in types:
+                    result[key] = ds
+        # Recover paws whose pendant hangs off the apex of triangle {a,b,p}
+        # (pendant two hops from the {a,b} pair, so missed by the scan above).
+        if want_paw and b in na:
+            for p in set(na) & set(nb):
+                for s in adj[p]:
+                    if s == a or s == b or s in na or s in nb:
+                        continue
+                    key = frozenset((a, b, p, s))
+                    if key not in result:
+                        result[key] = _PAW_DS
     return result
 
 
 def _motif4_delta(
-    adj: list, s1: int, o1: int, s2: int, o2: int
+    adj: list, s1: int, o1: int, s2: int, o2: int, *, types: frozenset = _MOTIF4_ALL
 ) -> dict[tuple, int]:
     """Compute change in 4-node motif counts from swapping (s1,o1)↔(s2,o2).
 
-    Only 4-sets containing a *changed* node pair can change motif type; every
-    such 4-set contains one of the swap endpoints, so it suffices to enumerate
-    motifs touching ``{s1,o1,s2,o2}`` before and after the swap and diff the
-    per-type counts.  This correctly handles swaps whose edge acts as a
-    *diagonal* of a motif (e.g. a C4 turning into a diamond when a chord is
-    added), which a per-edge inclusion-exclusion misses.
-    Cost: O(Δ³) per endpoint, computed before and after the swap.
+    Only counts for the motif types in ``types`` are returned.  Only 4-sets
+    containing a *changed* node pair can change type, so it suffices to enumerate
+    motif 4-sets containing one of the four swap pairs before and after the swap
+    and diff the per-type counts.  This correctly handles swaps whose edge acts as
+    a *diagonal* of a motif (e.g. a C4 turning into a diamond when a chord is added)
+    and the paw's two-hop pendant (see ``_motifs4_through_pairs``).
+    Cost: O(Δ²), computed before and after the swap.
     """
-    anchors = {s1, o1, s2, o2}
-
-    before = Counter(_motifs4_through_nodes(adj, anchors).values())
-
-    _adj_dec(adj, s1, o1)
-    _adj_dec(adj, s2, o2)
-    _adj_inc(adj, s1, o2)
-    _adj_inc(adj, s2, o1)
-
-    after = Counter(_motifs4_through_nodes(adj, anchors).values())
-
-    _adj_dec(adj, s1, o2)
-    _adj_dec(adj, s2, o1)
-    _adj_inc(adj, s1, o1)
-    _adj_inc(adj, s2, o2)
+    pairs = ((s1, o1), (s2, o2), (s1, o2), (s2, o1))
+    before = Counter(_motifs4_through_pairs(adj, pairs, types).values())
+    _adj_dec(adj, s1, o1); _adj_dec(adj, s2, o2)
+    _adj_inc(adj, s1, o2); _adj_inc(adj, s2, o1)
+    after = Counter(_motifs4_through_pairs(adj, pairs, types).values())
+    _adj_dec(adj, s1, o2); _adj_dec(adj, s2, o1)
+    _adj_inc(adj, s1, o1); _adj_inc(adj, s2, o2)
 
     return {
         ds: after[ds] - before[ds]
         for ds in set(before) | set(after)
-        if after[ds] != before[ds]
+        if ds in types and after[ds] != before[ds]
     }
 
 
