@@ -398,94 +398,63 @@ def count_stars_exact(g: igraph.Graph) -> dict[int, int]:
     """Count induced k-stars exactly for k=2..10.
 
     A k-star is a centre node v connected to k leaves with NO edges between
-    the leaves (induced subgraph condition).  For each node v with degree d,
-    the count equals the number of size-k independent sets in N(v).
+    the leaves (induced subgraph condition).
 
-    Algorithm: for each node v, find the edges within N(v) (the
-    neighbourhood-induced edge set E_v).  If E_v is empty, every k-subset
-    is independent: contribute C(d, k).  Otherwise, count non-independent
-    k-subsets via inclusion-exclusion over E_v:
+    Algorithm: nodes in a triangle cannot be pure star centres (their
+    neighbourhood has internal edges).  So:
+    1. Find all nodes that appear in at least one triangle — these require
+       the inclusion-exclusion fallback.
+    2. All remaining nodes with degree ≥ 2 are guaranteed triangle-free,
+       meaning none of their neighbours are connected to each other, so
+       every k-subset of their neighbourhood is an independent set:
+       contribute C(d, k) directly.
+    3. For triangle nodes, fall back to inclusion-exclusion over the edge
+       set within N(v).
 
-        stars_k(v) = C(d,k) - Σ_{F⊆E_v, F≠∅} (-1)^{|F|+1} · C(d - |V(F)|, k - |V(F)|)
-
-    Each term corresponds to subsets of edges F; V(F) is the set of
-    endpoints of F.  We enumerate subsets of E_v up to size floor(k/2)
-    (larger subsets can't cover a k-set with k nodes).  E_v is small for
-    sparse KGs so this is fast in practice.
-
-    Hub nodes (degree > HUB_THRESH) enumerate k-subsets directly and test
-    independence rather than inclusion-exclusion, avoiding exponential blow-up
-    on complete neighbourhoods.
-
-    Cost: O(m · Δ + hub_count · Δ^MAX_K / MAX_K!) in the worst case; fast for
-    the sparse neighbourhoods typical of KGs.
+    Cost: O(m·Δ) for the triangle-free majority; the triangle-node fallback
+    adds O(2^|E_v|) per triangle node (fast when neighbourhoods are sparse).
     """
-    HUB_THRESH = 50   # above this degree, switch to direct subset enumeration
     MAX_K = 10
 
     n = g.vcount()
     if n == 0:
         return {k: 0 for k in range(2, MAX_K + 1)}
 
-    # Build undirected neighbour sets (g should already be a simple graph)
+    # Build undirected neighbour sets
     nbr: list[set[int]] = [set() for _ in range(n)]
     for e in g.es:
         nbr[e.source].add(e.target)
         nbr[e.target].add(e.source)
 
+    # Step 1: find all nodes that are part of at least one triangle
+    in_triangle: set[int] = set()
+    for a, b, c in (g.list_triangles() if n >= 3 else []):
+        in_triangle.add(a)
+        in_triangle.add(b)
+        in_triangle.add(c)
+
     totals = [0] * (MAX_K + 1)
 
     for v in range(n):
-        nb = nbr[v]
-        d = len(nb)
+        d = len(nbr[v])
         if d < 2:
             continue
 
-        nb_list = list(nb)
-
-        # Find edges within N(v)
-        inner_edges: list[tuple[int, int]] = []
-        for u in nb_list:
-            for w in nbr[u]:
-                if w in nb and w > u:
-                    inner_edges.append((u, w))
-
-        if not inner_edges:
-            # Pure star — every k-subset is independent
+        if v not in in_triangle:
+            # Triangle-free centre: no edges in N(v), every k-subset is a star
             for k in range(2, min(d, MAX_K) + 1):
                 totals[k] += math.comb(d, k)
             continue
 
-        if d > HUB_THRESH:
-            # For high-degree nodes enumerate k-subsets and test independence directly.
-            # Costly only for large k, but MAX_K=10 keeps it tractable when d≤500.
-            nb_arr = nb_list
-            inner_set: set[tuple[int, int]] = set(inner_edges)
-            from itertools import combinations
-            for k in range(2, min(d, MAX_K) + 1):
-                cnt = 0
-                for subset in combinations(nb_arr, k):
-                    ok = True
-                    for i in range(k):
-                        for j in range(i + 1, k):
-                            a, b = subset[i], subset[j]
-                            if (min(a, b), max(a, b)) in inner_set:
-                                ok = False
-                                break
-                        if not ok:
-                            break
-                    if ok:
-                        cnt += 1
-                totals[k] += cnt
-            continue
+        # Triangle node: find edges within N(v) and apply inclusion-exclusion
+        nb_list = list(nbr[v])
+        inner_edges: list[tuple[int, int]] = []
+        for u in nb_list:
+            for w in nbr[u]:
+                if w in nbr[v] and w > u:
+                    inner_edges.append((u, w))
 
-        # Inclusion-exclusion over subsets of inner_edges.
-        # For each non-empty subset F of E_v: V(F) = endpoints of edges in F.
-        # Contribution to stars_k(v): (-1)^{|F|+1} * C(d - |V(F)|, k - |V(F)|).
-        # We only need subsets up to size floor(k/2) since |V(F)| ≥ 2|F|/… but
-        # iterating all 2^|E_v| subsets is fine for small |E_v| (sparse KGs).
         ie = len(inner_edges)
-        # delta[k] = correction to subtract from C(d,k)
         correction = [0] * (MAX_K + 1)
         for mask in range(1, 1 << ie):
             verts: set[int] = set()
@@ -499,7 +468,7 @@ def count_stars_exact(g: igraph.Graph) -> dict[int, int]:
                 sign_exp += 1
                 bits &= bits - 1
             s = len(verts)
-            sign = (-1) ** (sign_exp + 1)  # inclusion-exclusion sign
+            sign = (-1) ** (sign_exp + 1)
             for k in range(s, min(d, MAX_K) + 1):
                 correction[k] += sign * math.comb(d - s, k - s)
 
