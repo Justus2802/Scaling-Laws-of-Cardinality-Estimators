@@ -6,7 +6,8 @@ double-edge swaps to steer the graph toward Block E / Block F targets:
 * triangle_count               — exact, incremental
 * four_cycle / diamond / K4 / tailed-triangle counts  — remeasured every
   ``remeasure_interval`` accepted swaps via the colour-coding sampler
-* five_cycle_count / six_cycle_count                  — remeasured every
+* five_cycle_count / six_cycle_count (induced/chordless) — exact, incremental
+  when ``USE_INCREMENTAL_CYCLES`` is set; otherwise remeasured every
   ``remeasure_interval`` accepted swaps via CC sampling (k=5, k=6)
 * CC_avg (average local clustering coefficient)       — exact, incremental;
   C(k_v, 2) denominators are invariant under degree-preserving swaps
@@ -27,7 +28,7 @@ import numpy as np
 
 from ._constants import _RDF_TYPE
 from motif_counter import ExactMotifCounter, HybridMotifCounter, MotifCounter  # CCMotifCounter available as swap-in
-from .local_updates import _adj_inc, _adj_dec, _triangle_node_delta, _motif4_delta
+from .local_updates import _adj_inc, _adj_dec, _triangle_node_delta, _motif4_delta, _cycle_delta
 from ._logging import get_logger
 from .stage2 import _connect_components
 
@@ -67,11 +68,15 @@ CC4_SAMPLES = 10_000
 CC_CYCLE_SAMPLES = 5_000
 # True = O(deg²) incremental delta per swap; False = CC sampler every remeasure_interval swaps.
 USE_INCREMENTAL_MOTIF4 = True
+# True = exact O(Δ^(k-1)) induced 5-/6-cycle delta per swap; False = CC remeasure every
+# remeasure_interval swaps.  Incremental is exact but costs O(Δ⁴)/O(Δ⁵) per attempted swap,
+# so it is best left off for high-degree graphs.  Only active when a cycle target is set.
+USE_INCREMENTAL_CYCLES = True
 # Accepted-swap interval between convergence CSV rows; 0 disables logging entirely.
 CONVERGENCE_LOG_INTERVAL: int = 1000
 # Motif counter used for the initial measurement at the start of the SA walk.
 #INITIAL_MOTIF_COUNTER: MotifCounter = CCMotifCounter(n_samples=CC4_SAMPLES, seed=42)
-INITIAL_MOTIF_COUNTER: MotifCounter = ExactMotifCounter()
+INITIAL_MOTIF_COUNTER: MotifCounter = HybridMotifCounter()
 
 # Motif counter used for periodic remeasurement every remeasure_interval accepted swaps.
 # HybridMotifCounter: exact for k≤4, CC with CC_CYCLE_SAMPLES for k=5/6.
@@ -215,6 +220,9 @@ def refine(
     current_tri = INITIAL_MOTIF_COUNTER.count_triangles(_build_und_graph())
 
     # ----------------------------------------- 4-node motif targets & counter
+    # Only track a motif type when it has both a positive target AND a nonzero
+    # loss weight — a zero-weight term never enters the loss, so computing its
+    # (O(Δ³)) per-swap delta would be wasted work.
     _motif4_targets: dict[tuple, int] = {}
     for deg_seq, attr in [
         ((2, 2, 2, 2), "four_cycle_count"),
@@ -223,16 +231,18 @@ def refine(
         ((1, 2, 2, 3), "tailed_triangle_count"),
     ]:
         val = getattr(target_e, attr, 0)
-        if val and val > 0:
+        if val and val > 0 and _MOTIF4_WEIGHTS.get(deg_seq, 0) > 0:
             _motif4_targets[deg_seq] = int(val)
 
     current_motifs4 = INITIAL_MOTIF_COUNTER.count_motifs4(_build_und_graph()) if _motif4_targets else {}
 
     # ----------------------------------------- 5/6-cycle targets
+    # As with 4-node motifs, only steer a cycle size when its loss weight is
+    # nonzero — the cycle delta is the costliest per-swap update (O(Δ⁴)/O(Δ⁵)).
     _target_c5 = int(getattr(target_e, "five_cycle_count", 0) or 0)
     _target_c6 = int(getattr(target_e, "six_cycle_count", 0) or 0)
-    use_c5 = _target_c5 > 0
-    use_c6 = _target_c6 > 0
+    use_c5 = _target_c5 > 0 and LOSS_WEIGHT_C5 > 0
+    use_c6 = _target_c6 > 0 and LOSS_WEIGHT_C6 > 0
 
     def _measure_cycles(g_und: igraph.Graph) -> tuple[int, int]:
         """Estimate 5- and 6-cycle counts via the remeasure counter."""
@@ -461,9 +471,15 @@ def refine(
             new_motifs4 = {k: current_motifs4.get(k, 0) + _m4d.get(k, 0) for k in _motif4_targets}
         else:
             new_motifs4 = current_motifs4
-        # 5/6-cycle counts are not updated incrementally per swap (too expensive);
-        # pass current values — they are remeasured every remeasure_interval.
-        new_loss = _loss(new_tri, new_motifs4, new_Q, new_cc, current_c5, current_c6)
+        # 5/6-cycle counts: exact incremental delta when enabled, else carry the
+        # current values (remeasured every remeasure_interval).
+        if USE_INCREMENTAL_CYCLES and (use_c5 or use_c6):
+            _dc5, _dc6 = _cycle_delta(adj, s1, o1, s2, o2, k5=use_c5, k6=use_c6)
+            new_c5 = current_c5 + _dc5
+            new_c6 = current_c6 + _dc6
+        else:
+            new_c5, new_c6 = current_c5, current_c6
+        new_loss = _loss(new_tri, new_motifs4, new_Q, new_cc, new_c5, new_c6)
 
         if new_loss < current_loss:
             accept = True
@@ -498,12 +514,14 @@ def refine(
 
             if USE_INCREMENTAL_MOTIF4 and _motif4_targets:
                 current_motifs4 = new_motifs4
+            if USE_INCREMENTAL_CYCLES and (use_c5 or use_c6):
+                current_c5, current_c6 = new_c5, new_c6
 
             do_remeasure = accepted % remeasure_interval == 0
             if not USE_INCREMENTAL_MOTIF4 and _motif4_targets and do_remeasure:
                 current_motifs4 = REMEASURE_MOTIF_COUNTER.count_motifs4(_build_und_graph())
                 current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6)
-            if (use_c5 or use_c6) and do_remeasure:
+            if not USE_INCREMENTAL_CYCLES and (use_c5 or use_c6) and do_remeasure:
                 current_c5, current_c6 = _measure_cycles(_build_und_graph())
                 current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6)
 

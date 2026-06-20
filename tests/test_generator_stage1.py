@@ -7,7 +7,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from signature_reduced import BlockA, BlockC, BlockF
-from signature_reduced._fits import ExpDecayFit, SkewNormFit, nan_exp_decay
+from signature_reduced._fits import ExpDecayFit, nan_exp_decay
 from signature._utils import PowerLawStats
 from generator import Schema, sample_schema
 from generator.stage1 import COOC_NUM_GROUPS
@@ -265,10 +265,12 @@ class TestSampleSchemaCoocGroups(unittest.TestCase):
         self.assertIsNone(schema.obj_group_probs)
 
 
-def _make_block_f(loc=4.0, scale=1.0, shape=0.0, lo=2.0, hi=8.0) -> BlockF:
-    """Build a BlockF stub by setting _shortest_path_skew directly."""
+def _make_block_f(path_max=8.0, path_mean=4.0, path_var=1.0) -> BlockF:
+    """Build a BlockF stub by setting path stats directly."""
     f = BlockF()
-    f._shortest_path_skew = SkewNormFit(loc=loc, scale=scale, shape=shape, lo=lo, hi=hi)
+    f._shortest_path_max  = path_max
+    f._shortest_path_mean = path_mean
+    f._shortest_path_var  = path_var
     f._num_components = 1
     f._largest_component_fraction = 1.0
     f._clustering_coefficient = 0.1
@@ -277,20 +279,19 @@ def _make_block_f(loc=4.0, scale=1.0, shape=0.0, lo=2.0, hi=8.0) -> BlockF:
 
 
 class TestSampleSchemaPathTargets(unittest.TestCase):
-    """Path-length targets derived from BlockF.shortest_path_skew."""
+    """Path-length targets wired from BlockF path stats."""
 
     def setUp(self):
         self.a = _make_block_a()
         self.c = _make_block_c()
 
-    def test_path_mean_derived_from_skewnorm(self):
-        # shape=0 → pure normal → mean ≈ loc
-        f = _make_block_f(loc=4.0, scale=1.0, shape=0.0)
+    def test_path_mean_passed_through(self):
+        f = _make_block_f(path_mean=4.0)
         schema = sample_schema(self.a, self.c, f=f, seed=0)
-        self.assertAlmostEqual(schema.path_mean_target, 4.0, delta=0.5)
+        self.assertAlmostEqual(schema.path_mean_target, 4.0, delta=1e-9)
 
-    def test_path_hi_derived_from_skewnorm_hi(self):
-        f = _make_block_f(hi=8.0)
+    def test_path_hi_from_block_f_max(self):
+        f = _make_block_f(path_max=8.0)
         schema = sample_schema(self.a, self.c, f=f, seed=0)
         self.assertEqual(schema.path_hi_target, 8)
 

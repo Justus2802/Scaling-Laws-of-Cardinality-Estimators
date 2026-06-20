@@ -9,13 +9,26 @@ Public API
 _adj_inc                    — increment edge count in adj dict
 _adj_dec                    — decrement edge count in adj dict
 _triangle_node_delta        — Δ(triangles) and per-node Δt_v for one swap
-_count_motifs4_through_edge — raw 4-node motif counts touching a given edge
+_motifs4_through_nodes      — {4-set: degree-seq} for motifs touching given anchors
 _motif4_delta               — Δ(4-node motif counts) for one swap
+_induced_cycles_through_nodes — set of induced k-cycles touching given anchors
+_cycle_delta                — Δ(induced 5-/6-cycle counts) for one swap
+
+The per-edge motif primitive ``_count_motifs4_through_edge`` lives in
+``motif_counter._common`` (shared with ``ExactMotifCounter``).
+
+Cycle semantics
+---------------
+The motif counters classify a k-node subset by its *induced* degree sequence
+(neighbours counted within the subset), so ``five_cycle_count`` /
+``six_cycle_count`` count only **chordless** (induced) cycles — degree
+sequences (2,2,2,2,2) and (2,2,2,2,2,2).  The cycle delta below therefore
+tracks induced cycles, not arbitrary closed walks: a swap changes the count
+both by adding/removing a cycle edge and by adding a chord (destroys an
+induced cycle) or removing a chord (can create one).
 """
 
-# The four connected 4-node graphlet degree sequences (C4, diamond, K4, paw).
-# Mirrors MotifCounter.MOTIF4_DS; defined locally to keep this module dependency-free.
-_MOTIF4_DS: frozenset[tuple] = frozenset({(2, 2, 2, 2), (2, 2, 3, 3), (3, 3, 3, 3), (1, 2, 2, 3)})
+from collections import Counter
 
 
 def _adj_inc(adj: list, u: int, v: int) -> None:
@@ -68,34 +81,51 @@ def _triangle_node_delta(
     return delta_T, nd
 
 
-def _count_motifs4_through_edge(adj: list, u: int, v: int) -> dict[tuple, int]:
-    """Count 4-node motif instances containing undirected edge {u, v}.
+def _motifs4_through_nodes(adj: list, anchors) -> dict[frozenset, tuple]:
+    """Map each 4-node motif touching an anchor to its sorted degree sequence.
 
-    Iterates unordered pairs from (N(u)∪N(v))\\{u,v}, classifies each
-    4-node subgraph by sorted degree sequence.
-    Cost: O((deg_u + deg_v)²).
+    Enumerates connected 4-vertex subsets containing each anchor by repeated
+    neighbour-expansion (every connected subgraph containing a node is reachable
+    by growing from it), then classifies each 4-set by its induced degree
+    sequence, keeping only the four connected motifs (C4, diamond, K4, paw).
+    Returns ``{frozenset(4 vertices): degree_seq}`` (one entry per motif 4-set).
+    Cost: O(Δ³) per anchor.
     """
-    counts: dict[tuple, int] = {}
-    candidates = list((set(adj[u].keys()) | set(adj[v].keys())) - {u, v})
-    for i in range(len(candidates)):
-        w = candidates[i]
-        for j in range(i + 1, len(candidates)):
-            x = candidates[j]
-            uw = w in adj[u]
-            ux = x in adj[u]
-            vw = w in adj[v]
-            vx = x in adj[v]
-            wx = x in adj[w]
-            dw = uw + vw + wx
-            dx = ux + vx + wx
-            if dw == 0 or dx == 0:
+    result: dict[frozenset, tuple] = {}
+    for q in set(anchors):
+        seen: set[frozenset] = {frozenset((q,))}
+        stack: list[frozenset] = [frozenset((q,))]
+        while stack:
+            subset = stack.pop()
+            if len(subset) == 4:
+                if subset in result:
+                    continue
+                # Classify the induced 4-subgraph from its internal edge count
+                # and min degree (avoids sorting a 4-tuple per subset).  A
+                # connected 4-node graph has 3–6 internal edges; only C4/paw
+                # (4 edges), diamond (5) and K4 (6) are tracked motifs.
+                d = [sum(1 for u in subset if u != v and u in adj[v]) for v in subset]
+                m4 = (d[0] + d[1] + d[2] + d[3]) >> 1
+                if m4 == 4:
+                    ds = (2, 2, 2, 2) if min(d) == 2 else (1, 2, 2, 3)
+                elif m4 == 5:
+                    ds = (2, 2, 3, 3)
+                elif m4 == 6:
+                    ds = (3, 3, 3, 3)
+                else:
+                    continue
+                result[subset] = ds
                 continue
-            du = 1 + uw + ux
-            dv = 1 + vw + vx
-            ds = tuple(sorted((du, dv, dw, dx)))
-            if ds in _MOTIF4_DS:
-                counts[ds] = counts.get(ds, 0) + 1
-    return counts
+            reach: set[int] = set()
+            for v in subset:
+                reach |= set(adj[v].keys())
+            reach -= subset
+            for v in reach:
+                new = subset | {v}
+                if new not in seen:
+                    seen.add(new)
+                    stack.append(new)
+    return result
 
 
 def _motif4_delta(
@@ -103,37 +133,24 @@ def _motif4_delta(
 ) -> dict[tuple, int]:
     """Compute change in 4-node motif counts from swapping (s1,o1)↔(s2,o2).
 
-    Uses inclusion-exclusion to avoid double-counting 4-node subgraphs
-    that span both swapped edges.
-    Cost: O((deg_s1 + deg_o1 + deg_s2 + deg_o2)²).
+    Only 4-sets containing a *changed* node pair can change motif type; every
+    such 4-set contains one of the swap endpoints, so it suffices to enumerate
+    motifs touching ``{s1,o1,s2,o2}`` before and after the swap and diff the
+    per-type counts.  This correctly handles swaps whose edge acts as a
+    *diagonal* of a motif (e.g. a C4 turning into a diamond when a chord is
+    added), which a per-edge inclusion-exclusion misses.
+    Cost: O(Δ³) per endpoint, computed before and after the swap.
     """
-    def _overlap(a: int, b: int, c: int, d: int) -> dict[tuple, int]:
-        if len({a, b, c, d}) < 4:
-            return {}
-        nodes = [a, b, c, d]
-        degs = [sum(1 for nd2 in nodes if nd2 != nd and nd2 in adj[nd]) for nd in nodes]
-        if min(degs) == 0:
-            return {}
-        ds = tuple(sorted(degs))
-        return {ds: 1} if ds in _MOTIF4_DS else {}
+    anchors = {s1, o1, s2, o2}
 
-    def _count_pair(ea: tuple, eb: tuple) -> dict[tuple, int]:
-        cu = _count_motifs4_through_edge(adj, *ea)
-        cv = _count_motifs4_through_edge(adj, *eb)
-        ov = _overlap(ea[0], ea[1], eb[0], eb[1])
-        result: dict[tuple, int] = {}
-        for k in set(cu) | set(cv) | set(ov):
-            result[k] = cu.get(k, 0) + cv.get(k, 0) - ov.get(k, 0)
-        return result
-
-    before = _count_pair((s1, o1), (s2, o2))
+    before = Counter(_motifs4_through_nodes(adj, anchors).values())
 
     _adj_dec(adj, s1, o1)
     _adj_dec(adj, s2, o2)
     _adj_inc(adj, s1, o2)
     _adj_inc(adj, s2, o1)
 
-    after = _count_pair((s1, o2), (s2, o1))
+    after = Counter(_motifs4_through_nodes(adj, anchors).values())
 
     _adj_dec(adj, s1, o2)
     _adj_dec(adj, s2, o1)
@@ -141,7 +158,92 @@ def _motif4_delta(
     _adj_inc(adj, s2, o2)
 
     return {
-        k: after.get(k, 0) - before.get(k, 0)
-        for k in set(before) | set(after)
-        if after.get(k, 0) != before.get(k, 0)
+        ds: after[ds] - before[ds]
+        for ds in set(before) | set(after)
+        if after[ds] != before[ds]
     }
+
+
+def _induced_cycles_through_nodes(
+    adj: list, anchors, k: int
+) -> set[frozenset]:
+    """Enumerate induced (chordless) k-cycles whose vertex set contains an anchor.
+
+    Treats ``adj`` as a simple graph (key presence = edge, multiplicity ignored,
+    matching the simple-graph projection the motif counters use).  Each cycle is
+    returned once as a ``frozenset`` of its k vertices.
+
+    A vertex set is an induced k-cycle iff its induced subgraph is exactly a
+    cycle — i.e. the only edges among the k vertices are the k consecutive ones,
+    no chords.  Anchored DFS builds chordless paths ``a = p0, p1, …`` and closes
+    them back to ``a``; the chord-free condition is enforced incrementally so
+    only genuine induced cycles are emitted.
+    Cost: O(Δ^(k-1)) per anchor, Δ = max degree of explored nodes.
+    """
+    found: set[frozenset] = set()
+
+    def _dfs(path: list, inpath: set, a: int) -> None:
+        pos = len(path) - 1          # index of the current last vertex
+        last = path[pos]
+        target = pos + 1             # index we are about to fill
+        for x in adj[last]:
+            if x in inpath:
+                continue
+            if target < k - 1:
+                # Interior vertex: no chord to any earlier vertex (incl. anchor a),
+                # which also rules out premature short cycles back to a.
+                if any(path[i] in adj[x] for i in range(pos)):
+                    continue
+                path.append(x)
+                inpath.add(x)
+                _dfs(path, inpath, a)
+                inpath.discard(x)
+                path.pop()
+            else:
+                # Closing vertex: must link back to a, with no chord to p1..p_{pos-1}.
+                if a not in adj[x]:
+                    continue
+                if any(path[i] in adj[x] for i in range(1, pos)):
+                    continue
+                found.add(frozenset(path + [x]))
+
+    if k >= 3:
+        for a in set(anchors):
+            _dfs([a], {a}, a)
+    return found
+
+
+def _cycle_delta(
+    adj: list, s1: int, o1: int, s2: int, o2: int, *, k5: bool = True, k6: bool = True
+) -> tuple[int, int]:
+    """Compute Δ(induced 5-cycle, 6-cycle) counts for swapping (s1,o1)↔(s2,o2).
+
+    Returns (Δc5, Δc6); a disabled size contributes 0.
+
+    Only induced cycles whose vertex set contains a *changed* node pair can flip
+    status (every other induced subgraph is identical before and after).  All
+    such cycles touch one of the four swap endpoints, so it suffices to count
+    induced cycles through ``{s1,o1,s2,o2}`` before and after the swap and diff
+    them.  A cycle that is induced in *both* graphs would have to contain an
+    unchanged induced subgraph and so cannot contain a changed pair, hence
+    cancels — making the simple set-size difference exact.
+    Cost: O(Δ^(k-1)) per endpoint, computed before and after the swap.
+    """
+    anchors = {s1, o1, s2, o2}
+    ks = ([5] if k5 else []) + ([6] if k6 else [])
+
+    before = {k: len(_induced_cycles_through_nodes(adj, anchors, k)) for k in ks}
+
+    _adj_dec(adj, s1, o1)
+    _adj_dec(adj, s2, o2)
+    _adj_inc(adj, s1, o2)
+    _adj_inc(adj, s2, o1)
+
+    after = {k: len(_induced_cycles_through_nodes(adj, anchors, k)) for k in ks}
+
+    _adj_dec(adj, s1, o2)
+    _adj_dec(adj, s2, o1)
+    _adj_inc(adj, s1, o1)
+    _adj_inc(adj, s2, o2)
+
+    return after.get(5, 0) - before.get(5, 0), after.get(6, 0) - before.get(6, 0)

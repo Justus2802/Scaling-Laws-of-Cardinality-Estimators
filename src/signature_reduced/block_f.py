@@ -1,22 +1,23 @@
 """Reduced Block F — Connectivity (G4).
 
 Keeps the connectivity scalars (component structure, average-local clustering,
-degree assortativity) and replaces the ``avg_shortest_path_length`` + SE pair
-with a **skew-normal** fit over the sampled shortest-path lengths. The path
-sampling, clustering and assortativity computations are reused from the original
-Block F (composed, not re-implemented); the sampled path lengths are kept on the
-object so ``visualize`` can overlay the fit.
+degree assortativity) and summarises sampled shortest-path lengths as three
+descriptive statistics: max (diameter), mean, and variance.  The path sampling,
+clustering and assortativity computations are reused from the original Block F
+(composed, not re-implemented); the sampled path lengths are kept on the object
+so ``visualize`` can show their histogram.
 """
+
+import math
 
 import igraph
 import matplotlib.pyplot as plt  # type: ignore[import-untyped]
 import numpy as np
+import scipy.stats
 
 from signature._logging import get_logger
 from signature._block_base import SignatureBlock, _NOT_CALCULATED
 from signature.block_f import BlockF as _OrigBlockF, _SAMPLE_K, _N_BOOTSTRAP
-from ._fits import SkewNormFit, fit_skewnorm, nan_skewnorm
-from ._plot_helpers import overlay_skewnorm
 
 log = get_logger(__name__)
 
@@ -38,9 +39,30 @@ class BlockF(SignatureBlock):
         self._largest_component_fraction = _NOT_CALCULATED
         self._clustering_coefficient = _NOT_CALCULATED
         self._degree_assortativity = _NOT_CALCULATED
-        self._shortest_path_skew = _NOT_CALCULATED
+        self._shortest_path_max = _NOT_CALCULATED
+        self._shortest_path_mean = _NOT_CALCULATED
+        self._shortest_path_var = _NOT_CALCULATED
         # unsummarised data kept for visualization
         self._pair_dists_finite = _NOT_CALCULATED
+
+    def __getattr__(self, name: str):
+        """Migrate deserialized instances that still carry _shortest_path_skew."""
+        if name in ("_shortest_path_max", "_shortest_path_mean", "_shortest_path_var"):
+            skew = self.__dict__.get("_shortest_path_skew", _NOT_CALCULATED)
+            if skew is _NOT_CALCULATED:
+                return _NOT_CALCULATED
+            try:
+                loc, scale, shape, _lo, hi = skew
+                if any(math.isnan(v) for v in (loc, scale, shape, hi)):
+                    return float("nan")
+                if name == "_shortest_path_max":
+                    return float(hi)
+                if name == "_shortest_path_mean":
+                    return float(scipy.stats.skewnorm.mean(shape, loc=loc, scale=scale))
+                return float(scipy.stats.skewnorm.var(shape, loc=loc, scale=scale))
+            except Exception:
+                return float("nan")
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
     # ── properties ────────────────────────────────────────────────────────────
 
@@ -61,8 +83,16 @@ class BlockF(SignatureBlock):
         return self._require("degree_assortativity", self._degree_assortativity)
 
     @property
-    def shortest_path_skew(self) -> SkewNormFit:
-        return SkewNormFit(*self._require("shortest_path_skew", self._shortest_path_skew))
+    def shortest_path_max(self) -> float:
+        return self._require("shortest_path_max", self._shortest_path_max)
+
+    @property
+    def shortest_path_mean(self) -> float:
+        return self._require("shortest_path_mean", self._shortest_path_mean)
+
+    @property
+    def shortest_path_var(self) -> float:
+        return self._require("shortest_path_var", self._shortest_path_var)
 
     # ── core ──────────────────────────────────────────────────────────────────
 
@@ -77,13 +107,12 @@ class BlockF(SignatureBlock):
 
         Composes the original Block F to reuse its component analysis, sampled
         shortest-path lengths, average-local clustering and degree assortativity,
-        then fits a skew-normal to the sampled finite path lengths instead of
-        storing a mean ± SE.
+        then computes max, mean, and variance over the finite sampled path lengths.
 
         Parameters
         ----------
         skip_shortest_paths : bool
-            When True, skip path-length sampling; shortest_path_skew will be NaN.
+            When True, skip path-length sampling; path stats will be NaN.
         """
         orig = _OrigBlockF().calculate(g, sample_k=sample_k, n_bootstrap=n_bootstrap,
                                        skip_shortest_paths=skip_shortest_paths)
@@ -95,27 +124,37 @@ class BlockF(SignatureBlock):
         finite = orig._pair_dists_finite
         finite = np.asarray(finite, dtype=float) if finite is not None else np.array([], dtype=float)
         self._pair_dists_finite = finite
-        self._shortest_path_skew = fit_skewnorm(finite) if finite.size else nan_skewnorm()
+        if finite.size:
+            self._shortest_path_max  = float(np.max(finite))
+            self._shortest_path_mean = float(np.mean(finite))
+            self._shortest_path_var  = float(np.var(finite))
+        else:
+            self._shortest_path_max  = float("nan")
+            self._shortest_path_mean = float("nan")
+            self._shortest_path_var  = float("nan")
 
         log.info(
-            "Block F: components=%d, lcc=%.4f, clustering=%.4f, path skew(loc=%.3f)",
+            "Block F: components=%d, lcc=%.4f, clustering=%.4f, path(max=%.1f, mean=%.3f, var=%.3f)",
             self._num_components, self._largest_component_fraction,
-            self._clustering_coefficient, self._shortest_path_skew.loc,
+            self._clustering_coefficient, self._shortest_path_max,
+            self._shortest_path_mean, self._shortest_path_var,
         )
         return self
 
     def as_vector(self) -> list[float]:
-        """Flatten to a fixed-length 9-vector for cross-KG comparison.
+        """Flatten to a fixed-length 7-vector for cross-KG comparison.
 
         Layout: num_components; largest_component_fraction; clustering_coefficient;
-        degree_assortativity; shortest-path skew-normal (loc, scale, shape, lo, hi).
+        degree_assortativity; shortest_path_max; shortest_path_mean; shortest_path_var.
         """
         return [
             float(self.num_components),
             self.largest_component_fraction,
             self.clustering_coefficient,
             self.degree_assortativity,
-            *self.shortest_path_skew,
+            self.shortest_path_max,
+            self.shortest_path_mean,
+            self.shortest_path_var,
         ]
 
     @classmethod
@@ -126,14 +165,15 @@ class BlockF(SignatureBlock):
             "largest_component_fraction",
             "clustering_coefficient",
             "degree_assortativity",
-            "shortest_path_loc", "shortest_path_scale", "shortest_path_shape",
-            "shortest_path_lo", "shortest_path_hi",
+            "shortest_path_max",
+            "shortest_path_mean",
+            "shortest_path_var",
         ]
 
     @classmethod
     def get_na_vec(cls) -> list[float]:
-        """Return a 9-element NaN vector (same length as as_vector())."""
-        return [float("nan")] * 9
+        """Return a 7-element NaN vector (same length as as_vector())."""
+        return [float("nan")] * 7
 
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
         """Display or save diagnostics for reduced Block F.
@@ -152,14 +192,13 @@ class BlockF(SignatureBlock):
     # ── private helpers ───────────────────────────────────────────────────────
 
     def _visualize_text(self, path: str | None) -> None:
-        s = self.shortest_path_skew
         lines = [
             "=== Reduced Block F: Connectivity (G4) ===",
             f"  num_components            : {self.num_components}",
             f"  largest_component_fraction: {self.largest_component_fraction:.4f}",
             f"  clustering_coefficient    : {self.clustering_coefficient:.4f}",
             f"  degree_assortativity      : {self.degree_assortativity:.4f}",
-            f"  shortest path             : skew-normal(loc={s.loc:.3f}, scale={s.scale:.3f}, shape={s.shape:.3f})",
+            f"  shortest path             : max={self.shortest_path_max:.1f}, mean={self.shortest_path_mean:.3f}, var={self.shortest_path_var:.3f}",
         ]
         text = "\n".join(lines)
         if path is None:
@@ -172,18 +211,17 @@ class BlockF(SignatureBlock):
         try:
             finite = self._require("_pair_dists_finite", self._pair_dists_finite)
             fig, ax = plt.subplots(1, 1, figsize=(6, 4))
-            # Path lengths are integers — one bin per integer value.
             if finite.size:
                 int_max = int(finite.max())
                 bins = max(1, int_max)
-                if not overlay_skewnorm(ax, finite, self.shortest_path_skew,
-                                        bins=bins, label="sampled distances"):
-                    ax.text(0.5, 0.5, "no path data", ha="center", va="center", transform=ax.transAxes)
+                ax.hist(finite, bins=bins, label="sampled distances")
+                ax.axvline(self.shortest_path_mean, color="red", linestyle="--", label=f"mean={self.shortest_path_mean:.2f}")
+                ax.legend()
             else:
                 ax.text(0.5, 0.5, "no path data", ha="center", va="center", transform=ax.transAxes)
             ax.set_xlabel("shortest-path length")
             ax.set_ylabel("count")
-            ax.set_title("Sampled shortest-path lengths (fit: skew-normal)")
+            ax.set_title("Sampled shortest-path lengths")
             plt.tight_layout()
             if path is None:
                 plt.show()

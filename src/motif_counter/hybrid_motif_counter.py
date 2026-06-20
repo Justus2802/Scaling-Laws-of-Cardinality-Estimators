@@ -31,7 +31,7 @@ class HybridMotifCounter(MotifCounter):
             return self._exact.count_motifsk(g, k)
         if k == 5:
             #try:
-            #    return count_motifs5_escape(g)
+            #    return self._exact.count_motifsk(g, 5)
             #except RuntimeError:
                 # High-degree hub nodes make exact enumeration impractical; fall back to CC.
                 return cc_run(g, k, self._n_samples, self._rng)

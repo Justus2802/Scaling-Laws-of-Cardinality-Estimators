@@ -49,14 +49,13 @@ from one integer: Stage 1 `seed`, Stage 2 `seed+1`, Stage 3 `seed+2`.
 | E | motif counts | Stage-3 targets (triangles, 4-cycle, diamond, k4, tailed) |
 | F | `degree_assortativity` | Stage-3 target |
 | F | `num_components`, `largest_component_fraction` | Stage-2 connectivity target (nc, LCC fraction) |
-| F | `shortest_path_skew` (hi) | Stage-2 diameter cap (`path_hi_target = int(hi)`) |
-| F | `shortest_path_skew` (loc, scale, shape → **mean**) | Stage-2 mean path-length target (`_skewnorm_mean`) |
+| F | `shortest_path_max` | Stage-2 diameter cap (`path_hi_target = int(max)`) |
+| F | `shortest_path_mean` | Stage-2 mean path-length target (passed through directly) |
 
 **Validation-only (measured, deliberately *not* used constructively):** C `subj/obj_cooc_density`,
 `subj/obj_row_entropy_skew`, `per_type_entropy_exp`; D `two_step_fit`; F
-`clustering_coefficient`, `shortest_path_loc/scale/shape` (only the derived mean and hi are
-consumed; loc/scale/shape are treated as emergent). These are diagnostics the brief marks "get
-near," not directly steered. Tuning constants for each stage
+`clustering_coefficient`, `shortest_path_var` (emergent — not steered). These are diagnostics
+the brief marks "get near," not directly steered. Tuning constants for each stage
 are module-level at the top of `stage1.py`/`stage2.py`/`stage3.py`.
 
 ---
@@ -78,9 +77,9 @@ needs. All randomness from one seeded `np.random.Generator`.
 5. **CS structure (Block D).** `cs_num_templates = num_distinct_cs`;
    `cs_template_zipf = cs_freq_fit.alpha` (CS reuse skew); `cs_size_skew` passed through; the
    CS-size-skew mean gates whether template mode is enabled.
-6. **Path-length targets (Block F).** Derive `path_mean_target = _skewnorm_mean(f.shortest_path_skew)`
-   (NaN when Block F absent) and `path_hi_target = int(f.shortest_path_skew.hi)` (0 when absent or
-   NaN). Both are stored in `Schema` and consumed by Stage 2 step 7b.
+6. **Path-length targets (Block F).** Read `path_mean_target = f.shortest_path_mean`
+   (NaN when Block F absent or paths not sampled) and `path_hi_target = int(f.shortest_path_max)`
+   (0 when absent or NaN). Both are stored in `Schema` and consumed by Stage 2 step 7b.
 7. **Co-occurrence group prototypes (Block C).** When `subj_cooc_exp` / `obj_cooc_exp` have a
    usable fit, reconstruct `COOC_NUM_GROUPS = 10` singular values and call
    `_sample_type_relation_probs` to build one `(k, R)` group-prototype matrix per side, plus a
@@ -165,18 +164,33 @@ Degree-preserving **Maslov–Sneppen** double-edge swaps under **simulated annea
 free-emergent targets *without* disturbing Stage-1/2 marginals (degree, CS, P(r|t) are invariant
 under same-relation swaps):
 
-- **Triangle count** — exact, incremental `_triangle_delta` (O(degree) per swap); targeted swaps
-  preferentially close open wedges when below target.
-- **4-node motifs** (C4, diamond, K4, tailed) — no cheap delta, so re-measured periodically via
-  `igraph.motifs_randesu(size=4)` every `remeasure_interval` accepted swaps.
+All per-swap incremental delta helpers live in `generator/local_updates.py`; they operate on the
+live adjacency dict (not an `igraph.Graph`) so each swap is cheap.
+
+- **Triangle count** — exact, incremental `_triangle_node_delta` (O(degree) per swap); targeted
+  swaps preferentially close open wedges when below target.
+- **CC_avg** (avg local clustering) — exact, incremental; the `C(k_v,2)` denominators are invariant
+  under degree-preserving swaps, so only per-node `Δt_v` (from the triangle delta) drives it.
+- **4-node motifs** (C4, diamond, K4, paw) — exact, incremental `_motif4_delta` when
+  `USE_INCREMENTAL_MOTIF4` (the default): enumerates the motif 4-sets touching the four swap
+  endpoints before and after, and diffs per-type counts (O(Δ³) per swap). Otherwise re-measured
+  every `remeasure_interval` accepted swaps via the CC sampler.
+- **5-/6-cycles** — these are **induced (chordless)** cycles (degree sequences `(2,2,2,2,2)` /
+  `(2,2,2,2,2,2)`), matching the motif counters. Exact, incremental `_cycle_delta` when
+  `USE_INCREMENTAL_CYCLES`: counts induced cycles through the swap endpoints before and after and
+  diffs them (O(Δ⁴)/O(Δ⁵) per swap — best left off for hub-heavy graphs). A swap changes the count
+  both by adding/removing a cycle edge **and** by adding a chord (destroys an induced cycle) or
+  removing one (can create an induced cycle). Otherwise re-measured every `remeasure_interval`
+  accepted swaps via CC sampling. Only active when a Block-E cycle target is > 0.
 - **Degree assortativity** — exact, incremental (only the cross-product sum `Q` changes).
 
 The SA loss is a weighted sum of relative errors; the best graph seen is returned, then components
 are re-bridged.
 
-> **Runtime note.** `motifs_randesu(size=4)` cost scales with `Σ_v C(deg(v),3)`, so it is expensive
-> on hub-heavy graphs and is the dominant Stage-3 cost. Lower `--rewire-budget`, raise
-> `remeasure_interval`, or skip 4-node steering (triangles + assortativity only) to speed it up.
+> **Runtime note.** The incremental deltas are O(Δᵏ⁻¹) per *attempted* swap, so they dominate
+> Stage-3 cost on hub-heavy graphs. Lower `--rewire-budget`, disable a steering term (set its
+> `LOSS_WEIGHT_*` to 0), or switch the relevant `USE_INCREMENTAL_*` flag off to fall back to
+> periodic CC remeasurement.
 
 ---
 

@@ -151,14 +151,15 @@ Only `lcc.vs` entries with `is_literal == False` are eligible as sources or targ
 ## Block E — Motif counting
 
 ### 5-node graphlets: exact enumeration with degree-based fallback
-`HybridMotifCounter.count_motifsk(g, 5)` calls `ESCAPEFiveNodeCounter.count_motifs5`, which
-enumerates all 5-node connected induced subgraphs exactly by DFS-expanding connected partial
-sets anchored at the minimum-index node (each 5-set visited once, no sampling).  Inspired by
-ESCAPE (Pinar, Seshadhri, Vishal — WWW 2017) but implemented entirely in Python via adjacency
-set iteration rather than the algebraic matrix identity approach in the paper.
+`HybridMotifCounter.count_motifsk(g, 5)` delegates to `ExactMotifCounter.count_motifsk(g, 5)`,
+which calls the `count_motifs5_escape` helper (`motif_counter/_common.py`).  It enumerates all
+5-node connected induced subgraphs exactly by DFS-expanding connected partial sets anchored at
+the minimum-index node (each 5-set visited once, no sampling).  Inspired by ESCAPE (Pinar,
+Seshadhri, Vishal — WWW 2017) but implemented entirely in Python via adjacency set iteration
+rather than the algebraic matrix identity approach in the paper.
 
-When the graph's maximum undirected degree exceeds `ESCAPEFiveNodeCounter.MAX_DEGREE_EXACT` (50),
-the hub nodes make BFS expansion exponentially expensive; the counter raises `RuntimeError` and
+When the graph's maximum undirected degree exceeds `_ESCAPE_MAX_DEGREE` (50),
+the hub nodes make BFS expansion exponentially expensive; the helper raises `RuntimeError` and
 `HybridMotifCounter` automatically falls back to the existing colour-coding (CC) sampler.  This
 covers all KGs in `data/graphs/` whose undirected simplification has max-degree ≤ 50 after
 Block E's `_LARGE_N` subgraph sampling.

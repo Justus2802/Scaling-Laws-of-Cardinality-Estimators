@@ -15,6 +15,37 @@ import scipy.sparse
 from ._base import MotifCounter
 
 
+def _count_motifs4_through_edge(adj: list, u: int, v: int) -> dict[tuple, int]:
+    """Count 4-node motif instances containing undirected edge {u, v}.
+
+    Iterates unordered pairs from (N(u)∪N(v))\\{u,v}, classifies each
+    4-node subgraph by sorted degree sequence.  ``adj`` is a list of dicts
+    (neighbour → count); only key presence matters here.
+    Cost: O((deg_u + deg_v)²).
+    """
+    counts: dict[tuple, int] = {}
+    candidates = list((set(adj[u].keys()) | set(adj[v].keys())) - {u, v})
+    for i in range(len(candidates)):
+        w = candidates[i]
+        for j in range(i + 1, len(candidates)):
+            x = candidates[j]
+            uw = w in adj[u]
+            ux = x in adj[u]
+            vw = w in adj[v]
+            vx = x in adj[v]
+            wx = x in adj[w]
+            dw = uw + vw + wx
+            dx = ux + vx + wx
+            if dw == 0 or dx == 0:
+                continue
+            du = 1 + uw + ux
+            dv = 1 + vw + vx
+            ds = tuple(sorted((du, dv, dw, dx)))
+            if ds in MotifCounter.MOTIF4_DS:
+                counts[ds] = counts.get(ds, 0) + 1
+    return counts
+
+
 def cc_run(
     g_und: igraph.Graph,
     k: int,

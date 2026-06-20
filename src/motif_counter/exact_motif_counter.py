@@ -6,18 +6,20 @@ from itertools import combinations
 import igraph
 
 from ._base import MotifCounter
-from generator.local_updates import _count_motifs4_through_edge
+from ._common import count_motifs5_escape, _count_motifs4_through_edge
 
 
 class ExactMotifCounter(MotifCounter):
-    """Exact motif counter via full subgraph enumeration (k ≤ 4 only).
+    """Exact motif counter via full subgraph enumeration (k ≤ 5).
 
     Triangle count uses igraph's ``list_triangles``; k=3 and k=4 graphlets are
-    counted by direct enumeration.  Cost is O(m·Δ²) for k=4 where Δ is the
-    maximum degree.  Star counts (k=2..10) use inclusion-exclusion over
-    neighbourhood-induced edges.
+    counted by direct enumeration (cost O(m·Δ²) for k=4); k=5 graphlets use the
+    ESCAPE BFS-expansion algorithm (cost O(m·Δ³)).  Star counts (k=2..10) use
+    inclusion-exclusion over neighbourhood-induced edges.
 
-    Raises ``NotImplementedError`` for k ≥ 5.
+    k=5 enumeration raises ``RuntimeError`` on graphs with a very high-degree
+    hub (see ``count_motifs5_escape``); ``NotImplementedError`` is raised for
+    k ≥ 6.
     """
 
     # Per-edge divisors for 4-node exact enumeration: each subgraph is found
@@ -46,8 +48,11 @@ class ExactMotifCounter(MotifCounter):
             return self._count_motifs3(g)
         if k == 4:
             return self._count_motifs4_exact(g)
+        if k == 5:
+            # ESCAPE exact enumeration; raises RuntimeError on high-degree hubs.
+            return count_motifs5_escape(g)
         raise NotImplementedError(
-            f"ExactMotifCounter does not support k={k}; use CCMotifCounter for k ≥ 5"
+            f"ExactMotifCounter does not support k={k}; use CCMotifCounter for k ≥ 6"
         )
 
     def count_stars(self, g: igraph.Graph) -> dict[int, int]:
