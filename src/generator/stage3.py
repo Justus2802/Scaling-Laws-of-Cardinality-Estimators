@@ -26,7 +26,7 @@ import igraph
 import numpy as np
 
 from ._constants import _RDF_TYPE
-from motif_counter import CCMotifCounter, ExactMotifCounter, MotifCounter, _motif4_delta, cc_run
+from motif_counter import ExactMotifCounter, HybridMotifCounter, MotifCounter, _motif4_delta  # CCMotifCounter available as swap-in
 from ._logging import get_logger
 from .stage2 import _connect_components
 
@@ -53,8 +53,9 @@ CONVERGENCE_LOG_INTERVAL: int = 1000
 INITIAL_MOTIF_COUNTER: MotifCounter = ExactMotifCounter()
 
 # Motif counter used for periodic remeasurement every remeasure_interval accepted swaps.
+# HybridMotifCounter: exact for k≤4, CC with CC_CYCLE_SAMPLES for k=5/6.
 #REMEASURE_MOTIF_COUNTER: MotifCounter = CCMotifCounter(n_samples=CC4_SAMPLES, seed=43)
-REMEASURE_MOTIF_COUNTER: MotifCounter = ExactMotifCounter()
+REMEASURE_MOTIF_COUNTER: MotifCounter = HybridMotifCounter(n_samples=CC_CYCLE_SAMPLES, seed=43)
 
 
 
@@ -272,27 +273,15 @@ def refine(
 
     current_motifs4 = INITIAL_MOTIF_COUNTER.count_motifs4(_build_und_graph()) if _motif4_targets else {}
 
-    # ----------------------------------------- 5/6-cycle targets & RNG for CC
-    # Degree sequences: C5 = (2,2,2,2,2), C6 = (2,2,2,2,2,2)
-    _C5_DS = (2, 2, 2, 2, 2)
-    _C6_DS = (2, 2, 2, 2, 2, 2)
-    _cycle_rng = np.random.default_rng(seed + 7)  # separate RNG so cycle samples don't affect swap stream
-
+    # ----------------------------------------- 5/6-cycle targets
     _target_c5 = int(getattr(target_e, "five_cycle_count", 0) or 0)
     _target_c6 = int(getattr(target_e, "six_cycle_count", 0) or 0)
     use_c5 = _target_c5 > 0
     use_c6 = _target_c6 > 0
 
     def _measure_cycles(g_und: igraph.Graph) -> tuple[int, int]:
-        """Estimate 5- and 6-cycle counts via CC sampling."""
-        c5 = c6 = 0
-        if use_c5:
-            res5 = cc_run(g_und, 5, CC_CYCLE_SAMPLES, _cycle_rng)
-            c5 = res5.get(_C5_DS, 0)
-        if use_c6:
-            res6 = cc_run(g_und, 6, CC_CYCLE_SAMPLES, _cycle_rng)
-            c6 = res6.get(_C6_DS, 0)
-        return c5, c6
+        """Estimate 5- and 6-cycle counts via the remeasure counter."""
+        return REMEASURE_MOTIF_COUNTER.count_cycles(g_und, k5=use_c5, k6=use_c6)
 
     _g_init_und = _build_und_graph() if (use_c5 or use_c6) else None
     current_c5, current_c6 = _measure_cycles(_g_init_und) if _g_init_und is not None else (0, 0)
