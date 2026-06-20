@@ -26,7 +26,8 @@ import igraph
 import numpy as np
 
 from ._constants import _RDF_TYPE
-from motif_counter import ExactMotifCounter, HybridMotifCounter, MotifCounter, _motif4_delta  # CCMotifCounter available as swap-in
+from motif_counter import ExactMotifCounter, HybridMotifCounter, MotifCounter  # CCMotifCounter available as swap-in
+from .local_updates import _adj_inc, _adj_dec, _triangle_node_delta, _motif4_delta
 from ._logging import get_logger
 from .stage2 import _connect_components
 
@@ -80,62 +81,6 @@ REMEASURE_MOTIF_COUNTER: MotifCounter = HybridMotifCounter(n_samples=CC_CYCLE_SA
 
 
 log = get_logger(__name__)
-
-
-def _adj_inc(adj: list, u: int, v: int) -> None:
-    """Increment undirected adjacency count for edge (u, v)."""
-    adj[u][v] = adj[u].get(v, 0) + 1
-    adj[v][u] = adj[v].get(u, 0) + 1
-
-
-def _adj_dec(adj: list, u: int, v: int) -> None:
-    """Decrement undirected adjacency count for edge (u, v)."""
-    adj[u][v] -= 1
-    if adj[u][v] == 0:
-        del adj[u][v]
-    adj[v][u] -= 1
-    if adj[v][u] == 0:
-        del adj[v][u]
-
-
-def _triangle_node_delta(
-    adj: list, s1: int, o1: int, s2: int, o2: int
-) -> tuple[int, dict[int, int]]:
-    """Compute per-node and aggregate triangle change from swapping o1↔o2.
-
-    For each edge pair removed/added, iterates the common-neighbour set and
-    accumulates Δt_v for every involved node v.  Returns (ΔT, node_deltas)
-    where ΔT = gained − lost triangles (aggregate) and node_deltas maps
-    node → change in its per-node triangle count.
-
-    Same asymptotic cost as the old scalar version — set intersections are
-    already constructed; we just iterate them instead of discarding them.
-    """
-    nd: dict[int, int] = {}
-
-    def _sub(u: int, v: int) -> None:
-        for w in set(adj[u]) & set(adj[v]):
-            nd[u] = nd.get(u, 0) - 1
-            nd[v] = nd.get(v, 0) - 1
-            nd[w] = nd.get(w, 0) - 1
-
-    def _add(u: int, v: int) -> None:
-        for w in set(adj[u]) & set(adj[v]):
-            nd[u] = nd.get(u, 0) + 1
-            nd[v] = nd.get(v, 0) + 1
-            nd[w] = nd.get(w, 0) + 1
-
-    _sub(s1, o1)
-    _sub(s2, o2)
-    _adj_dec(adj, s1, o1)
-    _adj_dec(adj, s2, o2)
-    _add(s1, o2)
-    _add(s2, o1)
-    _adj_inc(adj, s1, o1)
-    _adj_inc(adj, s2, o2)
-
-    delta_T = sum(nd.values()) // 3
-    return delta_T, nd
 
 
 def refine(

@@ -14,17 +14,11 @@ CCMotifCounter          — colour-coding implementation (sampling-based)
 ExactMotifCounter       — exact enumeration for k ≤ 4
 HybridMotifCounter      — exact for k ≤ 5 (ESCAPE), CC for k ≥ 6
 
-Private helpers (used by stage3 incremental delta)
---------------------------------------------------
-MOTIF4_DS
-_count_motifs4_through_edge
-_motif4_delta
+Incremental SA delta helpers live in ``generator.local_updates``.
 """
 
 from ._base import MotifCounter
 from ._common import (
-    _count_motifs4_through_edge,
-    _motif4_delta,
     cc_run,
     cc_run_stars,
     count_motifs5_escape,
@@ -41,6 +35,4 @@ __all__ = [
     "cc_run",
     "cc_run_stars",
     "count_motifs5_escape",
-    "_count_motifs4_through_edge",
-    "_motif4_delta",
 ]

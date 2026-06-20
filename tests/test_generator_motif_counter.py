@@ -12,9 +12,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from motif_counter import (
     CCMotifCounter,
     ExactMotifCounter,
-    _count_motifs4_through_edge,
-    _motif4_delta,
 )
+from generator.local_updates import _count_motifs4_through_edge, _motif4_delta
 
 
 def _und(n: int, edges: list[tuple[int, int]]) -> igraph.Graph:

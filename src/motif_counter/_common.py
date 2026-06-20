@@ -1,11 +1,8 @@
 """Shared helpers and CC-sampling functions for motif counting.
 
 Module-level constants and functions used by all counter implementations.
-_count_motifs4_through_edge and _motif4_delta are also used directly by
-stage3's incremental SA delta logic.
-
 Graphlet-type constants live on MotifCounter (the base class) and are accessed
-here via MotifCounter.MOTIF4_DS and MotifCounter.SIGMA.
+here via MotifCounter.SIGMA.
 """
 
 import math
@@ -305,88 +302,3 @@ def count_motifs5_escape(g: igraph.Graph) -> dict[tuple, int]:
     return dict(counts)
 
 
-def _count_motifs4_through_edge(adj: list, u: int, v: int) -> dict[tuple, int]:
-    """Count 4-node motif instances containing undirected edge {u, v}.
-
-    Cost: O((deg_u + deg_v)²).
-    """
-    counts: dict[tuple, int] = {}
-    candidates = list((set(adj[u].keys()) | set(adj[v].keys())) - {u, v})
-    for i in range(len(candidates)):
-        w = candidates[i]
-        for j in range(i + 1, len(candidates)):
-            x = candidates[j]
-            uw = w in adj[u]
-            ux = x in adj[u]
-            vw = w in adj[v]
-            vx = x in adj[v]
-            wx = x in adj[w]
-            dw = uw + vw + wx
-            dx = ux + vx + wx
-            if dw == 0 or dx == 0:
-                continue
-            du = 1 + uw + ux
-            dv = 1 + vw + vx
-            ds = tuple(sorted((du, dv, dw, dx)))
-            if ds in MotifCounter.MOTIF4_DS:
-                counts[ds] = counts.get(ds, 0) + 1
-    return counts
-
-
-def _motif4_delta(
-    adj: list, s1: int, o1: int, s2: int, o2: int
-) -> dict[tuple, int]:
-    """Compute change in 4-node motif counts from swapping (s1,o1)↔(s2,o2).
-
-    Cost: O((deg_s1 + deg_o1 + deg_s2 + deg_o2)²).
-    """
-    def _adj_inc(u: int, v: int) -> None:
-        adj[u][v] = adj[u].get(v, 0) + 1
-        adj[v][u] = adj[v].get(u, 0) + 1
-
-    def _adj_dec(u: int, v: int) -> None:
-        adj[u][v] -= 1
-        if adj[u][v] == 0:
-            del adj[u][v]
-        adj[v][u] -= 1
-        if adj[v][u] == 0:
-            del adj[v][u]
-
-    def _overlap(a: int, b: int, c: int, d: int) -> dict[tuple, int]:
-        if len({a, b, c, d}) < 4:
-            return {}
-        nodes = [a, b, c, d]
-        degs = [sum(1 for nd2 in nodes if nd2 != nd and nd2 in adj[nd]) for nd in nodes]
-        if min(degs) == 0:
-            return {}
-        ds = tuple(sorted(degs))
-        return {ds: 1} if ds in MotifCounter.MOTIF4_DS else {}
-
-    def _count_pair(ea: tuple, eb: tuple) -> dict[tuple, int]:
-        cu = _count_motifs4_through_edge(adj, *ea)
-        cv = _count_motifs4_through_edge(adj, *eb)
-        ov = _overlap(ea[0], ea[1], eb[0], eb[1])
-        result: dict[tuple, int] = {}
-        for k in set(cu) | set(cv) | set(ov):
-            result[k] = cu.get(k, 0) + cv.get(k, 0) - ov.get(k, 0)
-        return result
-
-    before = _count_pair((s1, o1), (s2, o2))
-
-    _adj_dec(s1, o1)
-    _adj_dec(s2, o2)
-    _adj_inc(s1, o2)
-    _adj_inc(s2, o1)
-
-    after = _count_pair((s1, o2), (s2, o1))
-
-    _adj_dec(s1, o2)
-    _adj_dec(s2, o1)
-    _adj_inc(s1, o1)
-    _adj_inc(s2, o2)
-
-    return {
-        k: after.get(k, 0) - before.get(k, 0)
-        for k in set(before) | set(after)
-        if after.get(k, 0) != before.get(k, 0)
-    }
