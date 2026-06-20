@@ -33,9 +33,29 @@ from .stage2 import _connect_components
 # ── Tuning constants (Stage-3 refinement) — adjust here ─────────────────────────
 MAX_TARGETED_SWAP_PROB = 0.5  # cap on the probability of attempting a triangle-closing swap
 TEMP_FLOOR = 1e-10             # numerical floor on the SA temperature in the accept test
-# CC absolute errors (~0.03-0.05) are much smaller than normalised triangle/motif
-# terms (~0.3-1.0), so ~5× compensates and gives CC comparable influence in the loss.
-CC_LOSS_WEIGHT = 5.0
+
+# ── Loss function weights — one per component ────────────────────────────────
+# Triangle and motif terms are normalised by target value (relative error in [0,∞]).
+# Assortativity is absolute (r ∈ [−1,1]).  CC_avg is absolute (∈ [0,1]) but its
+# absolute errors (~0.03-0.05) are much smaller than normalised motif terms
+# (~0.3-1.0), so the default weight of 5 gives it comparable influence in the loss.
+LOSS_WEIGHT_TRIANGLES:     float = 1.0
+LOSS_WEIGHT_C4:            float = 1.0  # 4-cycle      (2,2,2,2)
+LOSS_WEIGHT_DIAMOND:       float = 1.0  # diamond      (2,2,3,3)
+LOSS_WEIGHT_K4:            float = 1.0  # complete K4  (3,3,3,3)
+LOSS_WEIGHT_PAW:           float = 0  # paw          (1,2,2,3)
+LOSS_WEIGHT_C5:            float = 0
+LOSS_WEIGHT_C6:            float = 0
+LOSS_WEIGHT_ASSORTATIVITY: float = 1.0
+LOSS_WEIGHT_CC_AVG:        float = 5.0
+
+# Lookup table used by _loss; keeps the function body concise.
+_MOTIF4_WEIGHTS: dict[tuple, float] = {
+    (2, 2, 2, 2): LOSS_WEIGHT_C4,
+    (2, 2, 3, 3): LOSS_WEIGHT_DIAMOND,
+    (3, 3, 3, 3): LOSS_WEIGHT_K4,
+    (1, 2, 2, 3): LOSS_WEIGHT_PAW,
+}
 # Samples for the colour-coding motif estimator used during SA remeasure.
 # Lower than block_e's measurement budget (which scales up to n*20) — steering
 # only needs a rough signal, not a precise count.
@@ -322,17 +342,17 @@ def refine(
         and [0, 1] respectively, so no denominator is needed).
         5/6-cycle terms are normalised by target value like 4-node motifs.
         """
-        loss = abs(tri - target_tri) / max(1, target_tri)
+        loss = LOSS_WEIGHT_TRIANGLES * abs(tri - target_tri) / max(1, target_tri)
         for ds, tgt in _motif4_targets.items():
-            loss += abs(motifs.get(ds, 0) - tgt) / tgt
+            loss += _MOTIF4_WEIGHTS.get(ds, 1.0) * abs(motifs.get(ds, 0) - tgt) / tgt
         if use_c5:
-            loss += abs(c5 - _target_c5) / _target_c5
+            loss += LOSS_WEIGHT_C5 * abs(c5 - _target_c5) / _target_c5
         if use_c6:
-            loss += abs(c6 - _target_c6) / _target_c6
+            loss += LOSS_WEIGHT_C6 * abs(c6 - _target_c6) / _target_c6
         if use_assort:
-            loss += abs(_assort_from_Q(Q) - target_r)
+            loss += LOSS_WEIGHT_ASSORTATIVITY * abs(_assort_from_Q(Q) - target_r)
         if use_cc:
-            loss += CC_LOSS_WEIGHT * abs(cc - target_cc)
+            loss += LOSS_WEIGHT_CC_AVG * abs(cc - target_cc)
         return loss
 
     current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6)
@@ -468,7 +488,12 @@ def refine(
             return None
         return i1, i2, s1, o1, s2, o2, p1
 
-    for _ in range(budget):
+    for step in range(budget):
+        if step > 0 and step % 5_000 == 0:
+            log.info(
+                "Stage 3: step %d/%d — loss=%.4f, tri=%d (target %d), accepted=%d",
+                step, budget, current_loss, current_tri, target_tri, accepted,
+            )
         # Attempt targeted triangle-creating swap when triangles are below target.
         # The probability scales with how large the deficit is (max 50%).
         tri_deficit = target_tri - current_tri

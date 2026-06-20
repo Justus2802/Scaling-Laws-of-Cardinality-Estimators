@@ -6,6 +6,9 @@ import numpy as np
 from ._base import MotifCounter
 from ._common import cc_run, cc_run_stars, count_motifs5_escape
 from .exact_motif_counter import ExactMotifCounter
+from ._logging import get_logger
+
+log = get_logger(__name__)
 
 
 class HybridMotifCounter(MotifCounter):
@@ -29,8 +32,8 @@ class HybridMotifCounter(MotifCounter):
         if k == 5:
             try:
                 return count_motifs5_escape(g)
-            except RuntimeError:
-                # High-degree hub nodes make exact enumeration impractical; fall back to CC.
+            except RuntimeError as exc:
+                log.warning("ESCAPE k=5 fell back to CC sampling: %s", exc)
                 return cc_run(g, k, self._n_samples, self._rng)
         return cc_run(g, k, self._n_samples, self._rng)
 
