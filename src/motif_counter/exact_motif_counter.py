@@ -13,8 +13,9 @@ class ExactMotifCounter(MotifCounter):
     """Exact motif counter via full subgraph enumeration (k ≤ 5).
 
     Triangle count uses igraph's ``list_triangles``; k=3 and k=4 graphlets are
-    counted by direct enumeration (cost O(m·Δ²) for k=4); k=5 graphlets use the
-    ESCAPE BFS-expansion algorithm (cost O(m·Δ³)).  Star counts (k=2..10) use
+    counted by direct enumeration.  Cost is O(m·Δ²) for k=4 where Δ is the
+    maximum degree.  Star counts (k=2..10) use a triangle-node fast path:
+    triangle-free nodes contribute C(d,k) directly; only triangle nodes need
     inclusion-exclusion over neighbourhood-induced edges.
 
     k=5 enumeration raises ``RuntimeError`` on graphs with a very high-degree
@@ -61,13 +62,16 @@ class ExactMotifCounter(MotifCounter):
         A k-star is one centre node connected to k leaves with NO edges between
         leaves (induced subgraph condition).
 
-        For each node v with degree d:
-        - If N(v) has no internal edges: all C(d,k) subsets are independent.
-        - Otherwise use inclusion-exclusion over the neighbourhood-induced edge
-          set E_v: stars_k(v) = C(d,k) - Σ_{F⊆E_v} (-1)^{|F|+1} C(d-|V(F)|, k-|V(F)|).
-        - High-degree nodes (degree > _HUB_THRESH) enumerate k-subsets directly.
+        Fast path: nodes that appear in NO triangle are guaranteed to have zero
+        edges among their neighbours, so every k-subset of N(v) is a valid
+        induced k-star — contribute C(d, k) directly.
 
-        Cost: O(m·Δ + hub_count·Δ^MAX_K / MAX_K!) — fast for sparse KGs.
+        Slow path (triangle nodes only): use inclusion-exclusion over the
+        neighbourhood-induced edge set E_v, or direct subset enumeration for
+        high-degree nodes (degree > _HUB_THRESH).
+
+        Cost: O(m + |triangle_nodes|·Δ²) — the triangle-free majority of KG
+        nodes is handled in O(1) per node after the triangle listing.
         """
         MAX_K = self._MAX_STAR_K
         n = g.vcount()
@@ -79,24 +83,35 @@ class ExactMotifCounter(MotifCounter):
             nbr[e.source].add(e.target)
             nbr[e.target].add(e.source)
 
+        # Nodes that appear in at least one triangle need the slow path.
+        in_triangle: set[int] = set()
+        if g.vcount() >= 3:
+            for tri in g.list_triangles():
+                in_triangle.update(tri)
+
         totals = [0] * (MAX_K + 1)
 
         for v in range(n):
-            nb = nbr[v]
-            d = len(nb)
+            d = len(nbr[v])
             if d < 2:
                 continue
 
-            nb_list = list(nb)
+            if v not in in_triangle:
+                # Triangle-free centre: N(v) has no internal edges by definition.
+                for k in range(2, min(d, MAX_K) + 1):
+                    totals[k] += math.comb(d, k)
+                continue
 
+            nb_list = list(nbr[v])
             inner_edges: list[tuple[int, int]] = [
                 (u, w)
                 for u in nb_list
                 for w in nbr[u]
-                if w in nb and w > u
+                if w in nbr[v] and w > u
             ]
 
             if not inner_edges:
+                # In a triangle but no inner edges from this centre's perspective.
                 for k in range(2, min(d, MAX_K) + 1):
                     totals[k] += math.comb(d, k)
                 continue
