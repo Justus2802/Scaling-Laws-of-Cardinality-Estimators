@@ -6,6 +6,8 @@ double-edge swaps to steer the graph toward Block E / Block F targets:
 * triangle_count               — exact, incremental
 * four_cycle / diamond / K4 / tailed-triangle counts  — remeasured every
   ``remeasure_interval`` accepted swaps via the colour-coding sampler
+* five_cycle_count / six_cycle_count                  — remeasured every
+  ``remeasure_interval`` accepted swaps via CC sampling (k=5, k=6)
 * CC_avg (average local clustering coefficient)       — exact, incremental;
   C(k_v, 2) denominators are invariant under degree-preserving swaps
 * degree_assortativity         — exact, incremental; only the cross-product
@@ -24,7 +26,7 @@ import igraph
 import numpy as np
 
 from ._constants import _RDF_TYPE
-from motif_counter import ExactMotifCounter, MotifCounter, _motif4_delta  # CCMotifCounter available as swap-in
+from motif_counter import CCMotifCounter, ExactMotifCounter, MotifCounter, _motif4_delta, cc_run
 from ._logging import get_logger
 from .stage2 import _connect_components
 
@@ -34,10 +36,14 @@ TEMP_FLOOR = 1e-10             # numerical floor on the SA temperature in the ac
 # CC absolute errors (~0.03-0.05) are much smaller than normalised triangle/motif
 # terms (~0.3-1.0), so ~5× compensates and gives CC comparable influence in the loss.
 CC_LOSS_WEIGHT = 5.0
-# Samples for the colour-coding 4-node motif estimator used during SA remeasure.
+# Samples for the colour-coding motif estimator used during SA remeasure.
 # Lower than block_e's measurement budget (which scales up to n*20) — steering
 # only needs a rough signal, not a precise count.
 CC4_SAMPLES = 10_000
+# Samples for the 5/6-cycle CC remeasure (run every remeasure_interval accepted swaps).
+# Fewer samples than 4-node because cycle estimation is higher-variance and the
+# SA signal just needs a direction, not a precise count.
+CC_CYCLE_SAMPLES = 5_000
 # True = O(deg²) incremental delta per swap; False = CC sampler every remeasure_interval swaps.
 USE_INCREMENTAL_MOTIF4 = True
 # Accepted-swap interval between convergence CSV rows; 0 disables logging entirely.
@@ -134,6 +140,8 @@ def refine(
       denominator C(k_v,2) is invariant; per-node Δt_v drives Δ(CC_avg))
     * 4-node motif counts — C4, diamond, K4, paw (remeasured every
       ``remeasure_interval`` accepted swaps via colour-coding sampler)
+    * 5-cycle and 6-cycle counts (remeasured every ``remeasure_interval``
+      accepted swaps via CC sampling; only when target > 0 in Block E)
     * Degree assortativity (exact, incremental — degree sequence is invariant
       under double-edge swaps, so only the cross-product sum Q changes)
 
@@ -142,7 +150,8 @@ def refine(
     g : igraph.Graph
         Output of Stage 2 (instantiate).
     target_e : BlockE
-        Block E signature — supplies triangle_count and 4-node motif targets.
+        Block E signature — supplies triangle_count, 4-node motif targets,
+        and 5/6-cycle counts.
     target_f : BlockF, optional
         Block F signature — supplies degree_assortativity and
         clustering_coefficient targets.
@@ -263,6 +272,31 @@ def refine(
 
     current_motifs4 = INITIAL_MOTIF_COUNTER.count_motifs4(_build_und_graph()) if _motif4_targets else {}
 
+    # ----------------------------------------- 5/6-cycle targets & RNG for CC
+    # Degree sequences: C5 = (2,2,2,2,2), C6 = (2,2,2,2,2,2)
+    _C5_DS = (2, 2, 2, 2, 2)
+    _C6_DS = (2, 2, 2, 2, 2, 2)
+    _cycle_rng = np.random.default_rng(seed + 7)  # separate RNG so cycle samples don't affect swap stream
+
+    _target_c5 = int(getattr(target_e, "five_cycle_count", 0) or 0)
+    _target_c6 = int(getattr(target_e, "six_cycle_count", 0) or 0)
+    use_c5 = _target_c5 > 0
+    use_c6 = _target_c6 > 0
+
+    def _measure_cycles(g_und: igraph.Graph) -> tuple[int, int]:
+        """Estimate 5- and 6-cycle counts via CC sampling."""
+        c5 = c6 = 0
+        if use_c5:
+            res5 = cc_run(g_und, 5, CC_CYCLE_SAMPLES, _cycle_rng)
+            c5 = res5.get(_C5_DS, 0)
+        if use_c6:
+            res6 = cc_run(g_und, 6, CC_CYCLE_SAMPLES, _cycle_rng)
+            c6 = res6.get(_C6_DS, 0)
+        return c5, c6
+
+    _g_init_und = _build_und_graph() if (use_c5 or use_c6) else None
+    current_c5, current_c6 = _measure_cycles(_g_init_und) if _g_init_und is not None else (0, 0)
+
     # ------------------------------------------------- assortativity tracking
     # Double-edge swaps preserve degree sequences, so only the cross-product
     # sum Q = Σ_e d_u*d_v changes.  S and T are constant throughout the walk.
@@ -291,23 +325,28 @@ def refine(
         return (2.0 * M_e * Q - S_deg ** 2 / 2.0) / denom
 
     # ------------------------------------------------------- loss function
-    def _loss(tri: int, motifs: dict, Q: float, cc: float) -> float:
+    def _loss(tri: int, motifs: dict, Q: float, cc: float, c5: int, c6: int) -> float:
         """SA objective: sum of relative errors across all active targets.
 
         Triangle and motif terms are normalised by target value.
         Assortativity and CC_avg terms are absolute (both already in [−1, 1]
         and [0, 1] respectively, so no denominator is needed).
+        5/6-cycle terms are normalised by target value like 4-node motifs.
         """
         loss = abs(tri - target_tri) / max(1, target_tri)
         for ds, tgt in _motif4_targets.items():
             loss += abs(motifs.get(ds, 0) - tgt) / tgt
+        if use_c5:
+            loss += abs(c5 - _target_c5) / _target_c5
+        if use_c6:
+            loss += abs(c6 - _target_c6) / _target_c6
         if use_assort:
             loss += abs(_assort_from_Q(Q) - target_r)
         if use_cc:
             loss += CC_LOSS_WEIGHT * abs(cc - target_cc)
         return loss
 
-    current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current)
+    current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6)
     best_loss = current_loss
     best_content = list(content_edge_data)
     best_accepted = 0
@@ -328,6 +367,10 @@ def refine(
 
     _conv_fields = ["accepted", "loss", "tri_err"]
     _conv_fields += [_DS_NAME[ds] for ds in _motif4_targets if ds in _DS_NAME]
+    if use_c5:
+        _conv_fields.append("c5_err")
+    if use_c6:
+        _conv_fields.append("c6_err")
     if use_cc:
         _conv_fields.append("cc_err")
     if use_assort:
@@ -357,6 +400,10 @@ def refine(
                     abs(current_motifs4.get(ds, 0) - _motif4_targets[ds])
                     / max(1, _motif4_targets[ds]), 6
                 )
+        if use_c5:
+            row["c5_err"] = round(abs(current_c5 - _target_c5) / max(1, _target_c5), 6)
+        if use_c6:
+            row["c6_err"] = round(abs(current_c6 - _target_c6) / max(1, _target_c6), 6)
         if use_cc:
             row["cc_err"] = round(abs(cc_current - target_cc), 6)
         if use_assort:
@@ -379,8 +426,11 @@ def refine(
 
     log.info(
         "Stage 3: refining (seed=%d, budget=%d) — target triangles=%d, motif4 targets=%s, "
-        "assortativity=%s, cc_avg=%s; initial loss=%.4f (triangles=%d, cc_avg=%.4f)",
+        "5-cycle=%s, 6-cycle=%s, assortativity=%s, cc_avg=%s; "
+        "initial loss=%.4f (triangles=%d, cc_avg=%.4f)",
         seed, budget, target_tri, sorted(_motif4_targets),
+        _target_c5 if use_c5 else "off",
+        _target_c6 if use_c6 else "off",
         f"{target_r:.4f}" if use_assort else "off",
         f"{target_cc:.4f}" if use_cc else "off",
         current_loss, current_tri, cc_current,
@@ -464,7 +514,9 @@ def refine(
             new_motifs4 = {k: current_motifs4.get(k, 0) + _m4d.get(k, 0) for k in _motif4_targets}
         else:
             new_motifs4 = current_motifs4
-        new_loss = _loss(new_tri, new_motifs4, new_Q, new_cc)
+        # 5/6-cycle counts are not updated incrementally per swap (too expensive);
+        # pass current values — they are remeasured every remeasure_interval.
+        new_loss = _loss(new_tri, new_motifs4, new_Q, new_cc, current_c5, current_c6)
 
         if new_loss < current_loss:
             accept = True
@@ -499,9 +551,14 @@ def refine(
 
             if USE_INCREMENTAL_MOTIF4 and _motif4_targets:
                 current_motifs4 = new_motifs4
-            elif _motif4_targets and accepted % remeasure_interval == 0:
+
+            do_remeasure = accepted % remeasure_interval == 0
+            if not USE_INCREMENTAL_MOTIF4 and _motif4_targets and do_remeasure:
                 current_motifs4 = REMEASURE_MOTIF_COUNTER.count_motifs4(_build_und_graph())
-                current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current)
+                current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6)
+            if (use_c5 or use_c6) and do_remeasure:
+                current_c5, current_c6 = _measure_cycles(_build_und_graph())
+                current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6)
 
             if CONVERGENCE_LOG_INTERVAL > 0 and accepted % CONVERGENCE_LOG_INTERVAL == 0:
                 _write_conv_row()

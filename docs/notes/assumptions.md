@@ -188,6 +188,7 @@ After throttling to the edge budget, `_connect_components` adds one bridging edg
 The simulated-annealing loss is a weighted sum of relative errors:
 - **Triangle count** — exact, incremental via `_triangle_delta`
 - **4-node motifs** (C4, diamond, K4, tailed triangle) — remeasured every `remeasure_interval` accepted swaps using `igraph.motifs_randesu(size=4)` on a rebuilt undirected graph
+- **5-cycle and 6-cycle counts** — remeasured every `remeasure_interval` accepted swaps via CC sampling (`cc_run` with `CC_CYCLE_SAMPLES=5000` each). Active only when `target_e.five_cycle_count > 0` or `target_e.six_cycle_count > 0` respectively. Not updated incrementally per swap (exact incremental delta for 5/6-cycles is intractable); the loss uses the last measured value between remeasure intervals, giving a coarse but directional signal.
 - **Degree assortativity** — exact and incremental: double-edge swaps preserve degree sequences, so only the cross-product sum Q = Σ_e d_u·d_v changes. ΔQ = (d_s1−d_s2)(d_o2−d_o1). The formula r = (4MQ − S²) / (2MT − S²) gives assortativity from Q alone since S and T are constant under swaps.
 
 Block F's `degree_assortativity` is targeted when `target_f` is provided to `refine` (set automatically by `Generator.sample` when `Signature.f` is not None).
