@@ -4,7 +4,7 @@ import igraph
 import numpy as np
 
 from ._base import MotifCounter
-from ._common import cc_run, cc_run_stars
+from ._common import cc_run
 from .exact_motif_counter import ExactMotifCounter
 from ._logging import get_logger
 
@@ -38,4 +38,4 @@ class HybridMotifCounter(MotifCounter):
         return cc_run(g, k, self._n_samples, self._rng)
 
     def count_stars(self, g: igraph.Graph) -> dict[int, int]:
-        return cc_run_stars(g, self._n_samples, self._rng)
+        return self._exact.count_stars(g)
