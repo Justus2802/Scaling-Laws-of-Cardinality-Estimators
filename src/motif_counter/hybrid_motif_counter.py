@@ -4,7 +4,7 @@ import igraph
 import numpy as np
 
 from ._base import MotifCounter
-from ._common import cc_run, cc_run_stars, count_motifs5_escape
+from ._common import cc_run, cc_run_stars
 from .exact_motif_counter import ExactMotifCounter
 from ._logging import get_logger
 
@@ -30,10 +30,10 @@ class HybridMotifCounter(MotifCounter):
         if k <= 4:
             return self._exact.count_motifsk(g, k)
         if k == 5:
-            try:
-                return count_motifs5_escape(g)
-            except RuntimeError as exc:
-                log.warning("ESCAPE k=5 fell back to CC sampling: %s", exc)
+            #try:
+            #    return count_motifs5_escape(g)
+            #except RuntimeError:
+                # High-degree hub nodes make exact enumeration impractical; fall back to CC.
                 return cc_run(g, k, self._n_samples, self._rng)
         return cc_run(g, k, self._n_samples, self._rng)
 

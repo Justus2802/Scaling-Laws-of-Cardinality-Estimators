@@ -47,7 +47,7 @@ LOSS_WEIGHT_PAW:           float = 0  # paw          (1,2,2,3)
 LOSS_WEIGHT_C5:            float = 0
 LOSS_WEIGHT_C6:            float = 0
 LOSS_WEIGHT_ASSORTATIVITY: float = 1.0
-LOSS_WEIGHT_CC_AVG:        float = 5.0
+LOSS_WEIGHT_CC_AVG:        float = 1.0
 
 # Lookup table used by _loss; keeps the function body concise.
 _MOTIF4_WEIGHTS: dict[tuple, float] = {
@@ -252,31 +252,6 @@ def refine(
     use_cc = not math.isnan(target_cc)
     cc_current = float(np.sum(t_node / denom) / n)
 
-    # -------------------------------------------------------- triangle counter
-    def _count_triangles() -> int:
-        """Count triangles in the current undirected multi-adjacency ``adj``."""
-        total = 0
-        for u, nbrs in enumerate(adj):
-            for v in nbrs:
-                if v > u:
-                    total += len(set(adj[u]) & set(adj[v]))
-        return total // 3
-
-    target_tri = int(target_e.triangle_count)
-    current_tri = _count_triangles()
-
-    # ----------------------------------------- 4-node motif targets & counter
-    _motif4_targets: dict[tuple, int] = {}
-    for deg_seq, attr in [
-        ((2, 2, 2, 2), "four_cycle_count"),
-        ((2, 2, 3, 3), "diamond_count"),
-        ((3, 3, 3, 3), "k4_count"),
-        ((1, 2, 2, 3), "tailed_triangle_count"),
-    ]:
-        val = getattr(target_e, attr, 0)
-        if val and val > 0:
-            _motif4_targets[deg_seq] = int(val)
-
     def _build_und_graph() -> igraph.Graph:
         """Build a simple undirected igraph.Graph from current content edges."""
         edge_set: set[tuple[int, int]] = set()
@@ -290,6 +265,21 @@ def refine(
         if und_edges:
             g_tmp.add_edges(und_edges)
         return g_tmp
+
+    target_tri = int(target_e.triangle_count)
+    current_tri = INITIAL_MOTIF_COUNTER.count_triangles(_build_und_graph())
+
+    # ----------------------------------------- 4-node motif targets & counter
+    _motif4_targets: dict[tuple, int] = {}
+    for deg_seq, attr in [
+        ((2, 2, 2, 2), "four_cycle_count"),
+        ((2, 2, 3, 3), "diamond_count"),
+        ((3, 3, 3, 3), "k4_count"),
+        ((1, 2, 2, 3), "tailed_triangle_count"),
+    ]:
+        val = getattr(target_e, attr, 0)
+        if val and val > 0:
+            _motif4_targets[deg_seq] = int(val)
 
     current_motifs4 = INITIAL_MOTIF_COUNTER.count_motifs4(_build_und_graph()) if _motif4_targets else {}
 
@@ -335,12 +325,10 @@ def refine(
 
     # ------------------------------------------------------- loss function
     def _loss(tri: int, motifs: dict, Q: float, cc: float, c5: int, c6: int) -> float:
-        """SA objective: sum of relative errors across all active targets.
+        """SA objective: weighted sum of relative errors across all active targets.
 
-        Triangle and motif terms are normalised by target value.
-        Assortativity and CC_avg terms are absolute (both already in [−1, 1]
-        and [0, 1] respectively, so no denominator is needed).
-        5/6-cycle terms are normalised by target value like 4-node motifs.
+        All terms use |current − target| / |target|.  A floor of 1e-9 guards
+        against division by zero when a target is exactly 0.
         """
         loss = LOSS_WEIGHT_TRIANGLES * abs(tri - target_tri) / max(1, target_tri)
         for ds, tgt in _motif4_targets.items():
@@ -350,9 +338,9 @@ def refine(
         if use_c6:
             loss += LOSS_WEIGHT_C6 * abs(c6 - _target_c6) / _target_c6
         if use_assort:
-            loss += LOSS_WEIGHT_ASSORTATIVITY * abs(_assort_from_Q(Q) - target_r)
+            loss += LOSS_WEIGHT_ASSORTATIVITY * abs(_assort_from_Q(Q) - target_r) / max(1e-9, abs(target_r))
         if use_cc:
-            loss += LOSS_WEIGHT_CC_AVG * abs(cc - target_cc)
+            loss += LOSS_WEIGHT_CC_AVG * abs(cc - target_cc) / max(1e-9, target_cc)
         return loss
 
     current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6)
@@ -414,9 +402,9 @@ def refine(
         if use_c6:
             row["c6_err"] = round(abs(current_c6 - _target_c6) / max(1, _target_c6), 6)
         if use_cc:
-            row["cc_err"] = round(abs(cc_current - target_cc), 6)
+            row["cc_err"] = round(abs(cc_current - target_cc) / max(1e-9, target_cc), 6)
         if use_assort:
-            row["assort_err"] = round(abs(_assort_from_Q(Q_deg) - target_r), 6)
+            row["assort_err"] = round(abs(_assort_from_Q(Q_deg) - target_r) / max(1e-9, abs(target_r)), 6)
 
         # Ground-truth errors via periodic counter (same strategy as remeasure)
         _g_sig = _build_und_graph()

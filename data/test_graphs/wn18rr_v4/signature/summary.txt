@@ -25,12 +25,40 @@
   num_distinct_cs    : 43
   CS frequency       : power-law(alpha=1.3911, xmin=1.0)
   CS size            : skew-normal(loc=1.196, scale=0.813, shape=1.450, cutoffs=[1.0,5.0])
-  inverse-CS size    : skew-normal(loc=1.000, scale=0.608, shape=8549986.867, cutoffs=[1.0,3.0])
+  inv_num_distinct_cs: 32
+  inverse-CS freq    : power-law(alpha=1.6060, xmin=13.0)
+  inverse-CS size    : skew-normal(loc=1.000, scale=0.608, shape=20622660.998, cutoffs=[1.0,3.0])
   two-step path count: trunc. power-law(alpha=1.0728, range=[1,17770])
+
+=== Reduced Block E: Motif Shape Distribution (G5) ===
+
+--- Subgraph counts ---
+  triangles:           660
+  4-cycles:            1385
+  5-cycles (est):      682
+  6-cycles (est):      1162
+  diamonds:            534
+  K4:                  19
+  tailed triangles:    6816
+
+--- Path templates ---
+    k  zipf_alpha     entropy
+    2         nan     -0.0000
+    3      1.4373      0.0570
+    4      1.2248      0.2979
+    5      1.3261      0.7632
+    6      1.3152      1.1556
+    7      1.2191      1.4530
+    8      1.3089      1.6593
+    9      1.2896      1.7698
+   10      1.3180      2.4270
+
+--- Tree templates ---
+  zipf_alpha=1.1731  entropy=0.6090
 
 === Reduced Block F: Connectivity (G4) ===
   num_components            : 1
   largest_component_fraction: 1.0000
   clustering_coefficient    : 0.0955
   degree_assortativity      : -0.0791
-  shortest path             : skew-normal(loc=7.979, scale=1.939, shape=-0.728)
+  shortest path             : skew-normal(loc=8.118, scale=1.915, shape=-0.930)
