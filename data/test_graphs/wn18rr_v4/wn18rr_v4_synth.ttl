@@ -95,7 +95,7 @@
         <http://kgsynth.org/entity/3216> ;
     ns1:8 <http://kgsynth.org/entity/1950> .
 
-<http://kgsynth.org/entity/1077> ns1:3 <http://kgsynth.org/entity/3834> .
+<http://kgsynth.org/entity/1077> ns1:3 <http://kgsynth.org/entity/1507> .
 
 <http://kgsynth.org/entity/1084> ns1:7 <http://kgsynth.org/entity/158>,
         <http://kgsynth.org/entity/768> ;
@@ -186,7 +186,7 @@
 
 <http://kgsynth.org/entity/1193> ns1:4 <http://kgsynth.org/entity/2850> .
 
-<http://kgsynth.org/entity/1198> ns1:6 <http://kgsynth.org/entity/2555> .
+<http://kgsynth.org/entity/1198> ns1:6 <http://kgsynth.org/entity/792> .
 
 <http://kgsynth.org/entity/1205> ns1:0 <http://kgsynth.org/entity/1915> .
 
@@ -312,8 +312,7 @@
         <http://kgsynth.org/entity/1948>,
         <http://kgsynth.org/entity/2024>,
         <http://kgsynth.org/entity/2599>,
-        <http://kgsynth.org/entity/3229>,
-        <http://kgsynth.org/entity/3626> ;
+        <http://kgsynth.org/entity/3229> ;
     ns1:7 <http://kgsynth.org/entity/2097>,
         <http://kgsynth.org/entity/2462> .
 
@@ -395,7 +394,7 @@
 
 <http://kgsynth.org/entity/1431> ns1:1 <http://kgsynth.org/entity/661> .
 
-<http://kgsynth.org/entity/1434> ns1:0 <http://kgsynth.org/entity/2359> ;
+<http://kgsynth.org/entity/1434> ns1:0 <http://kgsynth.org/entity/1042> ;
     ns1:7 <http://kgsynth.org/entity/1171>,
         <http://kgsynth.org/entity/1333>,
         <http://kgsynth.org/entity/2415> .
@@ -437,7 +436,7 @@
         <http://kgsynth.org/entity/2093> ;
     ns1:8 <http://kgsynth.org/entity/795> .
 
-<http://kgsynth.org/entity/1474> ns1:6 <http://kgsynth.org/entity/1976> ;
+<http://kgsynth.org/entity/1474> ns1:6 <http://kgsynth.org/entity/1283> ;
     ns1:7 <http://kgsynth.org/entity/1543>,
         <http://kgsynth.org/entity/540>,
         <http://kgsynth.org/entity/723> ;
@@ -458,7 +457,7 @@
 
 <http://kgsynth.org/entity/1482> ns1:8 <http://kgsynth.org/entity/916> .
 
-<http://kgsynth.org/entity/1489> ns1:3 <http://kgsynth.org/entity/1230> .
+<http://kgsynth.org/entity/1489> ns1:3 <http://kgsynth.org/entity/2012> .
 
 <http://kgsynth.org/entity/1492> ns1:8 <http://kgsynth.org/entity/3154> .
 
@@ -520,7 +519,7 @@
         <http://kgsynth.org/entity/612> ;
     ns1:8 <http://kgsynth.org/entity/1860> .
 
-<http://kgsynth.org/entity/1532> ns1:6 <http://kgsynth.org/entity/792> ;
+<http://kgsynth.org/entity/1532> ns1:6 <http://kgsynth.org/entity/2555> ;
     ns1:7 <http://kgsynth.org/entity/1239>,
         <http://kgsynth.org/entity/208> ;
     ns1:8 <http://kgsynth.org/entity/2030> .
@@ -563,7 +562,7 @@
 
 <http://kgsynth.org/entity/1580> ns1:7 <http://kgsynth.org/entity/96> .
 
-<http://kgsynth.org/entity/1589> ns1:6 <http://kgsynth.org/entity/1314> .
+<http://kgsynth.org/entity/1589> ns1:6 <http://kgsynth.org/entity/649> .
 
 <http://kgsynth.org/entity/1594> ns1:8 <http://kgsynth.org/entity/2696> .
 
@@ -571,8 +570,8 @@
 
 <http://kgsynth.org/entity/1602> ns1:1 <http://kgsynth.org/entity/2067> .
 
-<http://kgsynth.org/entity/1604> ns1:5 <http://kgsynth.org/entity/1232>,
-        <http://kgsynth.org/entity/2659>,
+<http://kgsynth.org/entity/1604> ns1:5 <http://kgsynth.org/entity/2659>,
+        <http://kgsynth.org/entity/480>,
         <http://kgsynth.org/entity/556>,
         <http://kgsynth.org/entity/830> ;
     ns1:7 <http://kgsynth.org/entity/1021>,
@@ -836,7 +835,7 @@
     ns1:8 <http://kgsynth.org/entity/2238>,
         <http://kgsynth.org/entity/804> .
 
-<http://kgsynth.org/entity/1831> ns1:1 <http://kgsynth.org/entity/42> .
+<http://kgsynth.org/entity/1831> ns1:1 <http://kgsynth.org/entity/938> .
 
 <http://kgsynth.org/entity/1834> ns1:3 <http://kgsynth.org/entity/1599> .
 
@@ -844,7 +843,7 @@
 
 <http://kgsynth.org/entity/1842> ns1:7 <http://kgsynth.org/entity/768> .
 
-<http://kgsynth.org/entity/1847> ns1:6 <http://kgsynth.org/entity/3811> ;
+<http://kgsynth.org/entity/1847> ns1:6 <http://kgsynth.org/entity/3457> ;
     ns1:7 <http://kgsynth.org/entity/1289>,
         <http://kgsynth.org/entity/3406> ;
     ns1:8 <http://kgsynth.org/entity/2428>,
@@ -989,7 +988,7 @@
 
 <http://kgsynth.org/entity/2021> ns1:7 <http://kgsynth.org/entity/182> .
 
-<http://kgsynth.org/entity/2028> ns1:3 <http://kgsynth.org/entity/3> .
+<http://kgsynth.org/entity/2028> ns1:3 <http://kgsynth.org/entity/1247> .
 
 <http://kgsynth.org/entity/2029> ns1:6 <http://kgsynth.org/entity/540> ;
     ns1:7 <http://kgsynth.org/entity/1936>,
@@ -1045,8 +1044,8 @@
         <http://kgsynth.org/entity/2486>,
         <http://kgsynth.org/entity/3780>,
         <http://kgsynth.org/entity/403> ;
-    ns1:8 <http://kgsynth.org/entity/3394>,
-        <http://kgsynth.org/entity/3774> .
+    ns1:8 <http://kgsynth.org/entity/3216>,
+        <http://kgsynth.org/entity/3394> .
 
 <http://kgsynth.org/entity/2077> ns1:1 <http://kgsynth.org/entity/776> .
 
@@ -1138,7 +1137,7 @@
         <http://kgsynth.org/entity/1090>,
         <http://kgsynth.org/entity/2336>,
         <http://kgsynth.org/entity/356> ;
-    ns1:8 <http://kgsynth.org/entity/3216> .
+    ns1:8 <http://kgsynth.org/entity/3774> .
 
 <http://kgsynth.org/entity/2152> ns1:7 <http://kgsynth.org/entity/3507> .
 
@@ -1177,9 +1176,9 @@
         <http://kgsynth.org/entity/2600>,
         <http://kgsynth.org/entity/2844>,
         <http://kgsynth.org/entity/303>,
+        <http://kgsynth.org/entity/3807>,
         <http://kgsynth.org/entity/386>,
-        <http://kgsynth.org/entity/862>,
-        <http://kgsynth.org/entity/99> ;
+        <http://kgsynth.org/entity/862> ;
     ns1:7 <http://kgsynth.org/entity/3278>,
         <http://kgsynth.org/entity/60> .
 
@@ -1222,7 +1221,7 @@
 
 <http://kgsynth.org/entity/2217> ns1:5 <http://kgsynth.org/entity/1565> .
 
-<http://kgsynth.org/entity/222> ns1:4 <http://kgsynth.org/entity/1875> .
+<http://kgsynth.org/entity/222> ns1:4 <http://kgsynth.org/entity/2615> .
 
 <http://kgsynth.org/entity/2225> ns1:0 <http://kgsynth.org/entity/1983> ;
     ns1:7 <http://kgsynth.org/entity/2276>,
@@ -1335,7 +1334,7 @@
 
 <http://kgsynth.org/entity/2319> ns1:1 <http://kgsynth.org/entity/2302> .
 
-<http://kgsynth.org/entity/2327> ns1:0 <http://kgsynth.org/entity/2599> ;
+<http://kgsynth.org/entity/2327> ns1:0 <http://kgsynth.org/entity/734> ;
     ns1:7 <http://kgsynth.org/entity/2214>,
         <http://kgsynth.org/entity/430>,
         <http://kgsynth.org/entity/848> .
@@ -1370,7 +1369,7 @@
 
 <http://kgsynth.org/entity/2376> ns1:0 <http://kgsynth.org/entity/645> .
 
-<http://kgsynth.org/entity/2378> ns1:5 <http://kgsynth.org/entity/3035> .
+<http://kgsynth.org/entity/2378> ns1:5 <http://kgsynth.org/entity/619> .
 
 <http://kgsynth.org/entity/2380> ns1:0 <http://kgsynth.org/entity/1674> ;
     ns1:7 <http://kgsynth.org/entity/565> ;
@@ -1400,13 +1399,13 @@
         <http://kgsynth.org/entity/862> ;
     ns1:8 <http://kgsynth.org/entity/1107> .
 
-<http://kgsynth.org/entity/241> ns1:5 <http://kgsynth.org/entity/1642>,
+<http://kgsynth.org/entity/241> ns1:5 <http://kgsynth.org/entity/1232>,
+        <http://kgsynth.org/entity/1642>,
         <http://kgsynth.org/entity/2232>,
         <http://kgsynth.org/entity/23>,
         <http://kgsynth.org/entity/3040>,
         <http://kgsynth.org/entity/3376>,
         <http://kgsynth.org/entity/3716>,
-        <http://kgsynth.org/entity/480>,
         <http://kgsynth.org/entity/545>,
         <http://kgsynth.org/entity/851> ;
     ns1:7 <http://kgsynth.org/entity/1159>,
@@ -1464,17 +1463,17 @@
 
 <http://kgsynth.org/entity/2474> ns1:7 <http://kgsynth.org/entity/1837> .
 
-<http://kgsynth.org/entity/2485> ns1:4 <http://kgsynth.org/entity/1469> .
+<http://kgsynth.org/entity/2485> ns1:4 <http://kgsynth.org/entity/1250> .
 
 <http://kgsynth.org/entity/249> ns1:7 <http://kgsynth.org/entity/1722>,
         <http://kgsynth.org/entity/3742>,
         <http://kgsynth.org/entity/515> ;
     ns1:8 <http://kgsynth.org/entity/932> .
 
-<http://kgsynth.org/entity/2491> ns1:7 <http://kgsynth.org/entity/1262>,
-        <http://kgsynth.org/entity/1739>,
+<http://kgsynth.org/entity/2491> ns1:7 <http://kgsynth.org/entity/1739>,
         <http://kgsynth.org/entity/2235>,
-        <http://kgsynth.org/entity/4> ;
+        <http://kgsynth.org/entity/4>,
+        <http://kgsynth.org/entity/420> ;
     ns1:8 <http://kgsynth.org/entity/133>,
         <http://kgsynth.org/entity/1752> .
 
@@ -1535,7 +1534,7 @@
         <http://kgsynth.org/entity/2844>,
         <http://kgsynth.org/entity/581> .
 
-<http://kgsynth.org/entity/2551> ns1:0 <http://kgsynth.org/entity/1208> ;
+<http://kgsynth.org/entity/2551> ns1:0 <http://kgsynth.org/entity/3796> ;
     ns1:7 <http://kgsynth.org/entity/2209>,
         <http://kgsynth.org/entity/3051> .
 
@@ -1548,7 +1547,7 @@
 
 <http://kgsynth.org/entity/256> ns1:8 <http://kgsynth.org/entity/1512> .
 
-<http://kgsynth.org/entity/2567> ns1:3 <http://kgsynth.org/entity/1037> .
+<http://kgsynth.org/entity/2567> ns1:3 <http://kgsynth.org/entity/1247> .
 
 <http://kgsynth.org/entity/258> ns1:0 <http://kgsynth.org/entity/3634> .
 
@@ -1717,8 +1716,7 @@
         <http://kgsynth.org/entity/653> ;
     ns1:8 <http://kgsynth.org/entity/2994> .
 
-<http://kgsynth.org/entity/2746> ns1:5 <http://kgsynth.org/entity/1700>,
-        <http://kgsynth.org/entity/3108>,
+<http://kgsynth.org/entity/2746> ns1:5 <http://kgsynth.org/entity/3108>,
         <http://kgsynth.org/entity/3626>,
         <http://kgsynth.org/entity/457> ;
     ns1:7 <http://kgsynth.org/entity/1485>,
@@ -1752,29 +1750,29 @@
 
 <http://kgsynth.org/entity/281> ns1:7 <http://kgsynth.org/entity/1800>,
         <http://kgsynth.org/entity/2138>,
-        <http://kgsynth.org/entity/3291>,
+        <http://kgsynth.org/entity/2584>,
         <http://kgsynth.org/entity/867> ;
     ns1:8 <http://kgsynth.org/entity/3049>,
         <http://kgsynth.org/entity/3815> .
 
 <http://kgsynth.org/entity/282> ns1:7 <http://kgsynth.org/entity/1708> .
 
-<http://kgsynth.org/entity/2821> ns1:3 <http://kgsynth.org/entity/1507> .
+<http://kgsynth.org/entity/2821> ns1:3 <http://kgsynth.org/entity/3834> .
 
 <http://kgsynth.org/entity/2824> ns1:8 <http://kgsynth.org/entity/324> .
 
-<http://kgsynth.org/entity/2839> ns1:6 <http://kgsynth.org/entity/570> .
+<http://kgsynth.org/entity/2839> ns1:6 <http://kgsynth.org/entity/1072> .
 
 <http://kgsynth.org/entity/2841> ns1:3 <http://kgsynth.org/entity/1877>,
         <http://kgsynth.org/entity/2535>,
         <http://kgsynth.org/entity/2576>,
-        <http://kgsynth.org/entity/3517>,
         <http://kgsynth.org/entity/3574>,
         <http://kgsynth.org/entity/3665>,
+        <http://kgsynth.org/entity/3684>,
         <http://kgsynth.org/entity/723> ;
-    ns1:4 <http://kgsynth.org/entity/1312>,
-        <http://kgsynth.org/entity/2382>,
-        <http://kgsynth.org/entity/298> ;
+    ns1:4 <http://kgsynth.org/entity/2382>,
+        <http://kgsynth.org/entity/298>,
+        <http://kgsynth.org/entity/3106> ;
     ns1:7 <http://kgsynth.org/entity/2352>,
         <http://kgsynth.org/entity/3177>,
         <http://kgsynth.org/entity/3421>,
@@ -1826,7 +1824,7 @@
         <http://kgsynth.org/entity/81> ;
     ns1:8 <http://kgsynth.org/entity/3000> .
 
-<http://kgsynth.org/entity/2870> ns1:5 <http://kgsynth.org/entity/3015> .
+<http://kgsynth.org/entity/2870> ns1:5 <http://kgsynth.org/entity/2239> .
 
 <http://kgsynth.org/entity/2871> ns1:0 <http://kgsynth.org/entity/3523> ;
     ns1:7 <http://kgsynth.org/entity/1040> .
@@ -1883,9 +1881,9 @@
     ns1:8 <http://kgsynth.org/entity/3093> .
 
 <http://kgsynth.org/entity/2943> ns1:3 <http://kgsynth.org/entity/1167>,
-        <http://kgsynth.org/entity/1247>,
-        <http://kgsynth.org/entity/3665>,
-        <http://kgsynth.org/entity/618> ;
+        <http://kgsynth.org/entity/3>,
+        <http://kgsynth.org/entity/618>,
+        <http://kgsynth.org/entity/629> ;
     ns1:7 <http://kgsynth.org/entity/1258>,
         <http://kgsynth.org/entity/1526>,
         <http://kgsynth.org/entity/2528>,
@@ -1923,7 +1921,7 @@
     ns1:8 <http://kgsynth.org/entity/19>,
         <http://kgsynth.org/entity/3562> .
 
-<http://kgsynth.org/entity/2974> ns1:2 <http://kgsynth.org/entity/2487> ;
+<http://kgsynth.org/entity/2974> ns1:2 <http://kgsynth.org/entity/3341> ;
     ns1:7 <http://kgsynth.org/entity/612>,
         <http://kgsynth.org/entity/862> .
 
@@ -1938,7 +1936,7 @@
         <http://kgsynth.org/entity/3595>,
         <http://kgsynth.org/entity/427>,
         <http://kgsynth.org/entity/445> ;
-    ns1:8 <http://kgsynth.org/entity/2581>,
+    ns1:8 <http://kgsynth.org/entity/1362>,
         <http://kgsynth.org/entity/3590> .
 
 <http://kgsynth.org/entity/2985> ns1:7 <http://kgsynth.org/entity/1614>,
@@ -1952,7 +1950,7 @@
 
 <http://kgsynth.org/entity/3002> ns1:4 <http://kgsynth.org/entity/54> .
 
-<http://kgsynth.org/entity/3012> ns1:1 <http://kgsynth.org/entity/938> .
+<http://kgsynth.org/entity/3012> ns1:1 <http://kgsynth.org/entity/42> .
 
 <http://kgsynth.org/entity/3014> ns1:7 <http://kgsynth.org/entity/1090>,
         <http://kgsynth.org/entity/2313>,
@@ -2099,7 +2097,7 @@
         <http://kgsynth.org/entity/2892> ;
     ns1:8 <http://kgsynth.org/entity/469> .
 
-<http://kgsynth.org/entity/3130> ns1:2 <http://kgsynth.org/entity/1272> .
+<http://kgsynth.org/entity/3130> ns1:2 <http://kgsynth.org/entity/3081> .
 
 <http://kgsynth.org/entity/3135> ns1:0 <http://kgsynth.org/entity/2041> .
 
@@ -2204,7 +2202,7 @@
 <http://kgsynth.org/entity/3241> ns1:7 <http://kgsynth.org/entity/2462>,
         <http://kgsynth.org/entity/2697>,
         <http://kgsynth.org/entity/716> ;
-    ns1:8 <http://kgsynth.org/entity/566> .
+    ns1:8 <http://kgsynth.org/entity/673> .
 
 <http://kgsynth.org/entity/3245> ns1:0 <http://kgsynth.org/entity/2631> ;
     ns1:7 <http://kgsynth.org/entity/3108>,
@@ -2256,9 +2254,9 @@
     ns1:8 <http://kgsynth.org/entity/3096>,
         <http://kgsynth.org/entity/3126> .
 
-<http://kgsynth.org/entity/3276> ns1:7 <http://kgsynth.org/entity/1358>,
+<http://kgsynth.org/entity/3276> ns1:7 <http://kgsynth.org/entity/1347>,
+        <http://kgsynth.org/entity/1358>,
         <http://kgsynth.org/entity/1961>,
-        <http://kgsynth.org/entity/2716>,
         <http://kgsynth.org/entity/3495>,
         <http://kgsynth.org/entity/738> ;
     ns1:8 <http://kgsynth.org/entity/2182>,
@@ -2308,7 +2306,7 @@
 <http://kgsynth.org/entity/3338> ns1:6 <http://kgsynth.org/entity/641> ;
     ns1:7 <http://kgsynth.org/entity/1408>,
         <http://kgsynth.org/entity/3625> ;
-    ns1:8 <http://kgsynth.org/entity/1720>,
+    ns1:8 <http://kgsynth.org/entity/2883>,
         <http://kgsynth.org/entity/737> .
 
 <http://kgsynth.org/entity/3340> ns1:1 <http://kgsynth.org/entity/831> .
@@ -2337,7 +2335,7 @@
 
 <http://kgsynth.org/entity/3369> ns1:8 <http://kgsynth.org/entity/3731> .
 
-<http://kgsynth.org/entity/337> ns1:2 <http://kgsynth.org/entity/2811> .
+<http://kgsynth.org/entity/337> ns1:2 <http://kgsynth.org/entity/108> .
 
 <http://kgsynth.org/entity/3370> ns1:0 <http://kgsynth.org/entity/2777> ;
     ns1:7 <http://kgsynth.org/entity/1192>,
@@ -2375,8 +2373,8 @@
     ns1:8 <http://kgsynth.org/entity/1312>,
         <http://kgsynth.org/entity/3216> .
 
-<http://kgsynth.org/entity/3410> ns1:3 <http://kgsynth.org/entity/2729>,
-        <http://kgsynth.org/entity/2837>,
+<http://kgsynth.org/entity/3410> ns1:3 <http://kgsynth.org/entity/2012>,
+        <http://kgsynth.org/entity/2729>,
         <http://kgsynth.org/entity/3258>,
         <http://kgsynth.org/entity/3517> ;
     ns1:4 <http://kgsynth.org/entity/2282>,
@@ -2394,7 +2392,7 @@
 
 <http://kgsynth.org/entity/3413> ns1:0 <http://kgsynth.org/entity/2403> .
 
-<http://kgsynth.org/entity/3415> ns1:0 <http://kgsynth.org/entity/533> .
+<http://kgsynth.org/entity/3415> ns1:0 <http://kgsynth.org/entity/623> .
 
 <http://kgsynth.org/entity/342> ns1:7 <http://kgsynth.org/entity/1850> .
 
@@ -2531,7 +2529,7 @@
 <http://kgsynth.org/entity/3533> ns1:0 <http://kgsynth.org/entity/3671> .
 
 <http://kgsynth.org/entity/3534> ns1:7 <http://kgsynth.org/entity/2035>,
-        <http://kgsynth.org/entity/2918>,
+        <http://kgsynth.org/entity/535>,
         <http://kgsynth.org/entity/702>,
         <http://kgsynth.org/entity/848> ;
     ns1:8 <http://kgsynth.org/entity/128>,
@@ -2617,7 +2615,7 @@
 
 <http://kgsynth.org/entity/3592> ns1:1 <http://kgsynth.org/entity/1299> .
 
-<http://kgsynth.org/entity/3594> ns1:2 <http://kgsynth.org/entity/3341> .
+<http://kgsynth.org/entity/3594> ns1:2 <http://kgsynth.org/entity/2487> .
 
 <http://kgsynth.org/entity/3599> ns1:7 <http://kgsynth.org/entity/1708>,
         <http://kgsynth.org/entity/2108>,
@@ -2645,7 +2643,7 @@
 
 <http://kgsynth.org/entity/3622> ns1:8 <http://kgsynth.org/entity/1856> .
 
-<http://kgsynth.org/entity/3623> ns1:5 <http://kgsynth.org/entity/1885> .
+<http://kgsynth.org/entity/3623> ns1:5 <http://kgsynth.org/entity/3507> .
 
 <http://kgsynth.org/entity/363> ns1:3 <http://kgsynth.org/entity/164> .
 
@@ -2663,7 +2661,7 @@
 <http://kgsynth.org/entity/3645> ns1:7 <http://kgsynth.org/entity/1090>,
         <http://kgsynth.org/entity/1746>,
         <http://kgsynth.org/entity/1953> ;
-    ns1:8 <http://kgsynth.org/entity/1118> .
+    ns1:8 <http://kgsynth.org/entity/3205> .
 
 <http://kgsynth.org/entity/3650> ns1:0 <http://kgsynth.org/entity/1393> ;
     ns1:7 <http://kgsynth.org/entity/2621>,
@@ -2678,10 +2676,10 @@
     ns1:8 <http://kgsynth.org/entity/3096>,
         <http://kgsynth.org/entity/3637> .
 
-<http://kgsynth.org/entity/3659> ns1:3 <http://kgsynth.org/entity/2012>,
+<http://kgsynth.org/entity/3659> ns1:3 <http://kgsynth.org/entity/1230>,
         <http://kgsynth.org/entity/2576>,
         <http://kgsynth.org/entity/3164>,
-        <http://kgsynth.org/entity/3684> ;
+        <http://kgsynth.org/entity/3517> ;
     ns1:7 <http://kgsynth.org/entity/1405>,
         <http://kgsynth.org/entity/1933>,
         <http://kgsynth.org/entity/2634>,
@@ -2784,7 +2782,7 @@
     ns1:8 <http://kgsynth.org/entity/3205> .
 
 <http://kgsynth.org/entity/3745> ns1:3 <http://kgsynth.org/entity/1286>,
-        <http://kgsynth.org/entity/1330>,
+        <http://kgsynth.org/entity/3109>,
         <http://kgsynth.org/entity/618> ;
     ns1:7 <http://kgsynth.org/entity/339>,
         <http://kgsynth.org/entity/3528>,
@@ -2807,7 +2805,7 @@
         <http://kgsynth.org/entity/648> ;
     ns1:8 <http://kgsynth.org/entity/2809> .
 
-<http://kgsynth.org/entity/375> ns1:6 <http://kgsynth.org/entity/1289> ;
+<http://kgsynth.org/entity/375> ns1:6 <http://kgsynth.org/entity/1078> ;
     ns1:7 <http://kgsynth.org/entity/211>,
         <http://kgsynth.org/entity/2774> ;
     ns1:8 <http://kgsynth.org/entity/687> .
@@ -2857,11 +2855,11 @@
         <http://kgsynth.org/entity/86> ;
     ns1:8 <http://kgsynth.org/entity/1486>,
         <http://kgsynth.org/entity/2079>,
-        <http://kgsynth.org/entity/650> .
+        <http://kgsynth.org/entity/3397> .
 
 <http://kgsynth.org/entity/378> ns1:2 <http://kgsynth.org/entity/1789> .
 
-<http://kgsynth.org/entity/3781> ns1:0 <http://kgsynth.org/entity/410> ;
+<http://kgsynth.org/entity/3781> ns1:0 <http://kgsynth.org/entity/299> ;
     ns1:7 <http://kgsynth.org/entity/1826>,
         <http://kgsynth.org/entity/2395>,
         <http://kgsynth.org/entity/3631>,
@@ -2947,7 +2945,7 @@
 
 <http://kgsynth.org/entity/3847> ns1:7 <http://kgsynth.org/entity/555> .
 
-<http://kgsynth.org/entity/3850> ns1:6 <http://kgsynth.org/entity/396> ;
+<http://kgsynth.org/entity/3850> ns1:6 <http://kgsynth.org/entity/2682> ;
     ns1:7 <http://kgsynth.org/entity/1012>,
         <http://kgsynth.org/entity/1276>,
         <http://kgsynth.org/entity/2945>,
@@ -2966,7 +2964,7 @@
 
 <http://kgsynth.org/entity/389> ns1:7 <http://kgsynth.org/entity/3027>,
         <http://kgsynth.org/entity/3328>,
-        <http://kgsynth.org/entity/434> ;
+        <http://kgsynth.org/entity/410> ;
     ns1:8 <http://kgsynth.org/entity/1686> .
 
 <http://kgsynth.org/entity/391> ns1:0 <http://kgsynth.org/entity/2514> ;
@@ -3007,7 +3005,7 @@
 <http://kgsynth.org/entity/414> ns1:1 <http://kgsynth.org/entity/2647> ;
     ns1:3 <http://kgsynth.org/entity/2231> .
 
-<http://kgsynth.org/entity/422> ns1:6 <http://kgsynth.org/entity/1283> .
+<http://kgsynth.org/entity/422> ns1:6 <http://kgsynth.org/entity/1976> .
 
 <http://kgsynth.org/entity/436> ns1:6 <http://kgsynth.org/entity/2438> .
 
@@ -3050,7 +3048,7 @@
         <http://kgsynth.org/entity/3653>,
         <http://kgsynth.org/entity/546> .
 
-<http://kgsynth.org/entity/49> ns1:1 <http://kgsynth.org/entity/48> .
+<http://kgsynth.org/entity/49> ns1:1 <http://kgsynth.org/entity/3813> .
 
 <http://kgsynth.org/entity/492> ns1:5 <http://kgsynth.org/entity/2098> .
 
@@ -3145,8 +3143,7 @@
         <http://kgsynth.org/entity/3258>,
         <http://kgsynth.org/entity/3554>,
         <http://kgsynth.org/entity/3707>,
-        <http://kgsynth.org/entity/433>,
-        <http://kgsynth.org/entity/571> ;
+        <http://kgsynth.org/entity/433> ;
     ns1:7 <http://kgsynth.org/entity/108>,
         <http://kgsynth.org/entity/1377>,
         <http://kgsynth.org/entity/18>,
@@ -3307,7 +3304,7 @@
 
 <http://kgsynth.org/entity/760> ns1:3 <http://kgsynth.org/entity/416> .
 
-<http://kgsynth.org/entity/761> ns1:0 <http://kgsynth.org/entity/292> ;
+<http://kgsynth.org/entity/761> ns1:0 <http://kgsynth.org/entity/435> ;
     ns1:7 <http://kgsynth.org/entity/2499>,
         <http://kgsynth.org/entity/291>,
         <http://kgsynth.org/entity/300>,
@@ -3343,7 +3340,7 @@
         <http://kgsynth.org/entity/2559>,
         <http://kgsynth.org/entity/970> .
 
-<http://kgsynth.org/entity/791> ns1:4 <http://kgsynth.org/entity/2818> .
+<http://kgsynth.org/entity/791> ns1:4 <http://kgsynth.org/entity/971> .
 
 <http://kgsynth.org/entity/794> ns1:7 <http://kgsynth.org/entity/1036>,
         <http://kgsynth.org/entity/2002>,
@@ -3417,7 +3414,7 @@
         <http://kgsynth.org/entity/56> .
 
 <http://kgsynth.org/entity/876> ns1:0 <http://kgsynth.org/entity/302> ;
-    ns1:7 <http://kgsynth.org/entity/2481>,
+    ns1:7 <http://kgsynth.org/entity/434>,
         <http://kgsynth.org/entity/647>,
         <http://kgsynth.org/entity/929> .
 
@@ -3522,7 +3519,7 @@
 
 <http://kgsynth.org/entity/990> ns1:5 <http://kgsynth.org/entity/2194> .
 
-<http://kgsynth.org/entity/993> ns1:4 <http://kgsynth.org/entity/3743> .
+<http://kgsynth.org/entity/993> ns1:4 <http://kgsynth.org/entity/1142> .
 
 <http://kgsynth.org/entity/999> ns1:6 <http://kgsynth.org/entity/3194> ;
     ns1:7 <http://kgsynth.org/entity/1192>,
@@ -3563,7 +3560,7 @@
         <http://kgsynth.org/entity/2661>,
         <http://kgsynth.org/entity/2734>,
         <http://kgsynth.org/entity/3443> ;
-    ns1:8 <http://kgsynth.org/entity/66> .
+    ns1:8 <http://kgsynth.org/entity/2347> .
 
 <http://kgsynth.org/entity/1037> ns1:0 <http://kgsynth.org/entity/1488> ;
     ns1:7 <http://kgsynth.org/entity/2468>,
@@ -3674,7 +3671,7 @@
 
 <http://kgsynth.org/entity/1154> ns1:1 <http://kgsynth.org/entity/2505> .
 
-<http://kgsynth.org/entity/1160> ns1:0 <http://kgsynth.org/entity/2332> ;
+<http://kgsynth.org/entity/1160> ns1:0 <http://kgsynth.org/entity/441> ;
     ns1:7 <http://kgsynth.org/entity/1289>,
         <http://kgsynth.org/entity/2546>,
         <http://kgsynth.org/entity/2903>,
@@ -3794,7 +3791,7 @@
         <http://kgsynth.org/entity/3788> ;
     ns1:8 <http://kgsynth.org/entity/312> .
 
-<http://kgsynth.org/entity/1308> ns1:2 <http://kgsynth.org/entity/3081> ;
+<http://kgsynth.org/entity/1308> ns1:2 <http://kgsynth.org/entity/1272> ;
     ns1:7 <http://kgsynth.org/entity/2027>,
         <http://kgsynth.org/entity/2487>,
         <http://kgsynth.org/entity/3406> .
@@ -3917,7 +3914,7 @@
 <http://kgsynth.org/entity/1479> ns1:7 <http://kgsynth.org/entity/880> ;
     ns1:8 <http://kgsynth.org/entity/3481> .
 
-<http://kgsynth.org/entity/150> ns1:6 <http://kgsynth.org/entity/343> ;
+<http://kgsynth.org/entity/150> ns1:6 <http://kgsynth.org/entity/1546> ;
     ns1:7 <http://kgsynth.org/entity/2774>,
         <http://kgsynth.org/entity/303>,
         <http://kgsynth.org/entity/585> ;
@@ -4082,7 +4079,7 @@
 
 <http://kgsynth.org/entity/1709> ns1:0 <http://kgsynth.org/entity/721> ;
     ns1:7 <http://kgsynth.org/entity/2031>,
-        <http://kgsynth.org/entity/3554>,
+        <http://kgsynth.org/entity/3036>,
         <http://kgsynth.org/entity/3824> ;
     ns1:8 <http://kgsynth.org/entity/2988> .
 
@@ -4329,7 +4326,7 @@
 <http://kgsynth.org/entity/205> ns1:6 <http://kgsynth.org/entity/869> ;
     ns1:7 <http://kgsynth.org/entity/1197>,
         <http://kgsynth.org/entity/1287> ;
-    ns1:8 <http://kgsynth.org/entity/1900> .
+    ns1:8 <http://kgsynth.org/entity/1335> .
 
 <http://kgsynth.org/entity/2058> ns1:7 <http://kgsynth.org/entity/1683>,
         <http://kgsynth.org/entity/2634>,
@@ -4353,7 +4350,7 @@
     ns1:8 <http://kgsynth.org/entity/29> .
 
 <http://kgsynth.org/entity/2093> ns1:0 <http://kgsynth.org/entity/2041> ;
-    ns1:7 <http://kgsynth.org/entity/1705>,
+    ns1:7 <http://kgsynth.org/entity/2244>,
         <http://kgsynth.org/entity/2954> ;
     ns1:8 <http://kgsynth.org/entity/3114> .
 
@@ -4481,8 +4478,8 @@
         <http://kgsynth.org/entity/678> .
 
 <http://kgsynth.org/entity/2287> ns1:5 <http://kgsynth.org/entity/2016>,
-        <http://kgsynth.org/entity/2239>,
         <http://kgsynth.org/entity/2844>,
+        <http://kgsynth.org/entity/3015>,
         <http://kgsynth.org/entity/359>,
         <http://kgsynth.org/entity/870> ;
     ns1:7 <http://kgsynth.org/entity/1458>,
@@ -4633,7 +4630,7 @@
 
 <http://kgsynth.org/entity/2435> ns1:7 <http://kgsynth.org/entity/2266>,
         <http://kgsynth.org/entity/2487> ;
-    ns1:8 <http://kgsynth.org/entity/673> .
+    ns1:8 <http://kgsynth.org/entity/3727> .
 
 <http://kgsynth.org/entity/2437> ns1:7 <http://kgsynth.org/entity/1063>,
         <http://kgsynth.org/entity/3848> ;
@@ -4696,7 +4693,7 @@
 <http://kgsynth.org/entity/2510> ns1:1 <http://kgsynth.org/entity/2476> .
 
 <http://kgsynth.org/entity/2518> ns1:0 <http://kgsynth.org/entity/620> ;
-    ns1:7 <http://kgsynth.org/entity/1761>,
+    ns1:7 <http://kgsynth.org/entity/1643>,
         <http://kgsynth.org/entity/1802>,
         <http://kgsynth.org/entity/1994>,
         <http://kgsynth.org/entity/2475>,
@@ -4864,7 +4861,7 @@
         <http://kgsynth.org/entity/138>,
         <http://kgsynth.org/entity/147>,
         <http://kgsynth.org/entity/2382>,
-        <http://kgsynth.org/entity/2726>,
+        <http://kgsynth.org/entity/2455>,
         <http://kgsynth.org/entity/902> ;
     ns1:7 <http://kgsynth.org/entity/1221>,
         <http://kgsynth.org/entity/968>,
@@ -5011,7 +5008,7 @@
         <http://kgsynth.org/entity/540> ;
     ns1:8 <http://kgsynth.org/entity/3261> .
 
-<http://kgsynth.org/entity/2900> ns1:2 <http://kgsynth.org/entity/476> ;
+<http://kgsynth.org/entity/2900> ns1:2 <http://kgsynth.org/entity/3364> ;
     ns1:7 <http://kgsynth.org/entity/1129>,
         <http://kgsynth.org/entity/1825>,
         <http://kgsynth.org/entity/2205>,
@@ -5127,13 +5124,13 @@
 <http://kgsynth.org/entity/3016> ns1:7 <http://kgsynth.org/entity/2576>,
         <http://kgsynth.org/entity/54> ;
     ns1:8 <http://kgsynth.org/entity/2356>,
-        <http://kgsynth.org/entity/614> .
+        <http://kgsynth.org/entity/591> .
 
 <http://kgsynth.org/entity/3021> ns1:7 <http://kgsynth.org/entity/1635> ;
     ns1:8 <http://kgsynth.org/entity/1437>,
         <http://kgsynth.org/entity/46> .
 
-<http://kgsynth.org/entity/3035> ns1:6 <http://kgsynth.org/entity/2205> ;
+<http://kgsynth.org/entity/3035> ns1:6 <http://kgsynth.org/entity/3406> ;
     ns1:7 <http://kgsynth.org/entity/1034>,
         <http://kgsynth.org/entity/2938>,
         <http://kgsynth.org/entity/3348>,
@@ -5251,9 +5248,9 @@
 
 <http://kgsynth.org/entity/3208> ns1:6 <http://kgsynth.org/entity/2799> ;
     ns1:7 <http://kgsynth.org/entity/1024>,
+        <http://kgsynth.org/entity/1262>,
         <http://kgsynth.org/entity/2063>,
-        <http://kgsynth.org/entity/2634>,
-        <http://kgsynth.org/entity/420> ;
+        <http://kgsynth.org/entity/2634> ;
     ns1:8 <http://kgsynth.org/entity/3640> .
 
 <http://kgsynth.org/entity/3219> ns1:7 <http://kgsynth.org/entity/1338>,
@@ -5366,7 +5363,7 @@
     ns1:8 <http://kgsynth.org/entity/2133>,
         <http://kgsynth.org/entity/435> .
 
-<http://kgsynth.org/entity/3332> ns1:0 <http://kgsynth.org/entity/623> ;
+<http://kgsynth.org/entity/3332> ns1:0 <http://kgsynth.org/entity/533> ;
     ns1:7 <http://kgsynth.org/entity/1011>,
         <http://kgsynth.org/entity/1357>,
         <http://kgsynth.org/entity/2354> .
@@ -5374,7 +5371,7 @@
 <http://kgsynth.org/entity/3333> ns1:0 <http://kgsynth.org/entity/936> ;
     ns1:7 <http://kgsynth.org/entity/2487>,
         <http://kgsynth.org/entity/2967> ;
-    ns1:8 <http://kgsynth.org/entity/2278>,
+    ns1:8 <http://kgsynth.org/entity/1447>,
         <http://kgsynth.org/entity/2843> .
 
 <http://kgsynth.org/entity/3357> ns1:0 <http://kgsynth.org/entity/2988> ;
@@ -5465,8 +5462,8 @@
 <http://kgsynth.org/entity/3487> ns1:7 <http://kgsynth.org/entity/2487>,
         <http://kgsynth.org/entity/3665>,
         <http://kgsynth.org/entity/38> ;
-    ns1:8 <http://kgsynth.org/entity/1362>,
-        <http://kgsynth.org/entity/1904> .
+    ns1:8 <http://kgsynth.org/entity/1904>,
+        <http://kgsynth.org/entity/2581> .
 
 <http://kgsynth.org/entity/3496> ns1:6 <http://kgsynth.org/entity/2454> ;
     ns1:7 <http://kgsynth.org/entity/1412>,
@@ -5595,6 +5592,14 @@
     ns1:8 <http://kgsynth.org/entity/1710>,
         <http://kgsynth.org/entity/3033> .
 
+<http://kgsynth.org/entity/3626> ns1:6 <http://kgsynth.org/entity/3802> ;
+    ns1:7 <http://kgsynth.org/entity/1928>,
+        <http://kgsynth.org/entity/2345>,
+        <http://kgsynth.org/entity/2894>,
+        <http://kgsynth.org/entity/3038> ;
+    ns1:8 <http://kgsynth.org/entity/1608>,
+        <http://kgsynth.org/entity/592> .
+
 <http://kgsynth.org/entity/3627> ns1:0 <http://kgsynth.org/entity/3068> ;
     ns1:7 <http://kgsynth.org/entity/2544>,
         <http://kgsynth.org/entity/2572> ;
@@ -5630,7 +5635,7 @@
         <http://kgsynth.org/entity/3609> ;
     ns1:8 <http://kgsynth.org/entity/1389> .
 
-<http://kgsynth.org/entity/3680> ns1:2 <http://kgsynth.org/entity/3364> ;
+<http://kgsynth.org/entity/3680> ns1:2 <http://kgsynth.org/entity/476> ;
     ns1:7 <http://kgsynth.org/entity/1174>,
         <http://kgsynth.org/entity/2447>,
         <http://kgsynth.org/entity/3133>,
@@ -5699,8 +5704,8 @@
     ns1:7 <http://kgsynth.org/entity/1079>,
         <http://kgsynth.org/entity/2490>,
         <http://kgsynth.org/entity/2763>,
-        <http://kgsynth.org/entity/3835>,
-        <http://kgsynth.org/entity/476> .
+        <http://kgsynth.org/entity/3249>,
+        <http://kgsynth.org/entity/3835> .
 
 <http://kgsynth.org/entity/3773> ns1:0 <http://kgsynth.org/entity/2284> ;
     ns1:7 <http://kgsynth.org/entity/1346>,
@@ -5786,7 +5791,7 @@
     ns1:8 <http://kgsynth.org/entity/92> .
 
 <http://kgsynth.org/entity/419> ns1:0 <http://kgsynth.org/entity/272> ;
-    ns1:7 <http://kgsynth.org/entity/2584> .
+    ns1:7 <http://kgsynth.org/entity/3291> .
 
 <http://kgsynth.org/entity/429> ns1:1 <http://kgsynth.org/entity/1822> .
 
@@ -5824,7 +5829,7 @@
         <http://kgsynth.org/entity/3268>,
         <http://kgsynth.org/entity/65> .
 
-<http://kgsynth.org/entity/477> ns1:2 <http://kgsynth.org/entity/236> ;
+<http://kgsynth.org/entity/477> ns1:2 <http://kgsynth.org/entity/1281> ;
     ns1:7 <http://kgsynth.org/entity/2499>,
         <http://kgsynth.org/entity/2589>,
         <http://kgsynth.org/entity/2909>,
@@ -5833,8 +5838,8 @@
 <http://kgsynth.org/entity/480> ns1:7 <http://kgsynth.org/entity/1777>,
         <http://kgsynth.org/entity/1850>,
         <http://kgsynth.org/entity/848> ;
-    ns1:8 <http://kgsynth.org/entity/2868>,
-        <http://kgsynth.org/entity/3193> .
+    ns1:8 <http://kgsynth.org/entity/3193>,
+        <http://kgsynth.org/entity/3216> .
 
 <http://kgsynth.org/entity/485> ns1:0 <http://kgsynth.org/entity/1118> ;
     ns1:7 <http://kgsynth.org/entity/1546>,
@@ -5914,9 +5919,9 @@
         <http://kgsynth.org/entity/612> .
 
 <http://kgsynth.org/entity/587> ns1:5 <http://kgsynth.org/entity/1548>,
+        <http://kgsynth.org/entity/1885>,
         <http://kgsynth.org/entity/2544>,
         <http://kgsynth.org/entity/291>,
-        <http://kgsynth.org/entity/3507>,
         <http://kgsynth.org/entity/3616> ;
     ns1:7 <http://kgsynth.org/entity/1337>,
         <http://kgsynth.org/entity/1546>,
@@ -5983,7 +5988,7 @@
         <http://kgsynth.org/entity/3108>,
         <http://kgsynth.org/entity/39> .
 
-<http://kgsynth.org/entity/690> ns1:2 <http://kgsynth.org/entity/108>,
+<http://kgsynth.org/entity/690> ns1:2 <http://kgsynth.org/entity/2811>,
         <http://kgsynth.org/entity/3183> ;
     ns1:7 <http://kgsynth.org/entity/1056>,
         <http://kgsynth.org/entity/1090>,
@@ -6058,7 +6063,7 @@
         <http://kgsynth.org/entity/3189>,
         <http://kgsynth.org/entity/640> .
 
-<http://kgsynth.org/entity/756> ns1:0 <http://kgsynth.org/entity/1042> ;
+<http://kgsynth.org/entity/756> ns1:0 <http://kgsynth.org/entity/2359> ;
     ns1:7 <http://kgsynth.org/entity/2127>,
         <http://kgsynth.org/entity/2313>,
         <http://kgsynth.org/entity/2487>,
@@ -6122,8 +6127,8 @@
     ns1:8 <http://kgsynth.org/entity/1876> .
 
 <http://kgsynth.org/entity/836> ns1:6 <http://kgsynth.org/entity/2346> ;
-    ns1:7 <http://kgsynth.org/entity/1933>,
-        <http://kgsynth.org/entity/3784> ;
+    ns1:7 <http://kgsynth.org/entity/3784>,
+        <http://kgsynth.org/entity/762> ;
     ns1:8 <http://kgsynth.org/entity/590> .
 
 <http://kgsynth.org/entity/839> ns1:5 <http://kgsynth.org/entity/105>,
@@ -6232,7 +6237,7 @@
         <http://kgsynth.org/entity/3717> ;
     ns1:8 <http://kgsynth.org/entity/2041> .
 
-<http://kgsynth.org/entity/978> ns1:7 <http://kgsynth.org/entity/133>,
+<http://kgsynth.org/entity/978> ns1:7 <http://kgsynth.org/entity/1081>,
         <http://kgsynth.org/entity/2710>,
         <http://kgsynth.org/entity/3096>,
         <http://kgsynth.org/entity/3554>,
@@ -6357,7 +6362,7 @@
         <http://kgsynth.org/entity/1258>,
         <http://kgsynth.org/entity/180>,
         <http://kgsynth.org/entity/2400> ;
-    ns1:8 <http://kgsynth.org/entity/1335>,
+    ns1:8 <http://kgsynth.org/entity/1900>,
         <http://kgsynth.org/entity/1924> .
 
 <http://kgsynth.org/entity/1187> ns1:0 <http://kgsynth.org/entity/611> ;
@@ -6440,9 +6445,9 @@
     ns1:8 <http://kgsynth.org/entity/1578> .
 
 <http://kgsynth.org/entity/1261> ns1:0 <http://kgsynth.org/entity/1153> ;
-    ns1:7 <http://kgsynth.org/entity/2330>,
+    ns1:7 <http://kgsynth.org/entity/2168>,
+        <http://kgsynth.org/entity/2330>,
         <http://kgsynth.org/entity/3140>,
-        <http://kgsynth.org/entity/668>,
         <http://kgsynth.org/entity/743> .
 
 <http://kgsynth.org/entity/1275> ns1:7 <http://kgsynth.org/entity/1090>,
@@ -6483,7 +6488,7 @@
         <http://kgsynth.org/entity/2712>,
         <http://kgsynth.org/entity/3138> .
 
-<http://kgsynth.org/entity/1331> ns1:1 <http://kgsynth.org/entity/3813> .
+<http://kgsynth.org/entity/1331> ns1:1 <http://kgsynth.org/entity/48> .
 
 <http://kgsynth.org/entity/1335> ns1:0 <http://kgsynth.org/entity/3566> ;
     ns1:7 <http://kgsynth.org/entity/1038>,
@@ -6501,8 +6506,8 @@
         <http://kgsynth.org/entity/303> ;
     ns1:8 <http://kgsynth.org/entity/1577> .
 
-<http://kgsynth.org/entity/1368> ns1:7 <http://kgsynth.org/entity/1722>,
-        <http://kgsynth.org/entity/184>,
+<http://kgsynth.org/entity/1368> ns1:7 <http://kgsynth.org/entity/1469>,
+        <http://kgsynth.org/entity/1722>,
         <http://kgsynth.org/entity/62> ;
     ns1:8 <http://kgsynth.org/entity/3076> .
 
@@ -6566,7 +6571,7 @@
     ns1:7 <http://kgsynth.org/entity/1717>,
         <http://kgsynth.org/entity/3844> ;
     ns1:8 <http://kgsynth.org/entity/2332>,
-        <http://kgsynth.org/entity/2347> .
+        <http://kgsynth.org/entity/66> .
 
 <http://kgsynth.org/entity/1490> ns1:7 <http://kgsynth.org/entity/1819>,
         <http://kgsynth.org/entity/2188>,
@@ -6634,7 +6639,7 @@
         <http://kgsynth.org/entity/1744> ;
     ns1:7 <http://kgsynth.org/entity/1576> .
 
-<http://kgsynth.org/entity/1577> ns1:0 <http://kgsynth.org/entity/522> ;
+<http://kgsynth.org/entity/1577> ns1:0 <http://kgsynth.org/entity/2300> ;
     ns1:7 <http://kgsynth.org/entity/121>,
         <http://kgsynth.org/entity/1282>,
         <http://kgsynth.org/entity/1851>,
@@ -6714,7 +6719,7 @@
         <http://kgsynth.org/entity/3297>,
         <http://kgsynth.org/entity/3628> ;
     ns1:7 <http://kgsynth.org/entity/127>,
-        <http://kgsynth.org/entity/1409> .
+        <http://kgsynth.org/entity/1705> .
 
 <http://kgsynth.org/entity/1766> ns1:0 <http://kgsynth.org/entity/2430> ;
     ns1:7 <http://kgsynth.org/entity/1158>,
@@ -6785,7 +6790,7 @@
     ns1:7 <http://kgsynth.org/entity/1497> ;
     ns1:8 <http://kgsynth.org/entity/1504> .
 
-<http://kgsynth.org/entity/1851> ns1:7 <http://kgsynth.org/entity/1469>,
+<http://kgsynth.org/entity/1851> ns1:7 <http://kgsynth.org/entity/184>,
         <http://kgsynth.org/entity/2739>,
         <http://kgsynth.org/entity/340> ;
     ns1:8 <http://kgsynth.org/entity/2548>,
@@ -6909,7 +6914,7 @@
 <http://kgsynth.org/entity/2059> ns1:3 <http://kgsynth.org/entity/1879>,
         <http://kgsynth.org/entity/2755>,
         <http://kgsynth.org/entity/3264>,
-        <http://kgsynth.org/entity/629> ;
+        <http://kgsynth.org/entity/3665> ;
     ns1:7 <http://kgsynth.org/entity/2996> .
 
 <http://kgsynth.org/entity/206> ns1:6 <http://kgsynth.org/entity/929> ;
@@ -6936,7 +6941,7 @@
         <http://kgsynth.org/entity/2665> ;
     ns1:4 <http://kgsynth.org/entity/114>,
         <http://kgsynth.org/entity/1250>,
-        <http://kgsynth.org/entity/3106> ;
+        <http://kgsynth.org/entity/1312> ;
     ns1:7 <http://kgsynth.org/entity/2563>,
         <http://kgsynth.org/entity/2948>,
         <http://kgsynth.org/entity/3646>,
@@ -6989,7 +6994,7 @@
     ns1:8 <http://kgsynth.org/entity/2611>,
         <http://kgsynth.org/entity/3532> .
 
-<http://kgsynth.org/entity/2176> ns1:0 <http://kgsynth.org/entity/2300> ;
+<http://kgsynth.org/entity/2176> ns1:0 <http://kgsynth.org/entity/522> ;
     ns1:7 <http://kgsynth.org/entity/1547>,
         <http://kgsynth.org/entity/2346>,
         <http://kgsynth.org/entity/3712> ;
@@ -7014,7 +7019,7 @@
         <http://kgsynth.org/entity/2448>,
         <http://kgsynth.org/entity/2640> .
 
-<http://kgsynth.org/entity/2201> ns1:6 <http://kgsynth.org/entity/3457> ;
+<http://kgsynth.org/entity/2201> ns1:6 <http://kgsynth.org/entity/3811> ;
     ns1:7 <http://kgsynth.org/entity/2493>,
         <http://kgsynth.org/entity/2689>,
         <http://kgsynth.org/entity/546> ;
@@ -7145,11 +7150,11 @@
         <http://kgsynth.org/entity/2205>,
         <http://kgsynth.org/entity/3681> .
 
-<http://kgsynth.org/entity/238> ns1:3 <http://kgsynth.org/entity/3109>,
+<http://kgsynth.org/entity/238> ns1:3 <http://kgsynth.org/entity/1330>,
         <http://kgsynth.org/entity/3164>,
-        <http://kgsynth.org/entity/3390>,
         <http://kgsynth.org/entity/3653>,
-        <http://kgsynth.org/entity/629> ;
+        <http://kgsynth.org/entity/629>,
+        <http://kgsynth.org/entity/723> ;
     ns1:4 <http://kgsynth.org/entity/971> ;
     ns1:7 <http://kgsynth.org/entity/1090>,
         <http://kgsynth.org/entity/2544> .
@@ -7190,8 +7195,8 @@
         <http://kgsynth.org/entity/1718>,
         <http://kgsynth.org/entity/1729>,
         <http://kgsynth.org/entity/420> ;
-    ns1:8 <http://kgsynth.org/entity/2731>,
-        <http://kgsynth.org/entity/2883> .
+    ns1:8 <http://kgsynth.org/entity/1720>,
+        <http://kgsynth.org/entity/2731> .
 
 <http://kgsynth.org/entity/2449> ns1:7 <http://kgsynth.org/entity/2629>,
         <http://kgsynth.org/entity/3212>,
@@ -7563,7 +7568,7 @@
 <http://kgsynth.org/entity/3000> ns1:7 <http://kgsynth.org/entity/171>,
         <http://kgsynth.org/entity/433>,
         <http://kgsynth.org/entity/843> ;
-    ns1:8 <http://kgsynth.org/entity/1447> .
+    ns1:8 <http://kgsynth.org/entity/2278> .
 
 <http://kgsynth.org/entity/3013> ns1:7 <http://kgsynth.org/entity/1072>,
         <http://kgsynth.org/entity/3423>,
@@ -7602,8 +7607,8 @@
 
 <http://kgsynth.org/entity/3067> ns1:6 <http://kgsynth.org/entity/981> ;
     ns1:7 <http://kgsynth.org/entity/1090>,
-        <http://kgsynth.org/entity/2902>,
-        <http://kgsynth.org/entity/387> ;
+        <http://kgsynth.org/entity/2336>,
+        <http://kgsynth.org/entity/2902> ;
     ns1:8 <http://kgsynth.org/entity/1449> .
 
 <http://kgsynth.org/entity/3076> ns1:0 <http://kgsynth.org/entity/1360> ;
@@ -7783,17 +7788,17 @@
         <http://kgsynth.org/entity/640> ;
     ns1:8 <http://kgsynth.org/entity/890> .
 
-<http://kgsynth.org/entity/3349> ns1:3 <http://kgsynth.org/entity/3665>,
+<http://kgsynth.org/entity/3349> ns1:3 <http://kgsynth.org/entity/3390>,
+        <http://kgsynth.org/entity/3665>,
         <http://kgsynth.org/entity/523>,
-        <http://kgsynth.org/entity/589>,
-        <http://kgsynth.org/entity/723> ;
-    ns1:4 <http://kgsynth.org/entity/243>,
+        <http://kgsynth.org/entity/589> ;
+    ns1:4 <http://kgsynth.org/entity/1513>,
+        <http://kgsynth.org/entity/243>,
+        <http://kgsynth.org/entity/2818>,
         <http://kgsynth.org/entity/2874>,
         <http://kgsynth.org/entity/298>,
         <http://kgsynth.org/entity/3106>,
-        <http://kgsynth.org/entity/3436>,
-        <http://kgsynth.org/entity/3481>,
-        <http://kgsynth.org/entity/971> ;
+        <http://kgsynth.org/entity/3436> ;
     ns1:7 <http://kgsynth.org/entity/1587>,
         <http://kgsynth.org/entity/2670> .
 
@@ -7995,14 +8000,6 @@
         <http://kgsynth.org/entity/90>,
         <http://kgsynth.org/entity/910> .
 
-<http://kgsynth.org/entity/3626> ns1:6 <http://kgsynth.org/entity/3802> ;
-    ns1:7 <http://kgsynth.org/entity/1928>,
-        <http://kgsynth.org/entity/2345>,
-        <http://kgsynth.org/entity/2894>,
-        <http://kgsynth.org/entity/3038> ;
-    ns1:8 <http://kgsynth.org/entity/1608>,
-        <http://kgsynth.org/entity/592> .
-
 <http://kgsynth.org/entity/3628> ns1:7 <http://kgsynth.org/entity/1705>,
         <http://kgsynth.org/entity/2670>,
         <http://kgsynth.org/entity/3242>,
@@ -8069,7 +8066,7 @@
         <http://kgsynth.org/entity/3579>,
         <http://kgsynth.org/entity/700> .
 
-<http://kgsynth.org/entity/372> ns1:2 <http://kgsynth.org/entity/606> ;
+<http://kgsynth.org/entity/372> ns1:2 <http://kgsynth.org/entity/1340> ;
     ns1:7 <http://kgsynth.org/entity/1104>,
         <http://kgsynth.org/entity/50> .
 
@@ -8303,7 +8300,7 @@
 <http://kgsynth.org/entity/762> ns1:7 <http://kgsynth.org/entity/188> ;
     ns1:8 <http://kgsynth.org/entity/2431> .
 
-<http://kgsynth.org/entity/765> ns1:2 <http://kgsynth.org/entity/1340> ;
+<http://kgsynth.org/entity/765> ns1:2 <http://kgsynth.org/entity/1761> ;
     ns1:7 <http://kgsynth.org/entity/127>,
         <http://kgsynth.org/entity/2566>,
         <http://kgsynth.org/entity/329>,
@@ -8372,7 +8369,7 @@
     ns1:7 <http://kgsynth.org/entity/1258>,
         <http://kgsynth.org/entity/3821> ;
     ns1:8 <http://kgsynth.org/entity/1544>,
-        <http://kgsynth.org/entity/3727> .
+        <http://kgsynth.org/entity/566> .
 
 <http://kgsynth.org/entity/880> ns1:7 <http://kgsynth.org/entity/1499>,
         <http://kgsynth.org/entity/2772>,
@@ -8413,7 +8410,7 @@
 <http://kgsynth.org/entity/933> ns1:0 <http://kgsynth.org/entity/2866> ;
     ns1:7 <http://kgsynth.org/entity/2499>,
         <http://kgsynth.org/entity/3378> ;
-    ns1:8 <http://kgsynth.org/entity/1968> .
+    ns1:8 <http://kgsynth.org/entity/149> .
 
 <http://kgsynth.org/entity/935> ns1:0 <http://kgsynth.org/entity/3543> ;
     ns1:7 <http://kgsynth.org/entity/1306>,
@@ -8460,7 +8457,7 @@
     ns1:8 <http://kgsynth.org/entity/712> .
 
 <http://kgsynth.org/entity/1039> ns1:0 <http://kgsynth.org/entity/2570> ;
-    ns1:7 <http://kgsynth.org/entity/410>,
+    ns1:7 <http://kgsynth.org/entity/2481>,
         <http://kgsynth.org/entity/574> .
 
 <http://kgsynth.org/entity/1079> ns1:7 <http://kgsynth.org/entity/1946>,
@@ -8591,7 +8588,7 @@
         <http://kgsynth.org/entity/2992>,
         <http://kgsynth.org/entity/3546> .
 
-<http://kgsynth.org/entity/1359> ns1:6 <http://kgsynth.org/entity/3406> ;
+<http://kgsynth.org/entity/1359> ns1:6 <http://kgsynth.org/entity/3671> ;
     ns1:7 <http://kgsynth.org/entity/1376>,
         <http://kgsynth.org/entity/3580>,
         <http://kgsynth.org/entity/46> ;
@@ -8609,7 +8606,7 @@
     ns1:7 <http://kgsynth.org/entity/1586>,
         <http://kgsynth.org/entity/675> ;
     ns1:8 <http://kgsynth.org/entity/2611>,
-        <http://kgsynth.org/entity/591> .
+        <http://kgsynth.org/entity/614> .
 
 <http://kgsynth.org/entity/1433> ns1:0 <http://kgsynth.org/entity/681> ;
     ns1:7 <http://kgsynth.org/entity/1526>,
@@ -8650,7 +8647,7 @@
         <http://kgsynth.org/entity/3588>,
         <http://kgsynth.org/entity/3655> .
 
-<http://kgsynth.org/entity/1528> ns1:0 <http://kgsynth.org/entity/936> ;
+<http://kgsynth.org/entity/1528> ns1:0 <http://kgsynth.org/entity/240> ;
     ns1:7 <http://kgsynth.org/entity/1426>,
         <http://kgsynth.org/entity/1775>,
         <http://kgsynth.org/entity/3231> .
@@ -8943,7 +8940,7 @@
     ns1:7 <http://kgsynth.org/entity/1201>,
         <http://kgsynth.org/entity/1777>,
         <http://kgsynth.org/entity/180>,
-        <http://kgsynth.org/entity/2336> .
+        <http://kgsynth.org/entity/387> .
 
 <http://kgsynth.org/entity/2130> ns1:7 <http://kgsynth.org/entity/1297>,
         <http://kgsynth.org/entity/1361>,
@@ -8982,9 +8979,9 @@
         <http://kgsynth.org/entity/2891>,
         <http://kgsynth.org/entity/3258>,
         <http://kgsynth.org/entity/589> ;
-    ns1:4 <http://kgsynth.org/entity/1142>,
-        <http://kgsynth.org/entity/2726>,
+    ns1:4 <http://kgsynth.org/entity/2726>,
         <http://kgsynth.org/entity/3436>,
+        <http://kgsynth.org/entity/3743>,
         <http://kgsynth.org/entity/902> ;
     ns1:7 <http://kgsynth.org/entity/1119>,
         <http://kgsynth.org/entity/1642>,
@@ -9019,7 +9016,7 @@
         <http://kgsynth.org/entity/923> ;
     ns1:8 <http://kgsynth.org/entity/475> .
 
-<http://kgsynth.org/entity/2244> ns1:3 <http://kgsynth.org/entity/1247>,
+<http://kgsynth.org/entity/2244> ns1:3 <http://kgsynth.org/entity/1037>,
         <http://kgsynth.org/entity/1879>,
         <http://kgsynth.org/entity/2613>,
         <http://kgsynth.org/entity/3164>,
@@ -9229,7 +9226,7 @@
     ns1:7 <http://kgsynth.org/entity/2837>,
         <http://kgsynth.org/entity/2992> .
 
-<http://kgsynth.org/entity/2735> ns1:2 <http://kgsynth.org/entity/1761> ;
+<http://kgsynth.org/entity/2735> ns1:2 <http://kgsynth.org/entity/606> ;
     ns1:7 <http://kgsynth.org/entity/1090>,
         <http://kgsynth.org/entity/1351>,
         <http://kgsynth.org/entity/2035>,
@@ -9321,8 +9318,8 @@
 <http://kgsynth.org/entity/3023> ns1:5 <http://kgsynth.org/entity/1301>,
         <http://kgsynth.org/entity/1964>,
         <http://kgsynth.org/entity/2717>,
+        <http://kgsynth.org/entity/2774>,
         <http://kgsynth.org/entity/335>,
-        <http://kgsynth.org/entity/567>,
         <http://kgsynth.org/entity/848> ;
     ns1:7 <http://kgsynth.org/entity/3430> .
 
@@ -9337,10 +9334,10 @@
         <http://kgsynth.org/entity/2426>,
         <http://kgsynth.org/entity/3789> .
 
-<http://kgsynth.org/entity/3048> ns1:7 <http://kgsynth.org/entity/2502>,
+<http://kgsynth.org/entity/3048> ns1:7 <http://kgsynth.org/entity/1933>,
+        <http://kgsynth.org/entity/2502>,
         <http://kgsynth.org/entity/3848>,
         <http://kgsynth.org/entity/682>,
-        <http://kgsynth.org/entity/762>,
         <http://kgsynth.org/entity/836> .
 
 <http://kgsynth.org/entity/3049> ns1:7 <http://kgsynth.org/entity/1297>,
@@ -9362,7 +9359,7 @@
     ns1:8 <http://kgsynth.org/entity/1544>,
         <http://kgsynth.org/entity/1762> .
 
-<http://kgsynth.org/entity/3056> ns1:6 <http://kgsynth.org/entity/649> ;
+<http://kgsynth.org/entity/3056> ns1:6 <http://kgsynth.org/entity/1314> ;
     ns1:7 <http://kgsynth.org/entity/2600>,
         <http://kgsynth.org/entity/2954>,
         <http://kgsynth.org/entity/527> ;
@@ -9529,7 +9526,7 @@
     ns1:8 <http://kgsynth.org/entity/1032>,
         <http://kgsynth.org/entity/1336> .
 
-<http://kgsynth.org/entity/3389> ns1:6 <http://kgsynth.org/entity/1072> ;
+<http://kgsynth.org/entity/3389> ns1:6 <http://kgsynth.org/entity/570> ;
     ns1:7 <http://kgsynth.org/entity/2092>,
         <http://kgsynth.org/entity/2573> ;
     ns1:8 <http://kgsynth.org/entity/2191> .
@@ -9904,7 +9901,7 @@
         <http://kgsynth.org/entity/2967>,
         <http://kgsynth.org/entity/3495> .
 
-<http://kgsynth.org/entity/1004> ns1:6 <http://kgsynth.org/entity/3104> ;
+<http://kgsynth.org/entity/1004> ns1:6 <http://kgsynth.org/entity/641> ;
     ns1:7 <http://kgsynth.org/entity/1293>,
         <http://kgsynth.org/entity/1990> ;
     ns1:8 <http://kgsynth.org/entity/3692> .
@@ -10039,7 +10036,7 @@
     ns1:8 <http://kgsynth.org/entity/2541>,
         <http://kgsynth.org/entity/951> .
 
-<http://kgsynth.org/entity/1584> ns1:0 <http://kgsynth.org/entity/734> ;
+<http://kgsynth.org/entity/1584> ns1:0 <http://kgsynth.org/entity/2599> ;
     ns1:7 <http://kgsynth.org/entity/3665> .
 
 <http://kgsynth.org/entity/1628> ns1:5 <http://kgsynth.org/entity/1706> ;
@@ -10088,7 +10085,7 @@
     ns1:7 <http://kgsynth.org/entity/105>,
         <http://kgsynth.org/entity/1440>,
         <http://kgsynth.org/entity/2248>,
-        <http://kgsynth.org/entity/992> .
+        <http://kgsynth.org/entity/3152> .
 
 <http://kgsynth.org/entity/1712> ns1:0 <http://kgsynth.org/entity/446> ;
     ns1:7 <http://kgsynth.org/entity/3058> .
@@ -10100,8 +10097,8 @@
         <http://kgsynth.org/entity/3723> ;
     ns1:8 <http://kgsynth.org/entity/114> .
 
-<http://kgsynth.org/entity/1729> ns1:4 <http://kgsynth.org/entity/2455>,
-        <http://kgsynth.org/entity/2615>,
+<http://kgsynth.org/entity/1729> ns1:4 <http://kgsynth.org/entity/2615>,
+        <http://kgsynth.org/entity/2726>,
         <http://kgsynth.org/entity/298> ;
     ns1:7 <http://kgsynth.org/entity/1078>,
         <http://kgsynth.org/entity/1526>,
@@ -10131,6 +10128,12 @@
         <http://kgsynth.org/entity/858>,
         <http://kgsynth.org/entity/916> ;
     ns1:8 <http://kgsynth.org/entity/1052> .
+
+<http://kgsynth.org/entity/1799> ns1:0 <http://kgsynth.org/entity/728> ;
+    ns1:7 <http://kgsynth.org/entity/675>,
+        <http://kgsynth.org/entity/815> ;
+    ns1:8 <http://kgsynth.org/entity/1291>,
+        <http://kgsynth.org/entity/64> .
 
 <http://kgsynth.org/entity/18> ns1:7 <http://kgsynth.org/entity/2054>,
         <http://kgsynth.org/entity/75> ;
@@ -10181,8 +10184,8 @@
 
 <http://kgsynth.org/entity/1983> ns1:2 <http://kgsynth.org/entity/2724>,
         <http://kgsynth.org/entity/275> ;
-    ns1:7 <http://kgsynth.org/entity/1344>,
-        <http://kgsynth.org/entity/701> .
+    ns1:7 <http://kgsynth.org/entity/1110>,
+        <http://kgsynth.org/entity/1344> .
 
 <http://kgsynth.org/entity/2010> ns1:7 <http://kgsynth.org/entity/1484>,
         <http://kgsynth.org/entity/3203>,
@@ -10217,7 +10220,7 @@
         <http://kgsynth.org/entity/3642> ;
     ns1:8 <http://kgsynth.org/entity/951> .
 
-<http://kgsynth.org/entity/2270> ns1:6 <http://kgsynth.org/entity/1693> ;
+<http://kgsynth.org/entity/2270> ns1:6 <http://kgsynth.org/entity/3416> ;
     ns1:7 <http://kgsynth.org/entity/1145>,
         <http://kgsynth.org/entity/1182>,
         <http://kgsynth.org/entity/1281>,
@@ -10283,7 +10286,7 @@
         <http://kgsynth.org/entity/1992>,
         <http://kgsynth.org/entity/2075>,
         <http://kgsynth.org/entity/661> ;
-    ns1:8 <http://kgsynth.org/entity/3216> .
+    ns1:8 <http://kgsynth.org/entity/2868> .
 
 <http://kgsynth.org/entity/2489> ns1:0 <http://kgsynth.org/entity/2570> ;
     ns1:7 <http://kgsynth.org/entity/3359>,
@@ -10324,8 +10327,8 @@
         <http://kgsynth.org/entity/2517>,
         <http://kgsynth.org/entity/2967>,
         <http://kgsynth.org/entity/693> ;
-    ns1:4 <http://kgsynth.org/entity/1513>,
-        <http://kgsynth.org/entity/3106>,
+    ns1:4 <http://kgsynth.org/entity/3106>,
+        <http://kgsynth.org/entity/3481>,
         <http://kgsynth.org/entity/91>,
         <http://kgsynth.org/entity/971> ;
     ns1:7 <http://kgsynth.org/entity/312>,
@@ -10440,7 +10443,7 @@
         <http://kgsynth.org/entity/3450>,
         <http://kgsynth.org/entity/3613> ;
     ns1:8 <http://kgsynth.org/entity/1447>,
-        <http://kgsynth.org/entity/3129> .
+        <http://kgsynth.org/entity/624> .
 
 <http://kgsynth.org/entity/3226> ns1:7 <http://kgsynth.org/entity/1605>,
         <http://kgsynth.org/entity/2138>,
@@ -10509,7 +10512,7 @@
         <http://kgsynth.org/entity/2309>,
         <http://kgsynth.org/entity/3706> .
 
-<http://kgsynth.org/entity/3522> ns1:6 <http://kgsynth.org/entity/641> ;
+<http://kgsynth.org/entity/3522> ns1:6 <http://kgsynth.org/entity/3104> ;
     ns1:7 <http://kgsynth.org/entity/1643>,
         <http://kgsynth.org/entity/2682>,
         <http://kgsynth.org/entity/427>,
@@ -10551,7 +10554,7 @@
         <http://kgsynth.org/entity/3374> ;
     ns1:8 <http://kgsynth.org/entity/2198> .
 
-<http://kgsynth.org/entity/3621> ns1:6 <http://kgsynth.org/entity/1078> ;
+<http://kgsynth.org/entity/3621> ns1:6 <http://kgsynth.org/entity/1289> ;
     ns1:7 <http://kgsynth.org/entity/1184>,
         <http://kgsynth.org/entity/1597>,
         <http://kgsynth.org/entity/2844>,
@@ -10591,7 +10594,7 @@
 
 <http://kgsynth.org/entity/3737> ns1:7 <http://kgsynth.org/entity/183>,
         <http://kgsynth.org/entity/3092>,
-        <http://kgsynth.org/entity/3249> ;
+        <http://kgsynth.org/entity/476> ;
     ns1:8 <http://kgsynth.org/entity/2510>,
         <http://kgsynth.org/entity/3749> .
 
@@ -10671,7 +10674,7 @@
         <http://kgsynth.org/entity/2894> ;
     ns1:8 <http://kgsynth.org/entity/822> .
 
-<http://kgsynth.org/entity/581> ns1:0 <http://kgsynth.org/entity/435> ;
+<http://kgsynth.org/entity/581> ns1:0 <http://kgsynth.org/entity/292> ;
     ns1:7 <http://kgsynth.org/entity/2507>,
         <http://kgsynth.org/entity/3051>,
         <http://kgsynth.org/entity/3156>,
@@ -10718,7 +10721,7 @@
         <http://kgsynth.org/entity/904> ;
     ns1:8 <http://kgsynth.org/entity/413> .
 
-<http://kgsynth.org/entity/742> ns1:0 <http://kgsynth.org/entity/3337> ;
+<http://kgsynth.org/entity/742> ns1:0 <http://kgsynth.org/entity/255> ;
     ns1:7 <http://kgsynth.org/entity/1162>,
         <http://kgsynth.org/entity/2053>,
         <http://kgsynth.org/entity/2100> ;
@@ -10848,7 +10851,7 @@
         <http://kgsynth.org/entity/992> ;
     ns1:8 <http://kgsynth.org/entity/933> .
 
-<http://kgsynth.org/entity/1092> ns1:0 <http://kgsynth.org/entity/3796> ;
+<http://kgsynth.org/entity/1092> ns1:0 <http://kgsynth.org/entity/1208> ;
     ns1:7 <http://kgsynth.org/entity/2405> .
 
 <http://kgsynth.org/entity/1118> ns1:7 <http://kgsynth.org/entity/1123>,
@@ -11007,12 +11010,6 @@
         <http://kgsynth.org/entity/1123>,
         <http://kgsynth.org/entity/3264> .
 
-<http://kgsynth.org/entity/1799> ns1:0 <http://kgsynth.org/entity/728> ;
-    ns1:7 <http://kgsynth.org/entity/675>,
-        <http://kgsynth.org/entity/815> ;
-    ns1:8 <http://kgsynth.org/entity/1291>,
-        <http://kgsynth.org/entity/64> .
-
 <http://kgsynth.org/entity/1877> ns1:0 <http://kgsynth.org/entity/76> ;
     ns1:7 <http://kgsynth.org/entity/1170>,
         <http://kgsynth.org/entity/1549>,
@@ -11059,8 +11056,8 @@
     ns1:8 <http://kgsynth.org/entity/1064> .
 
 <http://kgsynth.org/entity/2089> ns1:0 <http://kgsynth.org/entity/1939> ;
-    ns1:7 <http://kgsynth.org/entity/1347>,
-        <http://kgsynth.org/entity/2138>,
+    ns1:7 <http://kgsynth.org/entity/2138>,
+        <http://kgsynth.org/entity/2716>,
         <http://kgsynth.org/entity/2908>,
         <http://kgsynth.org/entity/3003>,
         <http://kgsynth.org/entity/543> .
@@ -11071,8 +11068,8 @@
         <http://kgsynth.org/entity/512> ;
     ns1:8 <http://kgsynth.org/entity/3737> .
 
-<http://kgsynth.org/entity/2196> ns1:0 <http://kgsynth.org/entity/2868>,
-        <http://kgsynth.org/entity/441> ;
+<http://kgsynth.org/entity/2196> ns1:0 <http://kgsynth.org/entity/2332>,
+        <http://kgsynth.org/entity/2868> ;
     ns1:7 <http://kgsynth.org/entity/1258>,
         <http://kgsynth.org/entity/1289>,
         <http://kgsynth.org/entity/1773>,
@@ -11114,10 +11111,10 @@
         <http://kgsynth.org/entity/833> ;
     ns1:8 <http://kgsynth.org/entity/1491> .
 
-<http://kgsynth.org/entity/2564> ns1:6 <http://kgsynth.org/entity/1546> ;
+<http://kgsynth.org/entity/2564> ns1:6 <http://kgsynth.org/entity/343> ;
     ns1:7 <http://kgsynth.org/entity/1377>,
+        <http://kgsynth.org/entity/1409>,
         <http://kgsynth.org/entity/163>,
-        <http://kgsynth.org/entity/2244>,
         <http://kgsynth.org/entity/3613>,
         <http://kgsynth.org/entity/575> ;
     ns1:8 <http://kgsynth.org/entity/1142> .
@@ -11128,7 +11125,7 @@
 
 <http://kgsynth.org/entity/2591> ns1:7 <http://kgsynth.org/entity/1462>,
         <http://kgsynth.org/entity/1607>,
-        <http://kgsynth.org/entity/3036>,
+        <http://kgsynth.org/entity/3554>,
         <http://kgsynth.org/entity/417> ;
     ns1:8 <http://kgsynth.org/entity/3489> .
 
@@ -11138,7 +11135,7 @@
         <http://kgsynth.org/entity/710> ;
     ns1:8 <http://kgsynth.org/entity/2097> .
 
-<http://kgsynth.org/entity/2622> ns1:0 <http://kgsynth.org/entity/240> ;
+<http://kgsynth.org/entity/2622> ns1:0 <http://kgsynth.org/entity/936> ;
     ns1:7 <http://kgsynth.org/entity/1541>,
         <http://kgsynth.org/entity/1682>,
         <http://kgsynth.org/entity/2488>,
@@ -11173,7 +11170,7 @@
 
 <http://kgsynth.org/entity/2788> ns1:6 <http://kgsynth.org/entity/885> ;
     ns1:7 <http://kgsynth.org/entity/1096>,
-        <http://kgsynth.org/entity/1643>,
+        <http://kgsynth.org/entity/1761>,
         <http://kgsynth.org/entity/2211>,
         <http://kgsynth.org/entity/2863>,
         <http://kgsynth.org/entity/3473>,
@@ -11211,7 +11208,7 @@
     ns1:8 <http://kgsynth.org/entity/1257>,
         <http://kgsynth.org/entity/1914> .
 
-<http://kgsynth.org/entity/2986> ns1:0 <http://kgsynth.org/entity/299> ;
+<http://kgsynth.org/entity/2986> ns1:0 <http://kgsynth.org/entity/410> ;
     ns1:7 <http://kgsynth.org/entity/3665> ;
     ns1:8 <http://kgsynth.org/entity/1298>,
         <http://kgsynth.org/entity/138>,
@@ -11288,7 +11285,7 @@
 <http://kgsynth.org/entity/3351> ns1:7 <http://kgsynth.org/entity/1746>,
         <http://kgsynth.org/entity/3235>,
         <http://kgsynth.org/entity/410> ;
-    ns1:8 <http://kgsynth.org/entity/2681> .
+    ns1:8 <http://kgsynth.org/entity/1416> .
 
 <http://kgsynth.org/entity/3567> ns1:7 <http://kgsynth.org/entity/2124>,
         <http://kgsynth.org/entity/2967>,
@@ -11307,7 +11304,7 @@
         <http://kgsynth.org/entity/323>,
         <http://kgsynth.org/entity/417>,
         <http://kgsynth.org/entity/81> ;
-    ns1:8 <http://kgsynth.org/entity/624> .
+    ns1:8 <http://kgsynth.org/entity/3129> .
 
 <http://kgsynth.org/entity/3712> ns1:6 <http://kgsynth.org/entity/2712> ;
     ns1:7 <http://kgsynth.org/entity/3365>,
@@ -11392,7 +11389,7 @@
         <http://kgsynth.org/entity/1952> ;
     ns1:8 <http://kgsynth.org/entity/3319> .
 
-<http://kgsynth.org/entity/984> ns1:6 <http://kgsynth.org/entity/3416> ;
+<http://kgsynth.org/entity/984> ns1:6 <http://kgsynth.org/entity/1693> ;
     ns1:7 <http://kgsynth.org/entity/2216>,
         <http://kgsynth.org/entity/3382> ;
     ns1:8 <http://kgsynth.org/entity/3510> .
@@ -11472,10 +11469,10 @@
         <http://kgsynth.org/entity/2773>,
         <http://kgsynth.org/entity/2918>,
         <http://kgsynth.org/entity/3521>,
-        <http://kgsynth.org/entity/599>,
-        <http://kgsynth.org/entity/619> .
+        <http://kgsynth.org/entity/567>,
+        <http://kgsynth.org/entity/599> .
 
-<http://kgsynth.org/entity/17> ns1:6 <http://kgsynth.org/entity/2682> ;
+<http://kgsynth.org/entity/17> ns1:6 <http://kgsynth.org/entity/396> ;
     ns1:7 <http://kgsynth.org/entity/152>,
         <http://kgsynth.org/entity/1840>,
         <http://kgsynth.org/entity/2063>,
@@ -11545,7 +11542,7 @@
     ns1:7 <http://kgsynth.org/entity/1296> .
 
 <http://kgsynth.org/entity/2492> ns1:5 <http://kgsynth.org/entity/2040>,
-        <http://kgsynth.org/entity/2774>,
+        <http://kgsynth.org/entity/3035>,
         <http://kgsynth.org/entity/3681>,
         <http://kgsynth.org/entity/528>,
         <http://kgsynth.org/entity/851> ;
@@ -11661,7 +11658,7 @@
         <http://kgsynth.org/entity/745>,
         <http://kgsynth.org/entity/848>,
         <http://kgsynth.org/entity/883> ;
-    ns1:8 <http://kgsynth.org/entity/3397> .
+    ns1:8 <http://kgsynth.org/entity/650> .
 
 <http://kgsynth.org/entity/3797> ns1:7 <http://kgsynth.org/entity/1297> ;
     ns1:8 <http://kgsynth.org/entity/1211> .
@@ -11713,7 +11710,7 @@
     ns1:8 <http://kgsynth.org/entity/2085>,
         <http://kgsynth.org/entity/3470> .
 
-<http://kgsynth.org/entity/543> ns1:2 <http://kgsynth.org/entity/1281> ;
+<http://kgsynth.org/entity/543> ns1:2 <http://kgsynth.org/entity/236> ;
     ns1:7 <http://kgsynth.org/entity/162>,
         <http://kgsynth.org/entity/2060>,
         <http://kgsynth.org/entity/2923>,
@@ -11802,7 +11799,7 @@
 <http://kgsynth.org/entity/1269> ns1:0 <http://kgsynth.org/entity/695> ;
     ns1:7 <http://kgsynth.org/entity/1606>,
         <http://kgsynth.org/entity/2903> ;
-    ns1:8 <http://kgsynth.org/entity/1416> .
+    ns1:8 <http://kgsynth.org/entity/2681> .
 
 <http://kgsynth.org/entity/1607> ns1:7 <http://kgsynth.org/entity/3089>,
         <http://kgsynth.org/entity/3516>,
@@ -11819,12 +11816,12 @@
         <http://kgsynth.org/entity/236> ;
     ns1:8 <http://kgsynth.org/entity/1375> .
 
-<http://kgsynth.org/entity/1884> ns1:3 <http://kgsynth.org/entity/1799>,
-        <http://kgsynth.org/entity/3095>,
-        <http://kgsynth.org/entity/3665> ;
+<http://kgsynth.org/entity/1884> ns1:3 <http://kgsynth.org/entity/3095>,
+        <http://kgsynth.org/entity/3665>,
+        <http://kgsynth.org/entity/571> ;
     ns1:4 <http://kgsynth.org/entity/114>,
-        <http://kgsynth.org/entity/1250>,
-        <http://kgsynth.org/entity/2615>,
+        <http://kgsynth.org/entity/1469>,
+        <http://kgsynth.org/entity/1875>,
         <http://kgsynth.org/entity/3436>,
         <http://kgsynth.org/entity/718> ;
     ns1:7 <http://kgsynth.org/entity/2014>,
@@ -11893,8 +11890,8 @@
         <http://kgsynth.org/entity/575> ;
     ns1:8 <http://kgsynth.org/entity/3196> .
 
-<http://kgsynth.org/entity/298> ns1:7 <http://kgsynth.org/entity/3152>,
-        <http://kgsynth.org/entity/3789> ;
+<http://kgsynth.org/entity/298> ns1:7 <http://kgsynth.org/entity/3789>,
+        <http://kgsynth.org/entity/992> ;
     ns1:8 <http://kgsynth.org/entity/1259> .
 
 <http://kgsynth.org/entity/3104> ns1:7 <http://kgsynth.org/entity/1766>,
@@ -12046,9 +12043,9 @@
         <http://kgsynth.org/entity/3051> .
 
 <http://kgsynth.org/entity/152> ns1:5 <http://kgsynth.org/entity/2023>,
-        <http://kgsynth.org/entity/3807>,
         <http://kgsynth.org/entity/719>,
-        <http://kgsynth.org/entity/923> ;
+        <http://kgsynth.org/entity/923>,
+        <http://kgsynth.org/entity/99> ;
     ns1:7 <http://kgsynth.org/entity/2653>,
         <http://kgsynth.org/entity/941> .
 
@@ -12095,10 +12092,10 @@
         <http://kgsynth.org/entity/665> .
 
 <http://kgsynth.org/entity/2113> ns1:6 <http://kgsynth.org/entity/2205> ;
-    ns1:7 <http://kgsynth.org/entity/1110>,
-        <http://kgsynth.org/entity/121>,
+    ns1:7 <http://kgsynth.org/entity/121>,
         <http://kgsynth.org/entity/2817>,
-        <http://kgsynth.org/entity/3079> ;
+        <http://kgsynth.org/entity/3079>,
+        <http://kgsynth.org/entity/701> ;
     ns1:8 <http://kgsynth.org/entity/1785> .
 
 <http://kgsynth.org/entity/2219> ns1:7 <http://kgsynth.org/entity/1409>,
@@ -12126,7 +12123,7 @@
         <http://kgsynth.org/entity/1957>,
         <http://kgsynth.org/entity/2>,
         <http://kgsynth.org/entity/701> ;
-    ns1:8 <http://kgsynth.org/entity/3205> .
+    ns1:8 <http://kgsynth.org/entity/1118> .
 
 <http://kgsynth.org/entity/3163> ns1:0 <http://kgsynth.org/entity/2015> .
 
@@ -12172,7 +12169,7 @@
         <http://kgsynth.org/entity/3306>,
         <http://kgsynth.org/entity/489> .
 
-<http://kgsynth.org/entity/1040> ns1:0 <http://kgsynth.org/entity/255> ;
+<http://kgsynth.org/entity/1040> ns1:0 <http://kgsynth.org/entity/3337> ;
     ns1:7 <http://kgsynth.org/entity/1376>,
         <http://kgsynth.org/entity/3293>,
         <http://kgsynth.org/entity/417>,
@@ -12297,9 +12294,9 @@
     ns1:8 <http://kgsynth.org/entity/3161> .
 
 <http://kgsynth.org/entity/570> ns1:0 <http://kgsynth.org/entity/1530> ;
-    ns1:7 <http://kgsynth.org/entity/2168>,
-        <http://kgsynth.org/entity/2304>,
-        <http://kgsynth.org/entity/2831> .
+    ns1:7 <http://kgsynth.org/entity/2304>,
+        <http://kgsynth.org/entity/2831>,
+        <http://kgsynth.org/entity/668> .
 
 <http://kgsynth.org/entity/702> ns1:7 <http://kgsynth.org/entity/1131>,
         <http://kgsynth.org/entity/291> ;
@@ -12363,7 +12360,7 @@
     ns1:8 <http://kgsynth.org/entity/215> .
 
 <http://kgsynth.org/entity/2035> ns1:6 <http://kgsynth.org/entity/1278> ;
-    ns1:7 <http://kgsynth.org/entity/535> ;
+    ns1:7 <http://kgsynth.org/entity/2918> ;
     ns1:8 <http://kgsynth.org/entity/2570>,
         <http://kgsynth.org/entity/3337> .
 
@@ -12619,7 +12616,7 @@
     ns1:8 <http://kgsynth.org/entity/1674> .
 
 <http://kgsynth.org/entity/595> ns1:3 <http://kgsynth.org/entity/1317>,
-        <http://kgsynth.org/entity/2012>,
+        <http://kgsynth.org/entity/2837>,
         <http://kgsynth.org/entity/3665>,
         <http://kgsynth.org/entity/693> ;
     ns1:7 <http://kgsynth.org/entity/3470>,
@@ -12637,7 +12634,7 @@
         <http://kgsynth.org/entity/2706>,
         <http://kgsynth.org/entity/3320>,
         <http://kgsynth.org/entity/433> ;
-    ns1:8 <http://kgsynth.org/entity/149> .
+    ns1:8 <http://kgsynth.org/entity/1968> .
 
 <http://kgsynth.org/entity/1426> ns1:7 <http://kgsynth.org/entity/1121> ;
     ns1:8 <http://kgsynth.org/entity/1004> .
@@ -12728,8 +12725,8 @@
         <http://kgsynth.org/entity/3013>,
         <http://kgsynth.org/entity/3185>,
         <http://kgsynth.org/entity/339> ;
-    ns1:7 <http://kgsynth.org/entity/1081>,
-        <http://kgsynth.org/entity/1090>,
+    ns1:7 <http://kgsynth.org/entity/1090>,
+        <http://kgsynth.org/entity/133>,
         <http://kgsynth.org/entity/1820>,
         <http://kgsynth.org/entity/2096> .
 
@@ -12746,7 +12743,7 @@
         <http://kgsynth.org/entity/3788>,
         <http://kgsynth.org/entity/580> .
 
-<http://kgsynth.org/entity/339> ns1:6 <http://kgsynth.org/entity/3671> ;
+<http://kgsynth.org/entity/339> ns1:6 <http://kgsynth.org/entity/2205> ;
     ns1:7 <http://kgsynth.org/entity/2576>,
         <http://kgsynth.org/entity/2704>,
         <http://kgsynth.org/entity/291>,
