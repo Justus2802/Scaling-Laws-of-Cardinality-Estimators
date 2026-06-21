@@ -35,9 +35,9 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 
 
 def _find_graph_file(d: Path) -> Path | None:
-    """Return the first .nt/.ttl graph file in directory ``d`` (None if absent)."""
+    """Return the first non-synthetic .nt/.ttl graph file in directory ``d`` (None if absent)."""
     for pattern in ("*.nt", "*.ttl", "*.nt.gz", "*.ttl.gz"):
-        hits = sorted(d.glob(pattern))
+        hits = sorted(p for p in d.glob(pattern) if not p.stem.endswith("_synth"))
         if hits:
             return hits[0]
     return None

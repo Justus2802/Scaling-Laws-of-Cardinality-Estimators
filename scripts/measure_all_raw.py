@@ -42,7 +42,8 @@ def discover_graphs() -> list[Path]:
     for d in sorted(CORPUS.iterdir()):
         if not d.is_dir():
             continue
-        files = sorted(p for p in d.iterdir() if p.suffix in GRAPH_SUFFIXES)
+        files = sorted(p for p in d.iterdir()
+                       if p.suffix in GRAPH_SUFFIXES and not p.stem.endswith("_synth"))
         if files:
             graphs.append(files[0])
     graphs.sort(key=lambda p: p.stat().st_size)
