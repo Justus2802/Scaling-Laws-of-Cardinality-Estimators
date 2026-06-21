@@ -150,15 +150,19 @@ class BlockD(SignatureBlock):
         power-law (alpha, xmin); CS-size skew-normal (5); inv_num_distinct_cs;
         inverse-CS-frequency power-law (alpha, xmin); inverse-CS-size skew-normal
         (5); two-step truncated power-law (alpha, v_min, v_max).
+
+        Attributes absent from stale serialized data are emitted as NaN.
         """
         return [
-            float(self.num_distinct_cs),
-            self.cs_freq_fit.alpha, self.cs_freq_fit.xmin,
-            *self.cs_size_skew,
-            float(self.inv_num_distinct_cs),
-            self.inv_cs_freq_fit.alpha, self.inv_cs_freq_fit.xmin,
-            *self.inv_cs_size_skew,
-            *self.two_step_fit,
+            self._safe_scalar(lambda: self.num_distinct_cs),
+            self._safe_scalar(lambda: self.cs_freq_fit.alpha),
+            self._safe_scalar(lambda: self.cs_freq_fit.xmin),
+            *self._safe_iter(lambda: self.cs_size_skew, 5),
+            self._safe_scalar(lambda: self.inv_num_distinct_cs),
+            self._safe_scalar(lambda: self.inv_cs_freq_fit.alpha),
+            self._safe_scalar(lambda: self.inv_cs_freq_fit.xmin),
+            *self._safe_iter(lambda: self.inv_cs_size_skew, 5),
+            *self._safe_iter(lambda: self.two_step_fit, 3),
         ]
 
     @classmethod

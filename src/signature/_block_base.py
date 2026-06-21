@@ -35,6 +35,22 @@ class SignatureBlock(ABC):
             raise RuntimeError(f"Call calculate() before accessing {name}")
         return value
 
+    @staticmethod
+    def _safe_scalar(fn) -> float:
+        """Call *fn* and return its float result, or NaN if calculate() was never called."""
+        try:
+            return float(fn())
+        except RuntimeError:
+            return float("nan")
+
+    @staticmethod
+    def _safe_iter(fn, n: int) -> list[float]:
+        """Call *fn* and unpack its *n*-element result, or NaN×n if not calculated."""
+        try:
+            return [float(x) for x in fn()]
+        except RuntimeError:
+            return [float("nan")] * n
+
     @abstractmethod
     def calculate(self, g: igraph.Graph, **kwargs: Any) -> "SignatureBlock":
         """Compute this block's features from the igraph directed graph *g*."""
@@ -84,8 +100,10 @@ class SignatureBlock(ABC):
     def from_serializable(cls, data: dict) -> "SignatureBlock":
         """Reconstruct a block instance from :meth:`to_serializable` output.
 
-        Bypasses ``__init__`` and restores the full ``__dict__`` directly.
+        Calls ``__init__`` first so that attributes added after serialization
+        receive their ``_NOT_CALCULATED`` defaults rather than being absent.
         """
         obj = cls.__new__(cls)
+        obj.__init__()
         obj.__dict__.update(decode_state(data))
         return obj

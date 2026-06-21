@@ -204,16 +204,25 @@ class BlockC(SignatureBlock):
         (rate, scale, density); obj co-occurrence (rate, scale, density); subj
         row-entropy skew-normal (5); obj row-entropy skew-normal (5); P(r|t)
         spectrum (rate, scale); per-type entropy curve (rate, scale).
+
+        Attributes absent from stale serialized data are emitted as NaN.
         """
         return [
-            self.class_size_fit.alpha, self.class_size_fit.xmin,
-            float(self.num_classes),
-            self.subj_cooc_exp.rate, self.subj_cooc_exp.scale, self.subj_cooc_density,
-            self.obj_cooc_exp.rate, self.obj_cooc_exp.scale, self.obj_cooc_density,
-            *self.subj_row_entropy_skew,
-            *self.obj_row_entropy_skew,
-            self.type_rel_spectrum_exp.rate, self.type_rel_spectrum_exp.scale,
-            self.per_type_entropy_exp.rate, self.per_type_entropy_exp.scale,
+            self._safe_scalar(lambda: self.class_size_fit.alpha),
+            self._safe_scalar(lambda: self.class_size_fit.xmin),
+            self._safe_scalar(lambda: self.num_classes),
+            self._safe_scalar(lambda: self.subj_cooc_exp.rate),
+            self._safe_scalar(lambda: self.subj_cooc_exp.scale),
+            self._safe_scalar(lambda: self.subj_cooc_density),
+            self._safe_scalar(lambda: self.obj_cooc_exp.rate),
+            self._safe_scalar(lambda: self.obj_cooc_exp.scale),
+            self._safe_scalar(lambda: self.obj_cooc_density),
+            *self._safe_iter(lambda: self.subj_row_entropy_skew, 5),
+            *self._safe_iter(lambda: self.obj_row_entropy_skew, 5),
+            self._safe_scalar(lambda: self.type_rel_spectrum_exp.rate),
+            self._safe_scalar(lambda: self.type_rel_spectrum_exp.scale),
+            self._safe_scalar(lambda: self.per_type_entropy_exp.rate),
+            self._safe_scalar(lambda: self.per_type_entropy_exp.scale),
         ]
 
     @classmethod

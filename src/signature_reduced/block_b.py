@@ -207,14 +207,20 @@ class BlockB(SignatureBlock):
         Layout: out-degree (alpha, xmin); in-degree (alpha, xmin); relation Zipf
         (exponent, x_min); object-α skew-normal (loc, scale, shape, lo, hi);
         subject-α skew-normal (loc, scale, shape, lo, hi); offsets a_obj, a_subj.
+
+        Attributes absent from stale serialized data are emitted as NaN.
         """
         return [
-            self.out_degree_fit.alpha, self.out_degree_fit.xmin,
-            self.in_degree_fit.alpha, self.in_degree_fit.xmin,
-            self.relation_zipf.exponent, self.relation_zipf.x_min,
-            *self.obj_alpha_skew,
-            *self.subj_alpha_skew,
-            self.a_obj, self.a_subj,
+            self._safe_scalar(lambda: self.out_degree_fit.alpha),
+            self._safe_scalar(lambda: self.out_degree_fit.xmin),
+            self._safe_scalar(lambda: self.in_degree_fit.alpha),
+            self._safe_scalar(lambda: self.in_degree_fit.xmin),
+            self._safe_scalar(lambda: self.relation_zipf.exponent),
+            self._safe_scalar(lambda: self.relation_zipf.x_min),
+            *self._safe_iter(lambda: self.obj_alpha_skew, 5),
+            *self._safe_iter(lambda: self.subj_alpha_skew, 5),
+            self._safe_scalar(lambda: self.a_obj),
+            self._safe_scalar(lambda: self.a_subj),
         ]
 
     @classmethod

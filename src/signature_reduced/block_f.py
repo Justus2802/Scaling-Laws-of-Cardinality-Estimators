@@ -146,15 +146,17 @@ class BlockF(SignatureBlock):
 
         Layout: num_components; largest_component_fraction; clustering_coefficient;
         degree_assortativity; shortest_path_max; shortest_path_mean; shortest_path_var.
+
+        Attributes absent from stale serialized data are emitted as NaN.
         """
         return [
-            float(self.num_components),
-            self.largest_component_fraction,
-            self.clustering_coefficient,
-            self.degree_assortativity,
-            self.shortest_path_max,
-            self.shortest_path_mean,
-            self.shortest_path_var,
+            self._safe_scalar(lambda: self.num_components),
+            self._safe_scalar(lambda: self.largest_component_fraction),
+            self._safe_scalar(lambda: self.clustering_coefficient),
+            self._safe_scalar(lambda: self.degree_assortativity),
+            self._safe_scalar(lambda: self.shortest_path_max),
+            self._safe_scalar(lambda: self.shortest_path_mean),
+            self._safe_scalar(lambda: self.shortest_path_var),
         ]
 
     @classmethod

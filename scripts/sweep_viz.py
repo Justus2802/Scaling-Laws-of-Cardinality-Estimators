@@ -51,10 +51,14 @@ def _all_feature_names(sig_dict: dict) -> list[str]:
 
 
 def _rel_err(target_val: float, synth_val: float) -> float | None:
-    """Relative error; None if target is NaN."""
+    """Signed relative error (synth − target) / |target|; None if target is NaN.
+
+    Positive values mean the synthesised graph over-estimates the feature;
+    negative values indicate under-estimation, exposing systematic bias.
+    """
     if math.isnan(target_val):
         return None
-    return abs(target_val - synth_val) / max(abs(target_val), 1e-9)
+    return (synth_val - target_val) / max(abs(target_val), 1e-9)
 
 
 def main() -> None:
@@ -154,7 +158,7 @@ def main() -> None:
 
     n_feat = len(args.features)
     fig, axes = plt.subplots(1, n_feat, figsize=(max(6, 4 * n_feat), 5), squeeze=False)
-    fig.suptitle(f"Relative error by config — {graph_name}", fontsize=12)
+    fig.suptitle(f"Signed relative error by config — {graph_name}", fontsize=12)
 
     for col, feat in enumerate(args.features):
         ax = axes[0][col]
@@ -179,8 +183,7 @@ def main() -> None:
 
         ax.axhline(0, color="gray", linewidth=0.8, linestyle="--")
         ax.set_title(feat, fontsize=9)
-        ax.set_ylabel("relative error" if col == 0 else "")
-        ax.set_ylim(bottom=0)
+        ax.set_ylabel("signed relative error" if col == 0 else "")
 
     fig.tight_layout()
 

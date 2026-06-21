@@ -75,11 +75,14 @@ class BlockA(SignatureBlock):
         return [float("nan")] * 3
 
     def as_vector(self) -> list[float]:
-        """Flatten to a fixed-length 3-vector for cross-KG comparison."""
+        """Flatten to a fixed-length 3-vector for cross-KG comparison.
+
+        Attributes absent from stale serialized data are emitted as NaN.
+        """
         return [
-            float(self.num_entities),
-            float(self.num_relations),
-            self.mean_degree,
+            self._safe_scalar(lambda: self.num_entities),
+            self._safe_scalar(lambda: self.num_relations),
+            self._safe_scalar(lambda: self.mean_degree),
         ]
 
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:

@@ -150,23 +150,37 @@ class BlockE(SignatureBlock):
         Layout: 7 motif counts; induced star counts (k=2..10); path-template
         zipf (k=2..10); path-template entropy (k=2..10); tree-template
         (zipf, entropy).
+
+        Attributes absent from stale serialized data are emitted as NaN so
+        that sweep_viz.py can still analyse whatever features are present.
         """
+        _nan = float("nan")
+
+        def _dict(v) -> dict:
+            return {} if v is _NOT_CALCULATED else v
+
         vec = [
-            float(self.triangle_count),
-            float(self.four_cycle_count),
-            float(self.five_cycle_count),
-            float(self.six_cycle_count),
-            float(self.diamond_count),
-            float(self.k4_count),
-            float(self.tailed_triangle_count),
+            self._safe_scalar(lambda: self.triangle_count),
+            self._safe_scalar(lambda: self.four_cycle_count),
+            self._safe_scalar(lambda: self.five_cycle_count),
+            self._safe_scalar(lambda: self.six_cycle_count),
+            self._safe_scalar(lambda: self.diamond_count),
+            self._safe_scalar(lambda: self.k4_count),
+            self._safe_scalar(lambda: self.tailed_triangle_count),
         ]
+        star = _dict(self._star_counts)
         for k in range(2, _MAX_K + 1):
-            vec.append(float(self.star_counts.get(k, 0)))
+            vec.append(float(star.get(k, _nan)))
+        pzipf = _dict(self._path_template_zipf)
         for k in range(2, _MAX_K + 1):
-            vec.append(self.path_template_zipf.get(k, float("nan")))
+            vec.append(pzipf.get(k, _nan))
+        pent = _dict(self._path_template_entropy)
         for k in range(2, _MAX_K + 1):
-            vec.append(self.path_template_entropy.get(k, float("nan")))
-        vec.extend([self.tree_template_zipf, self.tree_template_entropy])
+            vec.append(pent.get(k, _nan))
+        vec.extend([
+            self._safe_scalar(lambda: self.tree_template_zipf),
+            self._safe_scalar(lambda: self.tree_template_entropy),
+        ])
         return vec  # length 7 + 9 + 9 + 9 + 2 = 36
 
     @classmethod
