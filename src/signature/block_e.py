@@ -121,8 +121,10 @@ class BlockE(SignatureBlock):
         Parameters
         ----------
         skip_stars_and_paths : bool
-            When True, skip the star, 5/6-cycle, path-template and tree-template
-            computations. Useful when only triangle/4-node motif counts are needed.
+            When True, skip the path-template and tree-template computations.
+            Triangle, 4-node motif, 5/6-cycle and induced star counts are always
+            measured (the latter via the hybrid counter), so the motif counts
+            stay complete.
         """
         g_und = g.as_undirected(combine_edges="first").simplify()
         n = g_und.vcount()
@@ -131,8 +133,9 @@ class BlockE(SignatureBlock):
 
         # n_samples scales with graph size so tiny test graphs stay fast (500 samples)
         # while large graphs get up to budget×5 samples.  Sampling is O(n_samples×k)
-        # but negligible vs the DP build O(m×2^k); one coloring is enough for large
-        # graphs (paper §2.3: coloring noise averages out over many instances).
+        # but negligible vs the DP build O(m×2^k).  The CC estimator averages over
+        # MOTIF_COUNTER's n_colorings independent colourings (see HybridMotifCounter)
+        # so k≥6 counts don't collapse to 0 on graphs with few/clustered instances.
         _n_samples = max(500, min(n * 20, sample_budget * 5))
         _rng       = np.random.default_rng(1)
 
@@ -166,33 +169,37 @@ class BlockE(SignatureBlock):
         log.info("Block E: computed k4_count (%d)", self._k4_count)
         log.info("Block E: computed tailed_triangle_count (%d)", self._tailed_triangle_count)
 
+        # 5/6-cycle counts are core motif features, so they are always measured via
+        # the hybrid counter (ESCAPE-exact for k=5 on low-degree graphs, CC otherwise)
+        # — independent of the stars/path-template skip below.  motifs5/motifs6 are
+        # reused by the path-template block when stars/paths are not skipped.
+        log.info("Block E: computing 5-cycle (k=5)…")
+        motifs5 = MOTIF_COUNTER.count_motifsk(g_und, 5)
+        self._five_cycle_count = motifs5.get((2, 2, 2, 2, 2), 0)
+        log.info("Block E: computed five_cycle_count (~%d)", self._five_cycle_count)
+
+        log.info("Block E: computing 6-cycle (k=6)…")
+        motifs6 = MOTIF_COUNTER.count_motifsk(g_und, 6)
+        self._six_cycle_count = motifs6.get((2, 2, 2, 2, 2, 2), 0)
+        log.info("Block E: computed six_cycle_count (~%d)", self._six_cycle_count)
+
+        # Induced k-star counts are a core motif feature carrying information beyond
+        # the degree sequence, so they are always measured via the hybrid counter —
+        # independent of the path-template skip below (same treatment as 5/6-cycles).
+        log.info("Block E: computing stars (k=2..10)…")
+        self._star_counts = MOTIF_COUNTER.count_stars(g_und)
+        log.info(
+            "Block E: computed star_counts (k=2..10 totals=%s)",
+            [self._star_counts.get(k, 0) for k in range(2, 11)],
+        )
+
         if skip_stars_and_paths:
-            log.info("Block E: skipping stars, 5/6-cycle, path templates, tree templates.")
-            self._star_counts = {k: 0 for k in range(2, 11)}
-            self._five_cycle_count = 0
-            self._six_cycle_count = 0
+            log.info("Block E: skipping path templates, tree templates.")
             self._path_template_zipf = {}
             self._path_template_entropy = {}
             self._tree_template_zipf = float("nan")
             self._tree_template_entropy = float("nan")
         else:
-            log.info("Block E: computing stars (k=2..10)…")
-            self._star_counts = MOTIF_COUNTER.count_stars(g_und)
-            log.info(
-                "Block E: computed star_counts (k=2..10 totals=%s)",
-                [self._star_counts.get(k, 0) for k in range(2, 11)],
-            )
-
-            log.info("Block E: computing 5-cycle (k=5)…")
-            motifs5 = MOTIF_COUNTER.count_motifsk(g_und, 5)
-            self._five_cycle_count = motifs5.get((2, 2, 2, 2, 2), 0)
-            log.info("Block E: computed five_cycle_count (~%d)", self._five_cycle_count)
-
-            log.info("Block E: computing 6-cycle (k=6)…")
-            motifs6 = MOTIF_COUNTER.count_motifsk(g_und, 6)
-            self._six_cycle_count = motifs6.get((2, 2, 2, 2, 2, 2), 0)
-            log.info("Block E: computed six_cycle_count (~%d)", self._six_cycle_count)
-
             # Path templates: for each k, compute Zipf + entropy of the graphlet-type
             # distribution at that size.  k=2..6 always run.  k=7..10 are run only when
             # the DP fits in ~1 GB: n × 2^k × k × 4 bytes ≤ 1 GB → n ≤ 1e9 / (k×2^k×4).

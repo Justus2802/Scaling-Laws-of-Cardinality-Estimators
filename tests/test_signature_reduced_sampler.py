@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from signature_reduced import ReducedGraphSignature  # noqa: E402
+from signature_reduced import BlockE, ReducedGraphSignature  # noqa: E402
 from signature_sampler import (  # noqa: E402
     FEATURE_ORDER,
     SignatureSampler,
@@ -56,11 +56,17 @@ def _same(d1: dict, d2: dict) -> bool:
 
 
 class TestFeatureOrder(unittest.TestCase):
-    def test_69_keys_matching_signature_schema(self):
-        self.assertEqual(len(FEATURE_ORDER), 69)
-        self.assertEqual(len(set(FEATURE_ORDER)), 69)  # no duplicates
-        # Order/keys must match ReducedGraphSignature.as_dict() exactly.
-        self.assertEqual(list(ReducedGraphSignature().as_dict().keys()), FEATURE_ORDER)
+    def test_keys_match_signature_schema_minus_block_e(self):
+        # The sampler deliberately excludes Block E (motifs / G5 are out of scope),
+        # so FEATURE_ORDER must equal the measured schema with Block E's feature
+        # names removed, in the same order.
+        self.assertEqual(len(FEATURE_ORDER), 70)
+        self.assertEqual(len(set(FEATURE_ORDER)), 70)  # no duplicates
+        block_e_names = set(BlockE.feature_names())
+        schema_minus_e = [
+            k for k in ReducedGraphSignature().as_dict() if k not in block_e_names
+        ]
+        self.assertEqual(schema_minus_e, FEATURE_ORDER)
 
 
 class TestUniformRangeSampler(unittest.TestCase):

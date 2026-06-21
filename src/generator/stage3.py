@@ -46,8 +46,8 @@ LOSS_WEIGHT_C4:            float = 1.0  # 4-cycle      (2,2,2,2)
 LOSS_WEIGHT_DIAMOND:       float = 1.0  # diamond      (2,2,3,3)
 LOSS_WEIGHT_K4:            float = 1.0  # complete K4  (3,3,3,3)
 LOSS_WEIGHT_PAW:           float = 1.0  # paw          (1,2,2,3)
-LOSS_WEIGHT_C5:            float = 0
-LOSS_WEIGHT_C6:            float = 0
+LOSS_WEIGHT_C5:            float = 1
+LOSS_WEIGHT_C6:            float = 1
 LOSS_WEIGHT_ASSORTATIVITY: float = 1.0
 LOSS_WEIGHT_CC_AVG:        float = 1.0
 
@@ -73,7 +73,7 @@ USE_INCREMENTAL_MOTIF4 = True
 # so it is best left off for high-degree graphs.  Only active when a cycle target is set.
 USE_INCREMENTAL_CYCLES = True
 # Accepted-swap interval between convergence CSV rows; 0 disables logging entirely.
-CONVERGENCE_LOG_INTERVAL: int = 10000
+CONVERGENCE_LOG_INTERVAL: int = 0
 # Motif counter used for the initial measurement at the start of the SA walk.
 #INITIAL_MOTIF_COUNTER: MotifCounter = CCMotifCounter(n_samples=CC4_SAMPLES, seed=42)
 INITIAL_MOTIF_COUNTER: MotifCounter = HybridMotifCounter()
@@ -336,6 +336,10 @@ def refine(
     for attr, ds, col in _SIG_ATTRS[1:]:
         if ds in _motif4_targets:
             _conv_fields.append(col)
+    # Ground-truth 5-cycle error: global (induced) 5-cycle count measured on the
+    # full graph (HybridMotifCounter) vs the target — validates the incremental
+    # cycle delta. Always logged.
+    _conv_fields.append("sig_c5_err")
 
     _conv_fh = open(convergence_log, "w", newline="") if convergence_log else None  # noqa: SIM115
     _conv_writer = csv.DictWriter(_conv_fh, fieldnames=_conv_fields) if _conv_fh else None
@@ -375,6 +379,11 @@ def refine(
                 if col in _conv_fields:
                     tgt = _motif4_targets[ds]
                     row[col] = round(abs(_sig_motifs4.get(ds, 0) - tgt) / max(1, tgt), 6)
+
+        # Ground-truth 5-cycle relative error: global (induced/chordless) count
+        # measured via the hybrid counter vs target (raw count when target is 0).
+        c5_sig = REMEASURE_MOTIF_COUNTER.count_cycles(_g_sig, k5=True, k6=False)[0]
+        row["sig_c5_err"] = round(abs(c5_sig - _target_c5) / max(1, _target_c5), 6)
 
         _conv_writer.writerow(row)
 

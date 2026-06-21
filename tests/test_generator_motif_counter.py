@@ -19,7 +19,7 @@ from motif_counter._common import _count_motifs4_through_edge
 from generator.local_updates import (
     _motif4_delta,
     _triangle_node_delta,
-    _induced_cycles_through_nodes,
+    _induced_cycles_through_pair,
     _cycle_delta,
 )
 
@@ -419,29 +419,35 @@ def _brute_induced_cycles(a: list[dict], k: int) -> int:
     return count
 
 
-class TestInducedCyclesThroughNodes(unittest.TestCase):
+class TestInducedCyclesThroughPair(unittest.TestCase):
 
-    def test_single_c5(self):
+    def test_single_c5_adjacent_pair(self):
+        # C5 0-1-2-3-4-0; pair (0,1) is a cycle edge
         a = _adj(5, [(0,1),(1,2),(2,3),(3,4),(0,4)])
-        cycles = _induced_cycles_through_nodes(a, range(5), 5)
-        self.assertEqual(cycles, {frozenset({0,1,2,3,4})})
+        self.assertEqual(_induced_cycles_through_pair(a, 0, 1, 5),
+                         {frozenset({0,1,2,3,4})})
+
+    def test_single_c5_nonadjacent_pair(self):
+        # Same C5; pair (0,2) are non-adjacent cycle vertices (two arcs 0-1-2 and 0-4-3-2)
+        a = _adj(5, [(0,1),(1,2),(2,3),(3,4),(0,4)])
+        self.assertEqual(_induced_cycles_through_pair(a, 0, 2, 5),
+                         {frozenset({0,1,2,3,4})})
 
     def test_chord_destroys_induced(self):
-        # C5 with a chord 0-2 — no induced 5-cycle anymore
+        # C5 with a chord 0-2 — no induced 5-cycle through any pair
         a = _adj(5, [(0,1),(1,2),(2,3),(3,4),(0,4),(0,2)])
-        self.assertEqual(_induced_cycles_through_nodes(a, range(5), 5), set())
+        self.assertEqual(_induced_cycles_through_pair(a, 0, 1, 5), set())
+        self.assertEqual(_induced_cycles_through_pair(a, 3, 4, 5), set())
 
     def test_c6_not_two_triangles(self):
         # Two disjoint triangles: 2-regular on 6 nodes but NOT a 6-cycle
         a = _adj(6, [(0,1),(1,2),(0,2),(3,4),(4,5),(3,5)])
-        self.assertEqual(_induced_cycles_through_nodes(a, range(6), 6), set())
+        self.assertEqual(_induced_cycles_through_pair(a, 0, 1, 6), set())
 
-    def test_anchor_filter(self):
-        # C5 on {0..4} plus isolated edge; anchoring on node 7 finds nothing
+    def test_pair_not_in_cycle(self):
+        # C5 on {0..4} plus isolated edge 6-7; no induced 5-cycle through (6,7)
         a = _adj(8, [(0,1),(1,2),(2,3),(3,4),(0,4),(6,7)])
-        self.assertEqual(_induced_cycles_through_nodes(a, [7], 5), set())
-        self.assertEqual(_induced_cycles_through_nodes(a, [0], 5),
-                         {frozenset({0,1,2,3,4})})
+        self.assertEqual(_induced_cycles_through_pair(a, 6, 7, 5), set())
 
 
 class TestCycleDelta(unittest.TestCase):

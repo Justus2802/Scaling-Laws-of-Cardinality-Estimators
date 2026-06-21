@@ -63,7 +63,8 @@ joint → **not guaranteed → keep as target**. Full statement + classification
 entropy, cooc density, `P(r|t)` spectrum + per-type relation entropy, two-step pair
 frequencies, and all connectivity/motif/template quantities.
 **Genuinely dropped:** density/ratios, functionality/inverse-functionality, multiplicity
-scale, **star counts** (non-induced/CS-fixed = degree function), all `*_ks` fields.
+scale, all `*_ks` fields. (Induced `star_count_k*` are **kept** — they are not the
+degree-fixed `Σ C(deg,k)`.)
 
 ## Step 0 — doc fix (done)
 
@@ -137,9 +138,10 @@ base-class serialization, and `visualize`; only the computed state + `as_vector`
 - **Drop** the old `mean/median/p90` summaries (replaced by distribution params).
 
 **Block E — G5 motifs (raw-count targets).** Keep triangle, 4-/5-/6-cycle, diamond, k4,
-tailed-triangle (raw counts); path/tree template zipf+entropy. **Drop `star_count_k*`** —
-the spec defines stars as **non-induced** (*"already fixed by characteristic sets"*) =
-`Σ C(deg,k)`, an exact degree function (current `_count_stars` already computes this).
+tailed-triangle (raw counts); **induced `star_count_k*`** (k=2..10); path/tree template
+zipf+entropy. The stars are *induced* (centre + k mutually non-adjacent leaves, as
+measured by the color-coding counter), **not** the degree-fixed non-induced `Σ C(deg,k)`,
+so they carry structure independent of the degree sequence.
 
 **Block F — G4 connectivity (targets).** Keep `largest_component_fraction`,
 `num_components`, `degree_assortativity`, and **average-local clustering**

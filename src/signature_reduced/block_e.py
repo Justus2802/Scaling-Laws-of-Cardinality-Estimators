@@ -1,11 +1,17 @@
 """Reduced Block E — Motif shape distribution (G5).
 
 Keeps the raw motif counts (triangle, 4-/5-/6-cycle, diamond, k4, tailed
-triangle) and the path/tree template zipf+entropy curves, all computed by the
-original Block E (composed, not re-implemented). Drops the ``star_count_k*``
-features: the spec treats stars as *non-induced* (``Σ_v C(deg(v), k)``), an
-exact function of the degree sequence already pinned by Block B, so they carry
-no independent information beyond the degree distribution.
+triangle), the ``star_count_k*`` features, and the path/tree template
+zipf+entropy curves, all computed by the original Block E (composed, not
+re-implemented).
+
+The ``star_count_k*`` values are *induced* k-stars (a centre plus k leaves with
+no edges among the leaves), as actually measured by the original Block E's
+``MOTIF_COUNTER.count_stars`` (exact induced counting). They are **not** the
+non-induced ``Σ_v C(deg(v), k)``: induced stars are not determined by the degree
+sequence alone (they depend on the local edge structure among neighbours), so
+they carry information independent of the Block B degree distribution and are
+kept here.
 """
 
 import igraph
@@ -38,6 +44,7 @@ class BlockE(SignatureBlock):
         self._diamond_count = _NOT_CALCULATED
         self._k4_count = _NOT_CALCULATED
         self._tailed_triangle_count = _NOT_CALCULATED
+        self._star_counts = _NOT_CALCULATED
         self._path_template_zipf = _NOT_CALCULATED
         self._path_template_entropy = _NOT_CALCULATED
         self._tree_template_zipf = _NOT_CALCULATED
@@ -74,6 +81,10 @@ class BlockE(SignatureBlock):
         return self._require("tailed_triangle_count", self._tailed_triangle_count)
 
     @property
+    def star_counts(self) -> dict[int, int]:
+        return self._require("star_counts", self._star_counts)
+
+    @property
     def path_template_zipf(self) -> dict[int, float]:
         return self._require("path_template_zipf", self._path_template_zipf)
 
@@ -99,16 +110,15 @@ class BlockE(SignatureBlock):
     ) -> "BlockE":
         """Compute reduced Block E (motif distribution).
 
-        Composes the original Block E to reuse its color-coding motif counts and
-        path/tree template statistics, then keeps everything except the
-        ``star_count_k*`` features (non-induced stars are exactly ``Σ C(deg, k)``,
-        already determined by the Block B degree distribution).
+        Composes the original Block E to reuse its color-coding motif counts,
+        induced ``star_count_k*`` values and path/tree template statistics.
 
         Parameters
         ----------
         skip_stars_and_paths : bool
-            When True, skip star, 5/6-cycle, path-template and tree-template
-            computations. Speeds up analysis when only steered motifs are needed.
+            When True, skip the path-template and tree-template computations.
+            Triangle/4-node motif, 5/6-cycle and induced star counts are always
+            measured (mirroring the original Block E).
         """
         orig = _OrigBlockE().calculate(g, sample_budget=sample_budget,
                                        skip_stars_and_paths=skip_stars_and_paths)
@@ -119,6 +129,7 @@ class BlockE(SignatureBlock):
         self._diamond_count         = orig.diamond_count
         self._k4_count              = orig.k4_count
         self._tailed_triangle_count = orig.tailed_triangle_count
+        self._star_counts           = orig.star_counts
         self._path_template_zipf    = orig.path_template_zipf
         self._path_template_entropy = orig.path_template_entropy
         self._tree_template_zipf    = orig.tree_template_zipf
@@ -134,10 +145,11 @@ class BlockE(SignatureBlock):
         return self
 
     def as_vector(self) -> list[float]:
-        """Flatten to a fixed-length 27-vector for cross-KG comparison.
+        """Flatten to a fixed-length 36-vector for cross-KG comparison.
 
-        Layout: 7 motif counts; path-template zipf (k=2..10); path-template
-        entropy (k=2..10); tree-template (zipf, entropy).
+        Layout: 7 motif counts; induced star counts (k=2..10); path-template
+        zipf (k=2..10); path-template entropy (k=2..10); tree-template
+        (zipf, entropy).
         """
         vec = [
             float(self.triangle_count),
@@ -149,11 +161,13 @@ class BlockE(SignatureBlock):
             float(self.tailed_triangle_count),
         ]
         for k in range(2, _MAX_K + 1):
+            vec.append(float(self.star_counts.get(k, 0)))
+        for k in range(2, _MAX_K + 1):
             vec.append(self.path_template_zipf.get(k, float("nan")))
         for k in range(2, _MAX_K + 1):
             vec.append(self.path_template_entropy.get(k, float("nan")))
         vec.extend([self.tree_template_zipf, self.tree_template_entropy])
-        return vec  # length 7 + 9 + 9 + 2 = 27
+        return vec  # length 7 + 9 + 9 + 9 + 2 = 36
 
     @classmethod
     def feature_names(cls) -> list[str]:
@@ -162,6 +176,7 @@ class BlockE(SignatureBlock):
             "triangle_count", "four_cycle_count", "five_cycle_count",
             "six_cycle_count", "diamond_count", "k4_count", "tailed_triangle_count",
         ]
+        names += [f"star_count_k{k}" for k in range(2, _MAX_K + 1)]
         names += [f"path_template_zipf_k{k}" for k in range(2, _MAX_K + 1)]
         names += [f"path_template_entropy_k{k}" for k in range(2, _MAX_K + 1)]
         names += ["tree_template_zipf", "tree_template_entropy"]
@@ -169,8 +184,8 @@ class BlockE(SignatureBlock):
 
     @classmethod
     def get_na_vec(cls) -> list[float]:
-        """Return a 27-element NaN vector (same length as as_vector())."""
-        return [float("nan")] * 27
+        """Return a 36-element NaN vector (same length as as_vector())."""
+        return [float("nan")] * 36
 
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
         """Display or save diagnostics for reduced Block E.
@@ -200,6 +215,10 @@ class BlockE(SignatureBlock):
         lines.append(f"  diamonds:            {self.diamond_count}")
         lines.append(f"  K4:                  {self.k4_count}")
         lines.append(f"  tailed triangles:    {self.tailed_triangle_count}")
+
+        lines.append("\n--- Star counts (induced) ---")
+        star_row = "  " + "  ".join(f"k={k}: {self.star_counts.get(k, 0)}" for k in range(2, _MAX_K + 1))
+        lines.append(star_row)
 
         lines.append("\n--- Path templates ---")
         lines.append(f"  {'k':>3}  {'zipf_alpha':>10}  {'entropy':>10}")

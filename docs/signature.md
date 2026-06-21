@@ -27,10 +27,10 @@ counts, path lengths) on the object for `visualize`.
 | **B** — G1/G2/G2b | 18 | out/in-degree power-law (target); relation-usage **Zipf**; obj/subj multiplicity-α **skew-normal** (cutoffs [1.4,3.0]); CS-size offsets `a_obj`, `a_subj` |
 | **C** — G3 | 23 | class-size **power-law**; subj/obj co-occurrence **exp-decay** + density; row entropy **skew-normal**; `P(r\|t)` spectrum **exp-decay**; per-type entropy **exp-decay** |
 | **D** — G3 | 19 | `num_distinct_cs`; CS-freq **power-law**; CS-size **skew-normal**; symmetric inverse side (`inv_num_distinct_cs`, inverse-CS-freq **power-law**, inverse-CS-size **skew-normal**); two-step path-count **truncated power-law** |
-| **E** — G5 | 27 | raw motif counts (triangle, 4-/5-/6-cycle, diamond, k4, tailed triangle); path-template **Zipf** + entropy (k=2..10); tree-template Zipf + entropy. `star_count_k*` dropped (non-induced stars `= Σ C(deg,k)`, fixed by the degree distribution) |
+| **E** — G5 | 36 | raw motif counts (triangle, 4-/5-/6-cycle, diamond, k4, tailed triangle); **induced** `star_count_k*` (k=2..10); path-template **Zipf** + entropy (k=2..10); tree-template Zipf + entropy. Stars are *induced* (centre + k mutually non-adjacent leaves, as measured by the color-coding counter), **not** the non-induced `Σ C(deg,k)`, so they are not fixed by the degree distribution and carry independent structure |
 | **F** — G4 | 9 | components, LCC fraction, avg-local clustering, assortativity; shortest-path **skew-normal** |
 
-Total **99** features (A3 + B18 + C23 + D19 + E27 + F9).
+Total **108** features (A3 + B18 + C23 + D19 + E36 + F9).
 The fits are stored as NamedTuples that restore as plain tuples through the JSON
 round-trip, so each block property re-wraps them to preserve attribute access.
 
@@ -304,10 +304,6 @@ inverse-CS size) are not pinned by subject-side params.
 - `functionality`, `inverse_functionality` — tier 2 (head of the stored multiplicity law).
 - per-relation multiplicity **scale / x_min** — fixed by edge conservation (tier 1 given
   the schema counts).
-- **star counts** `Σ C(deg,k)` — **non-induced** (the spec's definition: *"stars of degree
-  k, already fixed by characteristic sets"*). An exact function of the degree multiset →
-  redundant once degree is realised. *(The induced star — leaves mutually non-adjacent —
-  would not be degree-derivable, but the project uses the non-induced/CS-fixed definition.)*
 - all `*_ks` fit-quality fields — measurement diagnostics.
 
 **Keep as targets (NOT guaranteed — cross into unstored joint):**
@@ -499,10 +495,7 @@ Genuinely derived/dropped: nothing extra here beyond the global drop list.
 | 5/6-cycle counts | raw (sampled/estimated) counts | E | Longer cyclic structure. |
 | path templates | per-k **Zipf exponent + entropy** (k = 2..K) | E | Label-sequence diversity along paths — query-shape realism. |
 | tree templates | **Zipf exponent + entropy** | E | Branching label diversity. |
-
-Excluded **D**: `star_count_k2..k10` — the spec defines the star as **non-induced**
-(*"already fixed by characteristic sets"*) = `Σ C(deg(v), k)`, an exact function of the
-degree sequence (removes 9 features).
+| star counts | **induced** `star_count_k2..k10` (raw counts) | E | k mutually non-adjacent leaves around a centre — local sparsity not fixed by the degree sequence. |
 
 > Raw counts are strongly size-dependent (per the decision) → more work for the Stage-1
 > conditional-on-size model.
@@ -528,7 +521,6 @@ drafts wrongly dropped.
 | `num_triples` (E), `density`, `relation_reuse` | algebraic functions of V, mean-degree, R (tier 1). Mean degree `E/V` (old `triples_per_entity`) is kept as the handle. |
 | **per-relation multiplicity scale / x_min** | fixed by edge conservation `freq(r)·E / n_s(r)` (tier 1 given schema counts) — store shape only |
 | `functionality_*`, `inverse_functionality_*` | head `P(count=1)` of the stored multiplicity law (tier 2) |
-| `star_count_k2..k10` | non-induced (CS-fixed) star = `Σ C(deg,k)`, exact function of the degree sequence |
 | all `*_ks*` goodness-of-fit fields | measurement diagnostics, not generative parameters |
 | raw singular **values** | replaced by exponential-decay parameters (per notes); the spectrum is kept, just reparameterised |
 
@@ -540,8 +532,8 @@ Schema = **both** spectrum + CS distributions (complementary). **Edge-budget han
 mean degree** (`E/V`); E and density derived. **CS-frequency = power-law**. Per-relation
 multiplicity is free (shape only); functionality and multiplicity *scale* are derived
 (guaranteed); **aggregate degree, inverse-CS size, row entropy, cooc density, `P(r|t)`
-spectrum + per-type relation entropy, and two-step pairs are kept as targets**; **star
-counts dropped** (non-induced / CS-fixed = degree function).
+spectrum + per-type relation entropy, and two-step pairs are kept as targets**; **induced
+star counts kept** (not the degree-fixed `Σ C(deg,k)`, so they carry independent structure).
 
 Resolved against the project spec (the document):
 

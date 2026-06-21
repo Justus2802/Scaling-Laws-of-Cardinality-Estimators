@@ -12,7 +12,8 @@ _triangle_node_delta        — Δ(triangles) and per-node Δt_v for one swap
 _classify4                  — motif degree-seq of an induced 4-node subgraph
 _motifs4_through_pairs      — {4-set: degree-seq} for motifs containing swap pairs
 _motif4_delta               — Δ(4-node motif counts) for one swap
-_induced_cycles_through_nodes — set of induced k-cycles touching given anchors
+_induced_paths              — induced (chordless) a→b paths up to a length
+_induced_cycles_through_pair — set of induced k-cycles containing a given vertex pair
 _cycle_delta                — Δ(induced 5-/6-cycle counts) for one swap
 
 The per-edge motif primitive ``_count_motifs4_through_edge`` lives in
@@ -29,7 +30,7 @@ both by adding/removing a cycle edge and by adding a chord (destroys an
 induced cycle) or removing a chord (can create one).
 """
 
-from collections import Counter
+from collections import Counter, defaultdict
 
 
 def _adj_inc(adj: list, u: int, v: int) -> None:
@@ -178,52 +179,98 @@ def _motif4_delta(
     }
 
 
-def _induced_cycles_through_nodes(
-    adj: list, anchors, k: int
-) -> set[frozenset]:
-    """Enumerate induced (chordless) k-cycles whose vertex set contains an anchor.
+def _induced_paths(adj: list, a: int, b: int, max_edges: int) -> list:
+    """All induced (chordless) paths from ``a`` to ``b`` of edge-length 1..max_edges.
 
-    Treats ``adj`` as a simple graph (key presence = edge, multiplicity ignored,
-    matching the simple-graph projection the motif counters use).  Each cycle is
-    returned once as a ``frozenset`` of its k vertices.
+    Returns a list of vertex tuples ``(a, …, b)``.  "Induced" means the only edges
+    among the path's vertices are the consecutive ones — the arcs of an induced
+    cycle are exactly such paths.
 
-    A vertex set is an induced k-cycle iff its induced subgraph is exactly a
-    cycle — i.e. the only edges among the k vertices are the k consecutive ones,
-    no chords.  Anchored DFS builds chordless paths ``a = p0, p1, …`` and closes
-    them back to ``a``; the chord-free condition is enforced incrementally so
-    only genuine induced cycles are emitted.
-    Cost: O(Δ^(k-1)) per anchor, Δ = max degree of explored nodes.
+    Distance-bounded pruning: an interior vertex is dropped once it can no longer
+    reach ``b`` within the edges that remain.  The two cheapest, most valuable
+    cases use ``b``'s 1-hop set ``tb`` — when one edge remains the vertex must be a
+    neighbour of ``b``; when two remain it must be within two hops — which cuts the
+    two deepest (and most explosive) DFS levels.
+    Cost: O(Δ^(max_edges-1)) worst case, far less in sparse neighbourhoods.
     """
-    found: set[frozenset] = set()
+    out: list = []
+    tb = set(adj[b])                        # b's 1-hop neighbourhood
+    path = [a]
+    inp = {a}
 
-    def _dfs(path: list, inpath: set, a: int) -> None:
-        pos = len(path) - 1          # index of the current last vertex
-        last = path[pos]
-        target = pos + 1             # index we are about to fill
+    def _dfs() -> None:
+        last = path[-1]
+        L = len(path)                       # vertices so far; edges so far = L-1
         for x in adj[last]:
-            if x in inpath:
+            if x in inp:
                 continue
-            if target < k - 1:
-                # Interior vertex: no chord to any earlier vertex (incl. anchor a),
-                # which also rules out premature short cycles back to a.
-                if any(path[i] in adj[x] for i in range(pos)):
+            if x == b:
+                # Close the arc.  ``b`` may be adjacent to ``a`` (that is just the
+                # other arc / cycle-closing edge, not a chord), so the chord check
+                # skips the start vertex; a genuine a–b chord is caught later by
+                # the degree-2 test in _induced_cycles_through_pair.
+                if any(path[i] in adj[b] for i in range(1, L - 1)):
                     continue
-                path.append(x)
-                inpath.add(x)
-                _dfs(path, inpath, a)
-                inpath.discard(x)
-                path.pop()
-            else:
-                # Closing vertex: must link back to a, with no chord to p1..p_{pos-1}.
-                if a not in adj[x]:
+                out.append(tuple(path) + (b,))   # closed an induced path of length L
+                continue
+            ra = max_edges - L              # edges left after adding x as interior
+            if ra < 1:                      # no room to still reach b
+                continue
+            if ra == 1:                     # must finish x→b
+                if x not in tb:
                     continue
-                if any(path[i] in adj[x] for i in range(1, pos)):
+            elif ra == 2:                   # must reach b within two hops of x
+                if x not in tb and tb.isdisjoint(adj[x]):
                     continue
-                found.add(frozenset(path + [x]))
+            # Interior vertex: reject a chord to any earlier vertex except `last`.
+            if any(path[i] in adj[x] for i in range(L - 1)):
+                continue
+            path.append(x)
+            inp.add(x)
+            _dfs()
+            path.pop()
+            inp.discard(x)
 
-    if k >= 3:
-        for a in set(anchors):
-            _dfs([a], {a}, a)
+    if a != b:
+        _dfs()
+    return out
+
+
+def _induced_cycles_through_pair(adj: list, a: int, b: int, k: int) -> set[frozenset]:
+    """Induced (chordless) k-cycles whose vertex set contains both ``a`` and ``b``.
+
+    Every such cycle splits at {a,b} into two internally-disjoint induced paths
+    (arcs) of edge-lengths l1 + l2 = k.  Enumerate induced a→b paths and pair
+    complementary lengths; a candidate vertex set is an induced k-cycle iff every
+    vertex has exactly two neighbours inside it (which rules out any chord,
+    including the a–b chord when both arcs are length ≥2).
+    Cost: O(Δ^(k-2)).
+    """
+    by_len: dict[int, list] = defaultdict(list)
+    for p in _induced_paths(adj, a, b, k - 1):
+        by_len[len(p) - 1].append(set(p))
+
+    found: set[frozenset] = set()
+    for l1 in range(1, k // 2 + 1):
+        for s1set in by_len.get(l1, ()):
+            for s2set in by_len.get(k - l1, ()):
+                v = s1set | s2set
+                if len(v) != k:              # interiors must be disjoint (share only a,b)
+                    continue
+                ok = True
+                for u in v:
+                    au = adj[u]
+                    c = 0
+                    for w in v:
+                        if w != u and w in au:
+                            c += 1
+                            if c > 2:
+                                break
+                    if c != 2:
+                        ok = False
+                        break
+                if ok:
+                    found.add(frozenset(v))
     return found
 
 
@@ -235,25 +282,30 @@ def _cycle_delta(
     Returns (Δc5, Δc6); a disabled size contributes 0.
 
     Only induced cycles whose vertex set contains a *changed* node pair can flip
-    status (every other induced subgraph is identical before and after).  All
-    such cycles touch one of the four swap endpoints, so it suffices to count
-    induced cycles through ``{s1,o1,s2,o2}`` before and after the swap and diff
-    them.  A cycle that is induced in *both* graphs would have to contain an
-    unchanged induced subgraph and so cannot contain a changed pair, hence
-    cancels — making the simple set-size difference exact.
-    Cost: O(Δ^(k-1)) per endpoint, computed before and after the swap.
+    status (every other induced subgraph is identical before and after).  The four
+    changed pairs are exactly the toggled edges {s1,o1},{s2,o2},{s1,o2},{s2,o1}, so
+    counting induced cycles through those pairs before and after the swap and
+    diffing is exact: a cycle that is induced in *both* graphs cannot contain a
+    changed pair (its induced subgraph would differ), so it cancels.
+    Cost: O(Δ^(k-2)) per pair, computed before and after the swap.
     """
-    anchors = {s1, o1, s2, o2}
+    pairs = ((s1, o1), (s2, o2), (s1, o2), (s2, o1))
     ks = ([5] if k5 else []) + ([6] if k6 else [])
 
-    before = {k: len(_induced_cycles_through_nodes(adj, anchors, k)) for k in ks}
+    def _count(k: int) -> int:
+        seen: set[frozenset] = set()
+        for a, b in pairs:
+            seen |= _induced_cycles_through_pair(adj, a, b, k)
+        return len(seen)
+
+    before = {k: _count(k) for k in ks}
 
     _adj_dec(adj, s1, o1)
     _adj_dec(adj, s2, o2)
     _adj_inc(adj, s1, o2)
     _adj_inc(adj, s2, o1)
 
-    after = {k: len(_induced_cycles_through_nodes(adj, anchors, k)) for k in ks}
+    after = {k: _count(k) for k in ks}
 
     _adj_dec(adj, s1, o2)
     _adj_dec(adj, s2, o1)

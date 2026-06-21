@@ -1,7 +1,13 @@
 """Plot Stage 3 convergence curves from one or more CSV files.
 
 Each CSV is produced by refine() when convergence_log is set.  Columns:
-  accepted, loss, tri_err, [c4_err, diamond_err, k4_err, paw_err,] [cc_err,] [assort_err]
+  accepted, loss, tri_err, [c4_err, diamond_err, k4_err, paw_err,] [c5_err, c6_err,]
+  [cc_err,] [assort_err], sig_tri_err, [sig_c4_err, …], sig_c5_err
+
+All metric columns are relative errors (plotted against a 0 reference line).  The
+``sig_*_err`` columns are ground-truth errors measured periodically on the full
+graph; ``sig_c5_err`` is the global (induced) 5-cycle error, validating the
+incremental cycle delta.
 
 Usage
 -----

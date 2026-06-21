@@ -78,7 +78,7 @@ def main() -> None:
                         help="append to existing JSONL instead of overwriting")
     args = parser.parse_args()
 
-    out_path: Path = args.out or (_REPO / "experiments" / f"{args.graph}.jsonl")
+    out_path: Path = args.out or (_REPO / "experiments/sweeps" / f"{args.graph}.jsonl")
     target_path: Path = out_path.parent / f"{args.graph}_target.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 

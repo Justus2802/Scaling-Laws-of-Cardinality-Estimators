@@ -52,14 +52,26 @@ def cc_run(
     n_samples: int,
     rng: np.random.Generator,
     *,
+    n_colorings: int = 1,
     _A: "scipy.sparse.csr_matrix | None" = None,
     _adj: "list[np.ndarray] | None" = None,
 ) -> dict[tuple[int, ...], int]:
     """Colour-coding estimator for k-node graphlet counts (Bressan et al. 2021).
 
-    Randomly assigns k colors, builds a directed path-treelet DP via sparse
-    matrix products, samples n_samples colorful k-paths by backtracking, and
-    returns {degree_sequence_tuple: estimated_count}.
+    Each colouring randomly assigns k colors, builds a directed path-treelet DP
+    via sparse matrix products, samples ``n_samples`` colorful k-paths by
+    backtracking, and yields a per-type estimate.  A single colouring detects any
+    given k-motif only when it is "colorful" (all k vertices distinct colors),
+    probability ``p_k = k!/k^k`` — only ~1.5% at k=6 — so on graphs with few or
+    clustered instances one colouring frequently finds nothing (DP total t = 0).
+
+    Following color-coding (Alon–Yuster–Zwick 1995), this averages the unbiased
+    per-colouring estimate over ``n_colorings`` independent colourings: it both
+    escapes the all-zero failure mode and cuts variance ~1/n_colorings.  The
+    averaging count is fixed in advance (not conditioned on observed counts), so
+    the estimator stays unbiased.
+
+    Returns ``{degree_sequence_tuple: estimated_count}``.
     """
     p_k = math.factorial(k) / (k ** k)
 
@@ -67,77 +79,16 @@ def cc_run(
     if n < k:
         return {}
 
-    colors = rng.integers(0, k, size=n, dtype=np.int32)
-
     n_sets   = 1 << k
     full_set = n_sets - 1
 
+    # Colouring-independent structure — built once, reused across all colourings.
     A = _A if _A is not None else scipy.sparse.csr_matrix(
         g_und.get_adjacency_sparse()
     ).astype(np.float32)
-
-    dp = np.zeros((n, n_sets), dtype=np.float32)
-    dp[np.arange(n), 1 << colors] = 1.0
-    dp_levels = [dp]
-
-    for step in range(1, k):
-        dp_next = np.zeros((n, n_sets), dtype=np.float32)
-        for c in range(k):
-            mc = 1 << c
-            S_src = np.array(
-                [S for S in range(n_sets)
-                 if not (S & mc) and bin(S).count('1') == step],
-                dtype=np.int32,
-            )
-            if len(S_src) == 0:
-                continue
-            S_dst = S_src | mc
-            node_mask = (colors == c).astype(np.float32)[:, None]
-            dp_next[:, S_dst] += (A @ dp_levels[-1][:, S_src]) * node_mask
-        dp_levels.append(dp_next)
-
-    t = float(dp_levels[-1][:, full_set].sum())
-    if t == 0:
-        return {}
-
     adj = _adj if _adj is not None else [
         np.array(g_und.neighbors(v), dtype=np.int32) for v in range(n)
     ]
-
-    wfinal = dp_levels[-1][:, full_set].astype(np.float64)
-    wfinal /= wfinal.sum()
-
-    v_starts = rng.choice(n, size=n_samples, p=wfinal)
-
-    paths_nodes: list[list[int]] = [[int(v)] for v in v_starts]
-    S_arr   = [full_set] * n_samples
-    valid   = [True]     * n_samples
-
-    for bk_level in range(k - 1, 0, -1):
-        groups: dict[tuple[int, int], list[int]] = defaultdict(list)
-        for i in range(n_samples):
-            if not valid[i]:
-                continue
-            v  = paths_nodes[i][-1]
-            sp = S_arr[i] ^ (1 << int(colors[v]))
-            groups[(v, sp)].append(i)
-
-        for (v, sp), idxs in groups.items():
-            nbrs = adj[v]
-            dv   = len(nbrs)
-            if dv == 0:
-                for i in idxs: valid[i] = False
-                continue
-            nw  = dp_levels[bk_level - 1][nbrs, sp].astype(np.float64)
-            tot = nw.sum()
-            if tot == 0:
-                for i in idxs: valid[i] = False
-                continue
-            chosen = nbrs[rng.choice(dv, size=len(idxs), p=nw / tot)]
-            for j, i in enumerate(idxs):
-                paths_nodes[i].append(int(chosen[j]))
-                S_arr[i] = sp
-
     _HUB_ADJ_THRESH = 200
     hub_adj_sets: dict[int, set[int]] = {
         v: set(adj[v].tolist())
@@ -145,36 +96,109 @@ def cc_run(
         if len(adj[v]) > _HUB_ADJ_THRESH
     }
 
-    raw_counts: defaultdict[tuple[int, ...], int] = defaultdict(int)
-    n_valid = 0
+    def _one_coloring() -> dict[tuple[int, ...], float]:
+        """Unbiased per-type estimate from a single random colouring ({} if t=0)."""
+        colors = rng.integers(0, k, size=n, dtype=np.int32)
 
-    for i in range(n_samples):
-        if not valid[i] or len(paths_nodes[i]) != k:
-            continue
-        node_list = paths_nodes[i]
-        node_set  = set(node_list)
-        if len(node_set) != k:
-            continue
-        n_valid += 1
+        dp = np.zeros((n, n_sets), dtype=np.float32)
+        dp[np.arange(n), 1 << colors] = 1.0
+        dp_levels = [dp]
 
-        local_adj: dict[int, set[int]] = {
-            v: hub_adj_sets[v] if v in hub_adj_sets else set(adj[v].tolist())
-            for v in node_set
+        for step in range(1, k):
+            dp_next = np.zeros((n, n_sets), dtype=np.float32)
+            for c in range(k):
+                mc = 1 << c
+                S_src = np.array(
+                    [S for S in range(n_sets)
+                     if not (S & mc) and bin(S).count('1') == step],
+                    dtype=np.int32,
+                )
+                if len(S_src) == 0:
+                    continue
+                S_dst = S_src | mc
+                node_mask = (colors == c).astype(np.float32)[:, None]
+                dp_next[:, S_dst] += (A @ dp_levels[-1][:, S_src]) * node_mask
+            dp_levels.append(dp_next)
+
+        t = float(dp_levels[-1][:, full_set].sum())
+        if t == 0:
+            return {}
+
+        wfinal = dp_levels[-1][:, full_set].astype(np.float64)
+        wfinal /= wfinal.sum()
+
+        v_starts = rng.choice(n, size=n_samples, p=wfinal)
+
+        paths_nodes: list[list[int]] = [[int(v)] for v in v_starts]
+        S_arr   = [full_set] * n_samples
+        valid   = [True]     * n_samples
+
+        for bk_level in range(k - 1, 0, -1):
+            groups: dict[tuple[int, int], list[int]] = defaultdict(list)
+            for i in range(n_samples):
+                if not valid[i]:
+                    continue
+                v  = paths_nodes[i][-1]
+                sp = S_arr[i] ^ (1 << int(colors[v]))
+                groups[(v, sp)].append(i)
+
+            for (v, sp), idxs in groups.items():
+                nbrs = adj[v]
+                dv   = len(nbrs)
+                if dv == 0:
+                    for i in idxs: valid[i] = False
+                    continue
+                nw  = dp_levels[bk_level - 1][nbrs, sp].astype(np.float64)
+                tot = nw.sum()
+                if tot == 0:
+                    for i in idxs: valid[i] = False
+                    continue
+                chosen = nbrs[rng.choice(dv, size=len(idxs), p=nw / tot)]
+                for j, i in enumerate(idxs):
+                    paths_nodes[i].append(int(chosen[j]))
+                    S_arr[i] = sp
+
+        raw_counts: defaultdict[tuple[int, ...], int] = defaultdict(int)
+        n_valid = 0
+        for i in range(n_samples):
+            if not valid[i] or len(paths_nodes[i]) != k:
+                continue
+            node_list = paths_nodes[i]
+            node_set  = set(node_list)
+            if len(node_set) != k:
+                continue
+            n_valid += 1
+
+            local_adj: dict[int, set[int]] = {
+                v: hub_adj_sets[v] if v in hub_adj_sets else set(adj[v].tolist())
+                for v in node_set
+            }
+            deg_in = tuple(sorted(
+                sum(1 for u in node_set if u != v and u in local_adj[v])
+                for v in node_list
+            ))
+            raw_counts[deg_in] += 1
+
+        if n_valid == 0:
+            return {}
+
+        return {
+            deg_seq: (cnt / n_valid) * t / MotifCounter.SIGMA.get(deg_seq, 1) / p_k
+            for deg_seq, cnt in raw_counts.items()
         }
-        deg_in = tuple(sorted(
-            sum(1 for u in node_set if u != v and u in local_adj[v])
-            for v in node_list
-        ))
-        raw_counts[deg_in] += 1
 
-    if n_valid == 0:
-        return {}
+    # Average the per-colouring estimates (missing types contribute 0).
+    sums: defaultdict[tuple[int, ...], float] = defaultdict(float)
+    for _ in range(max(1, n_colorings)):
+        for deg_seq, est in _one_coloring().items():
+            sums[deg_seq] += est
 
+    denom = max(1, n_colorings)
     result: dict[tuple[int, ...], int] = {}
-    for deg_seq, cnt in raw_counts.items():
-        sigma     = MotifCounter.SIGMA.get(deg_seq, 1)
-        estimated = (cnt / n_valid) * t / sigma / p_k
-        result[deg_seq] = max(0, int(round(estimated)))
+    for deg_seq, total in sums.items():
+        val = max(0, int(round(total / denom)))
+        if val > 0:
+            result[deg_seq] = val
     return result
 
 
