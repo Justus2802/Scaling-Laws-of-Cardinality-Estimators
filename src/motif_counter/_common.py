@@ -207,10 +207,22 @@ def cc_run_stars(
     n_samples: int,
     rng: np.random.Generator,
     *,
+    n_colorings: int = 1,
     _A: "scipy.sparse.csr_matrix | None" = None,
     _adj: "list[np.ndarray] | None" = None,
 ) -> dict[int, int]:
-    """Colour-coding star-treelet estimator for induced k-star counts, k=2..10."""
+    """Colour-coding star-treelet estimator for induced k-star counts, k=2..10.
+
+    A k-star is detected by one colouring only when its K=k+1 vertices are all
+    coloured distinctly (prob ``p_K = K!/K^K`` — e.g. ~7e-3 at k=5, ~1e-4 at
+    k=10), so a single colouring frequently samples nothing at large k and
+    collapses the estimate to 0.  Following colour-coding (Alon–Yuster–Zwick
+    1995; Bressan et al. 2021), the per-colouring unbiased estimate is averaged
+    over ``n_colorings`` independent colourings: this escapes the all-zero
+    failure mode and cuts variance ~``1/n_colorings``.  The averaging count is
+    fixed in advance (not conditioned on observed counts), so the estimator
+    stays unbiased.  Cost scales linearly with ``n_colorings``.
+    """
     n = g_und.vcount()
     if n == 0:
         return {k: 0 for k in range(2, 11)}
@@ -222,12 +234,8 @@ def cc_run_stars(
         np.array(g_und.neighbors(v), dtype=np.int32) for v in range(n)
     ]
 
-    results: dict[int, int] = {}
-
-    for k in range(2, 11):
-        K   = k + 1
-        p_K = math.factorial(K) / (K ** K)
-
+    def _one_coloring(k: int, K: int, p_K: float) -> float:
+        """Unbiased induced-k-star estimate from a single random colouring."""
         colors = rng.integers(0, K, size=n, dtype=np.int32)
 
         one_hot = np.zeros((n, K), dtype=np.float32)
@@ -241,8 +249,7 @@ def cc_run_stars(
 
         t = float(dp_star.sum())
         if t == 0:
-            results[k] = 0
-            continue
+            return 0.0
 
         w       = dp_star / t
         centres = rng.choice(n, size=n_samples, p=w)
@@ -289,9 +296,16 @@ def cc_run_stars(
                 raw_star += 1
 
         if n_valid == 0:
-            results[k] = 0
-        else:
-            results[k] = max(0, int(round((raw_star / n_valid) * t / p_K)))
+            return 0.0
+        return (raw_star / n_valid) * t / p_K
+
+    results: dict[int, int] = {}
+    for k in range(2, 11):
+        K   = k + 1
+        p_K = math.factorial(K) / (K ** K)
+        # Average the unbiased per-colouring estimate over n_colorings draws.
+        est = sum(_one_coloring(k, K, p_K) for _ in range(n_colorings)) / n_colorings
+        results[k] = max(0, int(round(est)))
 
     return results
 

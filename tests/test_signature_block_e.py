@@ -10,9 +10,26 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from kg_io import load_kg
+from motif_counter import ExactMotifCounter
 from signature import BlockE
 
 _VECTOR_LEN = 36   # 7 motifs + 9 stars + 9 path_zipf + 9 path_entropy + 2 tree
+
+# 4-node motif degree sequences (see signature.block_e).
+_DS_FOUR_CYCLE = (2, 2, 2, 2)
+_DS_DIAMOND    = (2, 2, 3, 3)
+_DS_K4         = (3, 3, 3, 3)
+
+
+def _exact_motifs4(g: igraph.Graph) -> dict:
+    """Exact 4-node motif counts on the undirected simplification.
+
+    Mirrors how ``BlockE`` reduces the graph, but routes through
+    ``ExactMotifCounter`` directly — Block E's k=4 path is CC-sampled (an
+    estimator), so exact-count assertions belong on the exact counter.
+    """
+    g_und = g.as_undirected(combine_edges="first").simplify()
+    return ExactMotifCounter().count_motifs4(g_und)
 
 
 def _make_g(n: int, edges: list, literals: list | None = None) -> igraph.Graph:
@@ -240,19 +257,21 @@ class TestBlockEDiamondAndK4(unittest.TestCase):
     def test_diamond_counted_once(self):
         # K4 minus one edge = two triangles sharing edge 0-1 → exactly 1 diamond,
         # no K4 and no 4-cycle (the closing diagonal is present).
+        # Exact-count guarantee lives on ExactMotifCounter; Block E's k=4 path is
+        # CC-sampled (an estimator), so this asserts on the exact counter directly.
         g = _make_g(4, [(0, 1), (1, 2), (2, 0), (1, 3), (3, 0)])
-        e = BlockE().calculate(g)
-        self.assertEqual(e.diamond_count, 1)
-        self.assertEqual(e.k4_count, 0)
-        self.assertEqual(e.four_cycle_count, 0)
+        m4 = _exact_motifs4(g)
+        self.assertEqual(m4.get(_DS_DIAMOND, 0), 1)
+        self.assertEqual(m4.get(_DS_K4, 0), 0)
+        self.assertEqual(m4.get(_DS_FOUR_CYCLE, 0), 0)
 
     def test_k4_has_no_diamond(self):
         # In a complete K4 every potential diamond is closed into the clique,
-        # so k4_count = 1 and diamond_count = 0.
+        # so k4_count = 1 and diamond_count = 0 (exact counter, see above).
         g = _make_g(4, [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)])
-        e = BlockE().calculate(g)
-        self.assertEqual(e.k4_count, 1)
-        self.assertEqual(e.diamond_count, 0)
+        m4 = _exact_motifs4(g)
+        self.assertEqual(m4.get(_DS_K4, 0), 1)
+        self.assertEqual(m4.get(_DS_DIAMOND, 0), 0)
 
     def test_k4_star_counts(self):
         # Every vertex in K4 has undirected degree 3 → 4 vertices contribute:

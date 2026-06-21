@@ -1,11 +1,17 @@
-"""Measure CC estimator variance for Block E 4- and 5-node motif counts.
+"""Measure CC estimator variance for Block E motif and induced-star counts.
 
 Runs the colour-coding estimator (``CCMotifCounter``) with N different seeds on
-the same graph and records the estimated counts for each seed.  The exact
-ground-truth count for every feature is computed once via ``ExactMotifCounter``
-and overlaid on each boxplot so the estimator's bias and spread can be read off
-directly.  Triangle count is exact (via list_triangles), so its variance is 0
-and it is excluded from the boxplots.
+the same graph and records the estimated 4-/5-node motif counts and induced
+k-star counts (k=2..10) for each seed.  The exact ground-truth count for every
+feature is computed once via ``ExactMotifCounter`` and overlaid on each boxplot
+so the estimator's bias and spread can be read off directly.  Triangle count is
+exact (via list_triangles), so its variance is 0 and it is excluded from the
+boxplots.
+
+Stars use the same colour-coding machinery (``cc_run_stars``), which now also
+averages over ``n_colorings`` colourings — so their boxplots tighten along the
+n_colorings axis just like the motif estimators, and the all-zero collapse at
+high k (single-colouring failure) is visibly mitigated by larger n_colorings.
 
 Sweeps both ``--n-colorings`` and ``--n-samples`` (a 2-D grid) so the variance
 reduction from averaging more independent colourings (Alon–Yuster–Zwick 1995;
@@ -56,8 +62,10 @@ _MOTIF4_FEATURES = [
 _MOTIF5_FEATURES = [
     ("five_cycle_count",      (2, 2, 2, 2, 2)),
 ]
+# (feature name, k) for the CC-estimated induced k-stars (k=2..10).
+_STAR_FEATURES = [(f"star_count_k{k}", k) for k in range(2, 11)]
 # Estimated features shown as boxplots (triangle excluded — it is exact).
-_PLOT_FEATURES = [name for name, _ in _MOTIF4_FEATURES + _MOTIF5_FEATURES]
+_PLOT_FEATURES = [name for name, _ in _MOTIF4_FEATURES + _MOTIF5_FEATURES + _STAR_FEATURES]
 _ALL_FEATURES = ["triangle_count"] + _PLOT_FEATURES
 
 
@@ -92,10 +100,14 @@ def main() -> None:
     search_dirs = [args.graphs_dir] if args.graphs_dir else _DEFAULT_SEARCH_DIRS
     print(f"Loading '{args.graph}' …")
     _, tblocks, graph_dir = _load_target_from_corpus(args.graph, search_dirs)
+    assert graph_dir is not None
 
     from kg_io import load_kg
 
-    kg_files = list(graph_dir.glob("*.ttl")) + list(graph_dir.glob("*.nt"))
+    kg_files = sorted(
+        p for p in graph_dir.iterdir()
+        if p.suffix in {".nt", ".ttl"} and not p.stem.endswith("_synth")
+    )
     if not kg_files:
         sys.exit(f"No .ttl/.nt file found in {graph_dir}")
     g = load_kg(kg_files[0])
@@ -128,12 +140,15 @@ def main() -> None:
                 cc = CCMotifCounter(n_samples=ns, seed=seed, n_colorings=nc)
                 motifs4 = cc.count_motifsk(g_und, 4)
                 motifs5 = cc.count_motifsk(g_und, 5)
+                stars = cc.count_stars(g_und)
                 row = {"n_samples": ns, "n_colorings": nc, "seed": seed,
                        "triangle_count": truth["triangle_count"]}
                 for name, ds in _MOTIF4_FEATURES:
                     row[name] = motifs4.get(ds, 0)
                 for name, ds in _MOTIF5_FEATURES:
                     row[name] = motifs5.get(ds, 0)
+                for name, k in _STAR_FEATURES:
+                    row[name] = stars.get(k, 0)
                 rows.append(row)
                 if (seed + 1) % 10 == 0 or seed + 1 == args.n_runs:
                     _el = time.perf_counter() - _t_nc
@@ -185,6 +200,10 @@ def _exact_ground_truth(g_und) -> dict[str, int | None]:
         print(f"  ! exact 5-node count unavailable ({exc}); skipping its ground-truth line")
         for name, _ in _MOTIF5_FEATURES:
             truth[name] = None
+
+    stars = exact.count_stars(g_und)
+    for name, k in _STAR_FEATURES:
+        truth[name] = stars.get(k, 0)
 
     return truth
 

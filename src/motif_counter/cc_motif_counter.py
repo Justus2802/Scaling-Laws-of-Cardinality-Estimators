@@ -34,4 +34,4 @@ class CCMotifCounter(MotifCounter):
         return cc_run(g, k, self._n_samples, self._rng, n_colorings=self._n_colorings)
 
     def count_stars(self, g: igraph.Graph) -> dict[int, int]:
-        return cc_run_stars(g, self._n_samples, self._rng)
+        return cc_run_stars(g, self._n_samples, self._rng, n_colorings=self._n_colorings)
