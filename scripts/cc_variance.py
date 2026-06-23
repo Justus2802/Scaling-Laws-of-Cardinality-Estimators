@@ -1,32 +1,33 @@
-"""Measure CC estimator variance for Block E motif and induced-star counts.
+"""Collect CC estimator variance for Block E motif and induced-star counts.
 
 Runs the colour-coding estimator (``CCMotifCounter``) with N different seeds on
 the same graph and records the estimated 4-/5-node motif counts and induced
 k-star counts (k=2..10) for each seed.  The exact ground-truth count for every
-feature is computed once via ``ExactMotifCounter`` and overlaid on each boxplot
-so the estimator's bias and spread can be read off directly.  Triangle count is
-exact (via list_triangles), so its variance is 0 and it is excluded from the
-boxplots.
+feature is computed once via ``ExactMotifCounter`` and stored alongside so the
+estimator's bias and spread can be read off later.  Triangle count is exact
+(via list_triangles), so its variance is 0.
 
 Stars use the same colour-coding machinery (``cc_run_stars``), which now also
-averages over ``n_colorings`` colourings — so their boxplots tighten along the
+averages over ``n_colorings`` colourings — so their spread tightens along the
 n_colorings axis just like the motif estimators, and the all-zero collapse at
 high k (single-colouring failure) is visibly mitigated by larger n_colorings.
 
 Sweeps both ``--n-colorings`` and ``--n-samples`` (a 2-D grid) so the variance
 reduction from averaging more independent colourings (Alon–Yuster–Zwick 1995;
 Motivo / Bressan et al. 2021) and from drawing more path samples can be read
-off directly.
+off later.  This script only *collects* — plot the result with
+``scripts/cc_variance_viz.py``.
 
 Output (default prefix: experiments/cc_variance_sweeps/<graph>_sweep)
 ------
-  <out>.csv   — one row per (n_samples, n_colorings, seed); columns: n_samples,
-                n_colorings, seed, triangle_count, four_cycle_count,
-                diamond_count, k4_count, tailed_triangle_count, five_cycle_count
-  <out>.png   — a grid of boxplots (rows = features, columns = n_samples); each
-                subplot shows the estimate spread at every n_colorings value
-                with the exact ground-truth as a horizontal line.  The
-                coefficient of variation is also printed per (n_samples, feature).
+  <out>.csv         — one row per (n_samples, n_colorings, seed); columns:
+                      n_samples, n_colorings, seed, triangle_count,
+                      four_cycle_count, diamond_count, k4_count,
+                      tailed_triangle_count, five_cycle_count, star_count_k2..k10
+  <out>_meta.json   — sweep metadata for plotting: graph name, n_runs, the swept
+                      n_samples / n_colorings axes, exact ground-truth counts
+                      (None where exact enumeration was infeasible) and the
+                      pre-measured target signature values.
 
 Usage
 -----
@@ -37,11 +38,10 @@ Usage
 
 import argparse
 import csv
+import json
 import sys
 import time
 from pathlib import Path
-
-import numpy as np
 
 _REPO = Path(__file__).resolve().parent.parent
 _SCRIPTS = Path(__file__).resolve().parent
@@ -64,7 +64,7 @@ _MOTIF5_FEATURES = [
 ]
 # (feature name, k) for the CC-estimated induced k-stars (k=2..10).
 _STAR_FEATURES = [(f"star_count_k{k}", k) for k in range(2, 11)]
-# Estimated features shown as boxplots (triangle excluded — it is exact).
+# Estimated features (triangle excluded — it is exact, variance 0).
 _PLOT_FEATURES = [name for name, _ in _MOTIF4_FEATURES + _MOTIF5_FEATURES + _STAR_FEATURES]
 _ALL_FEATURES = ["triangle_count"] + _PLOT_FEATURES
 
@@ -95,7 +95,7 @@ def main() -> None:
     )
     out_prefix.parent.mkdir(parents=True, exist_ok=True)
     csv_path = out_prefix.with_suffix(".csv")
-    png_path = out_prefix.with_suffix(".png")
+    meta_path = out_prefix.with_name(out_prefix.name + "_meta.json")
 
     search_dirs = [args.graphs_dir] if args.graphs_dir else _DEFAULT_SEARCH_DIRS
     print(f"Loading '{args.graph}' …")
@@ -167,15 +167,25 @@ def main() -> None:
         writer.writerows(rows)
     print(f"CSV → {csv_path}")
 
-    # Also print the target values from the pre-measured signature for reference
+    # Pull the target values from the pre-measured signature for reference.
     te = tblocks.get("e")
+    target = {}
     if te is not None:
-        print("\nTarget signature values:")
         for feat in _ALL_FEATURES:
-            val = getattr(te, feat, "n/a")
-            print(f"  {feat:<28} {val}")
+            val = getattr(te, feat, None)
+            target[feat] = None if val is None else float(val)
 
-    _plot(rows, truth, png_path, n_colorings_list, n_samples_list)
+    meta = {
+        "graph": args.graph,
+        "n_runs": args.n_runs,
+        "n_samples_list": n_samples_list,
+        "n_colorings_list": n_colorings_list,
+        "truth": truth,
+        "target": target,
+    }
+    meta_path.write_text(json.dumps(meta, indent=2))
+    print(f"Meta → {meta_path}")
+    print(f"\nPlot with:  python scripts/cc_variance_viz.py {csv_path}")
 
 
 def _exact_ground_truth(g_und) -> dict[str, int | None]:
@@ -206,64 +216,6 @@ def _exact_ground_truth(g_und) -> dict[str, int | None]:
         truth[name] = stars.get(k, 0)
 
     return truth
-
-
-def _plot(rows: list[dict], truth: dict[str, int | None], png_path: Path,
-          n_colorings_list: list[int], n_samples_list: list[int]) -> None:
-    import matplotlib.pyplot as plt
-
-    # Print the coefficient-of-variation table (the core variance data) to console,
-    # one block per n_samples value.
-    for ns in n_samples_list:
-        print(f"\nCoefficient of variation (std/mean) vs n_colorings  (n_samples={ns:,}):")
-        header = "  " + "feature".ljust(24) + "".join(f"nc={nc:<8}" for nc in n_colorings_list)
-        print(header)
-        for feat in _PLOT_FEATURES:
-            cells = ""
-            for nc in n_colorings_list:
-                vals = [r[feat] for r in rows
-                        if r["n_colorings"] == nc and r["n_samples"] == ns]
-                mean = float(np.mean(vals)) if vals else 0.0
-                cv = (float(np.std(vals)) / mean) if mean > 0 else float("nan")
-                cells += f"{cv:<11.2%}"
-            print("  " + feat.ljust(24) + cells)
-
-    # Grid: rows = features, columns = n_samples. Within each subplot, one boxplot
-    # per n_colorings value so both sweep axes are visible at once.
-    nrows, ncols = len(_PLOT_FEATURES), len(n_samples_list)
-    fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 3 * nrows),
-                             squeeze=False)
-    fig.suptitle("CC estimator variance vs. n_samples × n_colorings "
-                 "(4- and 5-node motifs)", fontsize=12)
-
-    positions = list(range(len(n_colorings_list)))
-    for i, feat in enumerate(_PLOT_FEATURES):
-        exact_val = truth.get(feat)
-        for j, ns in enumerate(n_samples_list):
-            ax = axes[i][j]
-            data_by_nc = [[r[feat] for r in rows
-                           if r["n_colorings"] == nc and r["n_samples"] == ns]
-                          for nc in n_colorings_list]
-            ax.boxplot(data_by_nc, patch_artist=True, positions=positions)
-            ax.set_xticks(positions)
-            ax.set_xticklabels([str(nc) for nc in n_colorings_list])
-
-            if exact_val is not None:
-                ax.axhline(exact_val, color="green", linewidth=1.2, linestyle="-",
-                           label=f"exact={exact_val:.0f}")
-                ax.legend(fontsize=7)
-
-            if i == 0:
-                ax.set_title(f"n_samples={ns:,}", fontsize=10)
-            if j == 0:
-                ax.set_ylabel(f"{feat}\nestimated count", fontsize=8)
-            if i == nrows - 1:
-                ax.set_xlabel("n_colorings  (more → less variance)", fontsize=8)
-
-    fig.tight_layout()
-    fig.savefig(png_path, dpi=150, bbox_inches="tight")
-    print(f"Plot → {png_path}")
-    plt.show()
 
 
 if __name__ == "__main__":
