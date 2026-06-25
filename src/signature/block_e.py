@@ -131,14 +131,6 @@ class BlockE(SignatureBlock):
         m = g_und.ecount()
         log.info("Block E: graph has %d nodes, %d edges", n, m)
 
-        # n_samples scales with graph size so tiny test graphs stay fast (500 samples)
-        # while large graphs get up to budget×5 samples.  Sampling is O(n_samples×k)
-        # but negligible vs the DP build O(m×2^k).  The CC estimator averages over
-        # MOTIF_COUNTER's n_colorings independent colourings (see HybridMotifCounter)
-        # so k≥6 counts don't collapse to 0 on graphs with few/clustered instances.
-        _n_samples = max(500, min(n * 20, sample_budget * 5))
-        _rng       = np.random.default_rng(1)
-
         if n == 0:
             self._triangle_count = 0
             self._four_cycle_count = self._diamond_count = 0
@@ -151,14 +143,11 @@ class BlockE(SignatureBlock):
             self._tree_template_entropy = float("nan")
             return self
 
-        log.info("Block E: computing triangles…")
         self._triangle_count = MOTIF_COUNTER.count_triangles(g_und)
         log.info("Block E: computed triangle_count (%d)", self._triangle_count)
 
-        log.info("Block E: running k=3 graphlet-type distribution (%d samples)…", _n_samples)
         motifs3 = MOTIF_COUNTER.count_motifs3(g_und)
 
-        log.info("Block E: computing 4-node motifs (%d samples)…", _n_samples)
         motifs4 = MOTIF_COUNTER.count_motifs4(g_und)
         self._four_cycle_count      = motifs4.get((2, 2, 2, 2), 0)
         self._diamond_count         = motifs4.get((2, 2, 3, 3), 0)
@@ -173,12 +162,10 @@ class BlockE(SignatureBlock):
         # the hybrid counter (ESCAPE-exact for k=5 on low-degree graphs, CC otherwise)
         # — independent of the stars/path-template skip below.  motifs5/motifs6 are
         # reused by the path-template block when stars/paths are not skipped.
-        log.info("Block E: computing 5-cycle (k=5)…")
         motifs5 = MOTIF_COUNTER.count_motifsk(g_und, 5)
         self._five_cycle_count = motifs5.get((2, 2, 2, 2, 2), 0)
         log.info("Block E: computed five_cycle_count (~%d)", self._five_cycle_count)
 
-        log.info("Block E: computing 6-cycle (k=6)…")
         motifs6 = MOTIF_COUNTER.count_motifsk(g_und, 6)
         self._six_cycle_count = motifs6.get((2, 2, 2, 2, 2, 2), 0)
         log.info("Block E: computed six_cycle_count (~%d)", self._six_cycle_count)
@@ -186,7 +173,6 @@ class BlockE(SignatureBlock):
         # Induced k-star counts are a core motif feature carrying information beyond
         # the degree sequence, so they are always measured via the hybrid counter —
         # independent of the path-template skip below (same treatment as 5/6-cycles).
-        log.info("Block E: computing stars (k=2..10)…")
         self._star_counts = MOTIF_COUNTER.count_stars(g_und)
         log.info(
             "Block E: computed star_counts (k=2..10 totals=%s)",
@@ -203,13 +189,11 @@ class BlockE(SignatureBlock):
             # Path templates: for each k, compute Zipf + entropy of the graphlet-type
             # distribution at that size.  k=2..6 always run.  k=7..10 are run only when
             # the DP fits in ~1 GB: n × 2^k × k × 4 bytes ≤ 1 GB → n ≤ 1e9 / (k×2^k×4).
-            log.info("Block E: computing path templates (k=2..10)…")
             motifs2 = MOTIF_COUNTER.count_motifsk(g_und, 2)
             _cc_by_k = {2: motifs2, 3: motifs3, 4: motifs4, 5: motifs5, 6: motifs6}
             for _k in range(7, 11):
                 _dp_bytes = n * (1 << _k) * _k * 4
                 if _dp_bytes <= 1_000_000_000:
-                    log.info("Block E: computing path template k=%d…", _k)
                     _cc_by_k[_k] = MOTIF_COUNTER.count_motifsk(g_und, _k)
                 else:
                     log.info(
@@ -238,7 +222,6 @@ class BlockE(SignatureBlock):
             # Tree templates: Zipf + entropy of how total motif counts scale across k.
             # Using total-count-per-k (rather than per-type) avoids NaN on small graphs
             # where CC returns only 1-2 distinct graphlet types.
-            log.info("Block E: computing tree templates (CC total counts per k)…")
             _totals_by_k: dict[int, int] = {
                 _k: sum(_cc_by_k[_k].values())
                 for _k in _cc_by_k

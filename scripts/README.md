@@ -73,12 +73,23 @@ python scripts/sweep_collect.py fb237_v4_ind --append
 ```
 
 ### `cc_variance.py`
-Measures colour-coding estimator variance for Block E motif counts. Runs the `CCMotifCounter` with N seeds on one graph, computes the exact ground truth once via `ExactMotifCounter`, and produces a grid of boxplots (rows = features, columns = `n_samples`) with CV annotations. Output goes to `experiments/cc_variance_sweeps/`.
+Collects the **exact-vs-CC counter benchmark** (accuracy + runtime) per motif size for Block E motif counts. Runs `CCMotifCounter` with N seeds over an `n_samples × n_colorings` grid, recording per seed the estimated counts **and the wall-clock time of each family call** (`runtime_triangle_s`, `runtime_motif4_s`, `runtime_motif5_s`, `runtime_motif6_s`, `runtime_stars_s`). The exact ground-truth counts and per-family exact runtimes are computed once via `ExactMotifCounter` and stored in the `_meta.json` sidecar. Covers triangle (k=3), 4-node motifs (k=4), 5-cycle (k=5), 6-cycle (k=6, exact via the ESCAPE enumerator), and stars k=2..10. Output goes to `experiments/cc_variance_sweeps/`.
+
+Caveats: the triangle is counted with `list_triangles` in *both* counters (exact in each — not a real sampler race, variance 0); stars are counted jointly (one call yields k=2..10), so `runtime_stars_s` is a single value for the family while accuracy stays per-k. `--n-timings N` averages the exact runtime over N repeats (the exact counter has no seed axis); `--exact-max-degree D` (default 100) raises the ESCAPE degree guard so an isolated hub — e.g. wn18rr_v4's single degree-68 node — doesn't suppress the exact c5/c6 baseline (exact c6 on wn18rr_v4 takes ~2.5 min).
 
 ```
 python scripts/cc_variance.py wn18rr_v4
 python scripts/cc_variance.py fb237_v4_ind --n-runs 100 --n-samples 10000 50000
 python scripts/cc_variance.py wn18rr_v4 --n-colorings 1 4 16 64 --n-samples 1000 10000 100000
+python scripts/cc_variance.py wn18rr_v4 --n-timings 5            # smooth exact runtime
+```
+
+### `cc_variance_viz.py`
+Renders the data collected by `cc_variance.py`. Writes two figures next to the CSV: `<csv>.png` — accuracy boxplots (rows = features, columns = `n_samples`, one box per `n_colorings`, exact ground truth as a horizontal line) with a coefficient-of-variation table printed to the console; and `<csv>_runtime.png` (when the timing columns are present) — mean CC runtime vs `n_samples` per motif family (one line per `n_colorings`, log-log) with the exact per-family runtime as a reference line.
+
+```
+python scripts/cc_variance_viz.py experiments/cc_variance_sweeps/wn18rr_v4_sweep.csv
+python scripts/cc_variance_viz.py <csv> --out fig.png --meta path/to/meta.json
 ```
 
 ## Visualisation

@@ -6,11 +6,11 @@ from itertools import combinations
 import igraph
 
 from ._base import MotifCounter
-from ._common import count_motifs5_escape, _count_motifs4_through_edge
+from ._common import count_motifs5_escape, count_motifsk_escape, _count_motifs4_through_edge
 
 
 class ExactMotifCounter(MotifCounter):
-    """Exact motif counter via full subgraph enumeration (k ≤ 5).
+    """Exact motif counter via full subgraph enumeration (k ≤ 6).
 
     Triangle count uses igraph's ``list_triangles``; k=3 and k=4 graphlets are
     counted by direct enumeration.  Cost is O(m·Δ²) for k=4 where Δ is the
@@ -18,10 +18,17 @@ class ExactMotifCounter(MotifCounter):
     triangle-free nodes contribute C(d,k) directly; only triangle nodes need
     inclusion-exclusion over neighbourhood-induced edges.
 
-    k=5 enumeration raises ``RuntimeError`` on graphs with a very high-degree
-    hub (see ``count_motifs5_escape``); ``NotImplementedError`` is raised for
-    k ≥ 6.
+    k=5 and k=6 enumeration use the ESCAPE BFS expansion and raise
+    ``RuntimeError`` when the max degree exceeds ``max_degree`` (see
+    ``count_motifsk_escape``); ``NotImplementedError`` is raised for k ≥ 7.
+
+    :param max_degree: degree guard for the k=5/6 ESCAPE enumeration; ``None``
+        uses the library default (``_ESCAPE_MAX_DEGREE``). Raise it to admit
+        graphs with an isolated hub at the cost of a slower (Δ^(k-2)) pass.
     """
+
+    def __init__(self, max_degree: "int | None" = None) -> None:
+        self._max_degree = max_degree
 
     # Per-edge divisors for 4-node exact enumeration: each subgraph is found
     # once per edge contributing a valid (w,x) pair via _count_motifs4_through_edge.
@@ -49,11 +56,11 @@ class ExactMotifCounter(MotifCounter):
             return self._count_motifs3(g)
         if k == 4:
             return self._count_motifs4_exact(g)
-        if k == 5:
+        if k in (5, 6):
             # ESCAPE exact enumeration; raises RuntimeError on high-degree hubs.
-            return count_motifs5_escape(g)
+            return count_motifsk_escape(g, k, max_degree=self._max_degree)
         raise NotImplementedError(
-            f"ExactMotifCounter does not support k={k}; use CCMotifCounter for k ≥ 6"
+            f"ExactMotifCounter does not support k={k}; use CCMotifCounter for k ≥ 7"
         )
 
     def count_stars(self, g: igraph.Graph) -> dict[int, int]:

@@ -12,6 +12,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from motif_counter import (
     CCMotifCounter,
     ExactMotifCounter,
+    cc_run_stars,
+    cc_run_stars_loop,
 )
 from itertools import combinations
 
@@ -526,6 +528,219 @@ class TestCycleDelta(unittest.TestCase):
             if new1 in eset or new2 in eset or new1 == new2:
                 continue
             self._check(n, edges, s1, o1, s2, o2)
+
+
+# ── CC star estimator (cc_run_stars / cc_run_stars_loop) ──────────────────────
+
+class TestCCStars(unittest.TestCase):
+    """The CC star estimators must agree with the exact induced-star counts.
+
+    These estimators are unbiased Monte-Carlo samplers, so a single run is noisy.
+    Statistical assertions therefore average each per-k estimate over several
+    independent seeds (the mean of an unbiased estimator converges to the true
+    count) and assert only where the exact count is large enough for the relative
+    error to be meaningful.
+
+    Validation strategy: the vectorised ``cc_run_stars`` (the production path) is
+    checked thoroughly against the exact oracle with a generous sampling budget,
+    since it is fast. The un-vectorised ``cc_run_stars_loop`` is the same
+    estimator but ~orders slower, so it is validated with a small budget on a
+    tiny graph (correctness vs exact) and against ``cc_run_stars`` directly
+    (equivalence) — running it at the thorough budget would time out.
+    """
+
+    _IMPLS = (("vec", cc_run_stars), ("loop", cc_run_stars_loop))
+    _VEC = (("vec", cc_run_stars),)
+
+    def _mean_estimate(self, fn, g, *, seeds=16, n_colorings=12, n_samples=10000):
+        """Per-k mean estimate over ``seeds`` independent runs of ``fn``."""
+        acc: dict[int, float] = {k: 0.0 for k in range(2, 11)}
+        for s in range(seeds):
+            est = fn(g, n_samples, np.random.default_rng(1000 + s),
+                     n_colorings=n_colorings)
+            for k in range(2, 11):
+                acc[k] += est.get(k, 0)
+        return {k: acc[k] / seeds for k in acc}
+
+    def _assert_close_to_exact(self, g, *, min_count, rel_tol, impls=None,
+                               ks=None, **kw):
+        """Selected impls' mean estimates must match exact within ``rel_tol``.
+
+        Only star sizes whose exact count is ≥ ``min_count`` are asserted (rarer
+        sizes are too noisy for a meaningful relative-error bound); ``ks``, if
+        given, further restricts to those sizes. ``impls`` defaults to both.
+        """
+        exact = _EXACT.count_stars(g)
+        impls = impls or self._IMPLS
+        sizes = ks if ks is not None else range(2, 11)
+        for label, fn in impls:
+            mean = self._mean_estimate(fn, g, **kw)
+            for k in sizes:
+                e = exact.get(k, 0)
+                if e < min_count:
+                    continue
+                rel = abs(mean[k] - e) / e
+                self.assertLess(
+                    rel, rel_tol,
+                    f"[{label}] k={k}: mean={mean[k]:.1f} exact={e} rel={rel:.3f}",
+                )
+
+    # ── degenerate graphs (deterministic, exact) ─────────────────────────────
+
+    def test_empty_graph(self):
+        for label, fn in self._IMPLS:
+            res = fn(_und(0, []), 1000, np.random.default_rng(0), n_colorings=2)
+            self.assertEqual(res, {k: 0 for k in range(2, 11)}, label)
+
+    def test_no_edges(self):
+        for label, fn in self._IMPLS:
+            res = fn(_und(5, []), 1000, np.random.default_rng(0), n_colorings=2)
+            self.assertEqual(res, {k: 0 for k in range(2, 11)}, label)
+
+    def test_single_edge(self):
+        # One edge → no stars (need ≥2 leaves).
+        for label, fn in self._IMPLS:
+            res = fn(_und(2, [(0, 1)]), 1000, np.random.default_rng(0), n_colorings=2)
+            self.assertEqual({k: res.get(k, 0) for k in range(2, 11)},
+                             {k: 0 for k in range(2, 11)}, label)
+
+    # ── triangle-free star hub: closed form C(d, k) ──────────────────────────
+
+    def test_star_hub_closed_form(self):
+        # Single hub of degree d (triangle-free) → induced k-stars = C(d, k).
+        # Assert (vec) on sizes where C(d, k) is large enough to be a tight target.
+        from math import comb
+        d = 8
+        g = _und(d + 1, [(0, i) for i in range(1, d + 1)])
+        self._assert_close_to_exact(g, min_count=40, rel_tol=0.20,
+                                    impls=self._VEC, seeds=24, n_colorings=32)
+        # Sanity: the closed form is what the exact oracle reports.
+        exact = _EXACT.count_stars(g)
+        self.assertEqual({k: exact[k] for k in range(2, d + 1)},
+                         {k: comb(d, k) for k in range(2, d + 1)})
+
+    # ── leaf-leaf edge must be rejected (induced, not raw, star) ──────────────
+
+    def test_leaf_leaf_edge_rejected(self):
+        # Hub 0 with many leaves plus one leaf-leaf chord. Any star subset that
+        # includes BOTH chord endpoints is not an induced star, so the induced
+        # counts are strictly below C(d, k). Compare the vec mean estimate to the
+        # exact oracle, which already excludes the chorded subsets.
+        d = 9
+        edges = [(0, i) for i in range(1, d + 1)] + [(1, 2)]  # chord 1-2
+        g = _und(d + 1, edges)
+        exact = _EXACT.count_stars(g)
+        # The chord must actually reduce some count below the chord-free C(d,k).
+        from math import comb
+        self.assertLess(exact[3], comb(d, 3))
+        self._assert_close_to_exact(g, min_count=40, rel_tol=0.20,
+                                    impls=self._VEC, seeds=24, n_colorings=32)
+
+    # ── statistical agreement with exact on random graphs (vectorised) ────────
+
+    def test_random_graphs_agree_with_exact(self):
+        # Heavier graphs validate the vectorised estimator on non-trivial
+        # structure. Run vec only — the un-vectorised loop is ~orders slower here
+        # (its equivalence to vec is covered by the small-graph tests above).
+        rng = np.random.default_rng(2024)
+        for trial in range(3):
+            n = int(rng.integers(14, 20))
+            edges = [
+                (u, v)
+                for u in range(n) for v in range(u + 1, n)
+                if rng.random() < 0.28
+            ]
+            g = _und(n, edges)
+            # Mean over seeds tames variance; only assert on abundant sizes.
+            self._assert_close_to_exact(g, min_count=40, rel_tol=0.20,
+                                        impls=self._VEC, seeds=24, n_colorings=24)
+
+    # ── reference (loop) implementation: correctness + equivalence ────────────
+
+    def test_loop_matches_exact_small(self):
+        # The un-vectorised reference is slow, so validate it cheaply on a tiny
+        # hub, asserting only the low-variance 2-/3-stars (high colourful prob →
+        # fast convergence; larger k needs far more samples than the loop affords).
+        d = 6
+        g = _und(d + 1, [(0, i) for i in range(1, d + 1)])  # C(6,2)=15, C(6,3)=20
+        self._assert_close_to_exact(
+            g, min_count=15, rel_tol=0.25, ks=(2, 3),
+            impls=(("loop", cc_run_stars_loop),), seeds=8, n_colorings=8,
+        )
+
+    def test_vec_matches_loop(self):
+        # Same estimator → same distribution: with an equal (small) budget the
+        # two implementations' mean estimates must agree with each other on the
+        # low-variance 2-/3-stars. Confirms the vectorised rewrite is faithful.
+        d = 6
+        g = _und(d + 1, [(0, i) for i in range(1, d + 1)])
+        exact = _EXACT.count_stars(g)
+        kw = dict(seeds=10, n_colorings=8)
+        vec_mean = self._mean_estimate(cc_run_stars, g, **kw)
+        loop_mean = self._mean_estimate(cc_run_stars_loop, g, **kw)
+        for k in (2, 3):
+            diff = abs(vec_mean[k] - loop_mean[k]) / exact[k]
+            self.assertLess(
+                diff, 0.25,
+                f"k={k}: vec={vec_mean[k]:.1f} loop={loop_mean[k]:.1f} "
+                f"exact={exact[k]} reldiff={diff:.3f}",
+            )
+
+
+class TestEscapeExactCyclesVsBrute(unittest.TestCase):
+    """The ESCAPE enumerator (ExactMotifCounter k=5/6) must match the brute oracle.
+
+    Validates both the pre-existing c5 path and the new c6 generalization against
+    the independent ``_brute_induced_cycles`` ground truth — small graphs never
+    trip ``_ESCAPE_MAX_DEGREE``, so the exact path is always exercised.
+    """
+
+    C5_DS = ExactMotifCounter.C5_DS
+    C6_DS = ExactMotifCounter.C6_DS
+
+    def _exact_cycles(self, n, edges):
+        g = _und(n, edges)
+        c5 = _EXACT.count_motifsk(g, 5).get(self.C5_DS, 0)
+        c6 = _EXACT.count_motifsk(g, 6).get(self.C6_DS, 0)
+        return c5, c6
+
+    def test_single_c6(self):
+        # One induced 6-cycle → exactly 1; no 5-cycle.
+        edges = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (0, 5)]
+        self.assertEqual(self._exact_cycles(6, edges), (0, 1))
+
+    def test_chorded_c6_not_induced(self):
+        # 6-cycle with a chord 0-3 → no induced 6-cycle.
+        edges = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (0, 5), (0, 3)]
+        self.assertEqual(self._exact_cycles(6, edges)[1], 0)
+
+    def test_two_triangles_not_c6(self):
+        # Two disjoint triangles: 2-regular on 6 nodes but NOT a 6-cycle.
+        edges = [(0, 1), (1, 2), (0, 2), (3, 4), (4, 5), (3, 5)]
+        self.assertEqual(self._exact_cycles(6, edges)[1], 0)
+
+    def test_single_c5(self):
+        edges = [(0, 1), (1, 2), (2, 3), (3, 4), (0, 4)]
+        self.assertEqual(self._exact_cycles(5, edges), (1, 0))
+
+    def test_random_fuzz(self):
+        # Same random-graph generator as TestCycleDelta.test_random_fuzz; assert
+        # the exact ESCAPE c5/c6 counts equal the brute-force induced-cycle oracle.
+        rng = np.random.default_rng(54321)
+        for _ in range(300):
+            n = int(rng.integers(6, 12))
+            edges = [
+                (u, v)
+                for u in range(n)
+                for v in range(u + 1, n)
+                if rng.random() < 0.32
+            ]
+            a = _adj(n, edges)
+            c5_exact, c6_exact = self._exact_cycles(n, edges)
+            self.assertEqual(c5_exact, _brute_induced_cycles(a, 5),
+                             f"c5 mismatch on n={n} edges={edges}")
+            self.assertEqual(c6_exact, _brute_induced_cycles(a, 6),
+                             f"c6 mismatch on n={n} edges={edges}")
 
 
 if __name__ == "__main__":

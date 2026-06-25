@@ -1,0 +1,59 @@
+{
+  "graph": "wn18rr_v4",
+  "n_runs": 10,
+  "n_samples_list": [
+    1000,
+    10000,
+    100000
+  ],
+  "n_colorings_list": [
+    1,
+    4,
+    16
+  ],
+  "n_timings": 3,
+  "exact_max_degree": 100,
+  "truth": {
+    "triangle_count": 660,
+    "four_cycle_count": 1269,
+    "diamond_count": 472,
+    "k4_count": 21,
+    "tailed_triangle_count": 7953,
+    "five_cycle_count": 758,
+    "six_cycle_count": 1297,
+    "star_count_k2": 31526,
+    "star_count_k3": 131306,
+    "star_count_k4": 1110927,
+    "star_count_k5": 11566115,
+    "star_count_k6": 113581800,
+    "star_count_k7": 983002146,
+    "star_count_k8": 7432238779,
+    "star_count_k9": 49387801485,
+    "star_count_k10": 291012299755
+  },
+  "exact_runtime": {
+    "triangle": 0.00029354166084279615,
+    "motif4": 0.14245290262624621,
+    "motif5": 9.004612194684645,
+    "motif6": 150.4124384720344,
+    "stars": 0.5463261946570128
+  },
+  "target": {
+    "triangle_count": 660.0,
+    "four_cycle_count": 1351.0,
+    "diamond_count": 659.0,
+    "k4_count": 23.0,
+    "tailed_triangle_count": 7848.0,
+    "five_cycle_count": 841.0,
+    "six_cycle_count": 1305.0,
+    "star_count_k2": null,
+    "star_count_k3": null,
+    "star_count_k4": null,
+    "star_count_k5": null,
+    "star_count_k6": null,
+    "star_count_k7": null,
+    "star_count_k8": null,
+    "star_count_k9": null,
+    "star_count_k10": null
+  }
+}

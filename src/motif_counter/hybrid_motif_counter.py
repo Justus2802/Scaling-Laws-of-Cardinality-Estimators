@@ -23,14 +23,20 @@ class HybridMotifCounter(MotifCounter):
     independent colourings to escape the single-colouring all-zero failure at k=6
     and reduce variance ~``1/n_colorings`` (Alon–Yuster–Zwick 1995; Motivo /
     Bressan et al. 2021).  The exact k≤5 paths ignore it.
+
+    ``adaptive`` is forwarded to the CC sampler: when True its per-call path-sample
+    count scales with graph size (see ``CCMotifCounter``); the exact paths ignore it.
     """
 
-    def __init__(self, n_samples: int = 10_000, seed: int = 1, n_colorings: int = 16) -> None:
+    def __init__(self, n_samples: int = 10000, seed: int = 1, n_colorings: int = 16,
+                 adaptive: bool = False) -> None:
         self._n_samples = n_samples
         self._n_colorings = n_colorings
         self._rng = np.random.default_rng(seed)
         self._exact = ExactMotifCounter()
-        self._cc = CCMotifCounter(n_samples=n_samples, seed=seed, n_colorings=n_colorings)
+        # adaptive forwarded to the CC sampler used for k=4, k≥6 (and k=5 fallback).
+        self._cc = CCMotifCounter(n_samples=n_samples, seed=seed,
+                                  n_colorings=n_colorings, adaptive=adaptive)
 
     def count_triangles(self, g: igraph.Graph) -> int:
         return self._exact.count_triangles(g)
