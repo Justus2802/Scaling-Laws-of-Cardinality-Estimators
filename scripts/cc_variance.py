@@ -46,6 +46,7 @@ Usage
     python scripts/cc_variance.py fb237_v4_ind --n-runs 100 --n-samples 10000 50000
     python scripts/cc_variance.py wn18rr_v4 --n-colorings 1 4 16 64 --n-samples 1000 10000 100000
     python scripts/cc_variance.py wn18rr_v4 --n-timings 5   # average exact runtime over 5 repeats
+    python scripts/cc_variance.py wn18rr_v4 --skip-exact    # CC sweep only, no exact ground truth
 """
 
 import argparse
@@ -95,6 +96,14 @@ _RUNTIME_COLS = [
     "runtime_motif6_s", "runtime_stars_s",
 ]
 
+# Degree guard for the *exact* star ground truth. A hub of degree d that sits in
+# a triangle drives ExactMotifCounter.count_stars into C(d, k) subset enumeration
+# (k up to 10), which is intractable for large hubs (e.g. d=1050 → C(d,10) ≈
+# 4e23). This matches the counter's internal _HUB_THRESH, the degree at which
+# that branch engages. Above it the exact star truth is left None (like the c5/c6
+# cycles) while CC stars are still swept; raise it to admit denser hubs.
+_STAR_EXACT_MAX_DEGREE = 50
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -115,6 +124,11 @@ def main() -> None:
                              "wall-clock (default: 1). The exact counter has no seed axis to "
                              "average over, so repeats smooth its timing noise; CC runtime is "
                              "averaged over the n_runs seeds instead.")
+    parser.add_argument("--skip-exact", action="store_true",
+                        help="Skip the exact ground-truth phase for all motifs. Truth counts "
+                             "and exact per-family runtimes are all recorded as None; only the "
+                             "CC sweep runs. Useful when exact enumeration is intractable or "
+                             "only the CC variance/runtime is of interest.")
     parser.add_argument("--exact-max-degree", type=int, default=100,
                         help="Degree guard for exact ESCAPE c5/c6 enumeration (default: 100). "
                              "wn18rr_v4 has a single degree-68 hub that the library default of "
@@ -155,8 +169,14 @@ def main() -> None:
     print(f"  Graph: {n:,} nodes, {g_und.ecount():,} edges")
 
     # Exact ground truth + per-family exact runtimes (deterministic reference).
-    truth, exact_runtime = _exact_ground_truth(
-        g_und, n_timings=args.n_timings, exact_max_degree=args.exact_max_degree)
+    if args.skip_exact:
+        print("  Skipping exact ground truth (--skip-exact); truth/runtime → None.")
+        truth = {feat: None for feat in _ALL_FEATURES}
+        exact_runtime = {key: None for key in
+                         ("triangle", "motif4", "motif5", "motif6", "stars")}
+    else:
+        truth, exact_runtime = _exact_ground_truth(
+            g_und, n_timings=args.n_timings, exact_max_degree=args.exact_max_degree)
     print("  Exact ground-truth counts:")
     for feat in _ALL_FEATURES:
         val = truth.get(feat)
@@ -288,34 +308,57 @@ def _exact_ground_truth(
             total += time.perf_counter() - _t
         return total / reps
 
+    print(f"  Exact ground truth: {reps} timing pass(es) per family "
+          "(this phase is single-threaded and can dominate on dense/hub graphs) …",
+          flush=True)
+
+    print("    [1/4] triangle …", flush=True)
     truth["triangle_count"] = exact.count_triangles(g_und)
     runtime["triangle"] = _mean_time(lambda: exact.count_triangles(g_und))
+    print(f"    [1/4] triangle done ({truth['triangle_count']:,}, "
+          f"{runtime['triangle']:.3f}s)", flush=True)
 
+    print("    [2/4] motif4 (k=4; cost O(m·Δ²)) …", flush=True)
     motifs4 = exact.count_motifs4(g_und)
     runtime["motif4"] = _mean_time(lambda: exact.count_motifs4(g_und))
     for name, ds in _MOTIF4_FEATURES:
         truth[name] = motifs4.get(ds, 0)
+    print(f"    [2/4] motif4 done (c4={truth['four_cycle_count']:,}, "
+          f"{runtime['motif4']:.3f}s)", flush=True)
 
     # 5- and 6-node cycles share the ESCAPE enumerator; the exact counter's
     # max_degree (set above) governs whether a hub graph is admitted.
     for key, features, k in (("motif5", _MOTIF5_FEATURES, 5),
                              ("motif6", _MOTIF6_FEATURES, 6)):
+        print(f"    [3/4] motif{k} (k={k}, ESCAPE) …", flush=True)
         try:
             motifs = exact.count_motifsk(g_und, k)
             runtime[key] = _mean_time(lambda k=k: exact.count_motifsk(g_und, k))
             for name, ds in features:
                 truth[name] = motifs.get(ds, 0)
+            print(f"    [3/4] motif{k} done ({runtime[key]:.3f}s)", flush=True)
         except (RuntimeError, NotImplementedError) as exc:
-            print(f"  ! exact {k}-node count unavailable ({exc}); "
-                  "skipping its ground-truth line")
+            print(f"    [3/4] motif{k} unavailable ({exc}); "
+                  "skipping its ground-truth line", flush=True)
             runtime[key] = None
             for name, _ in features:
                 truth[name] = None
 
-    stars = exact.count_stars(g_und)
-    runtime["stars"] = _mean_time(lambda: exact.count_stars(g_und))
-    for name, k in _STAR_FEATURES:
-        truth[name] = stars.get(k, 0)
+    max_deg = max(g_und.degree()) if g_und.vcount() else 0
+    if max_deg > _STAR_EXACT_MAX_DEGREE:
+        print(f"    [4/4] stars unavailable (max degree {max_deg} > "
+              f"{_STAR_EXACT_MAX_DEGREE}; C(d,k) hub enumeration intractable); "
+              "skipping exact star ground truth", flush=True)
+        runtime["stars"] = None
+        for name, _ in _STAR_FEATURES:
+            truth[name] = None
+    else:
+        print("    [4/4] stars (k=2..10) …", flush=True)
+        stars = exact.count_stars(g_und)
+        runtime["stars"] = _mean_time(lambda: exact.count_stars(g_und))
+        for name, k in _STAR_FEATURES:
+            truth[name] = stars.get(k, 0)
+        print(f"    [4/4] stars done ({runtime['stars']:.3f}s)", flush=True)
 
     return truth, runtime
 

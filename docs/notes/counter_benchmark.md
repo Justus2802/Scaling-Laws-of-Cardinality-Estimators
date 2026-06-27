@@ -86,6 +86,10 @@ which CC overtakes exact on stars / 4-node motifs.
 - **Exact c5/c6 degree guard** — `--exact-max-degree` (default 100) raises the
   ESCAPE guard so `wn18rr_v4`'s lone degree-68 hub doesn't suppress the exact
   cycle baseline. Denser graphs with real hubs fall back to a CC-only baseline.
+- **Skip exact entirely** — `--skip-exact` bypasses the exact ground-truth phase
+  for all motifs; truth counts and exact per-family runtimes are recorded as
+  `None`, leaving only the CC sweep. Use it when exact enumeration is intractable
+  or only the CC variance/runtime matters.
 
 ### Reproduce
 

@@ -78,14 +78,24 @@ CONVERGENCE_LOG_INTERVAL: int = 1000
 # via REMEASURE_MOTIF_COUNTER on every convergence row. False = log only the locally
 # updated (incrementally tracked) errors, avoiding the expensive global remeasurement.
 CONVERGENCE_LOG_GLOBAL_REMEASURE: bool = False
-# Motif counter used for the initial measurement at the start of the SA walk.
-#INITIAL_MOTIF_COUNTER: MotifCounter = CCMotifCounter(n_samples=CC4_SAMPLES, seed=42)
-INITIAL_MOTIF_COUNTER: MotifCounter = HybridMotifCounter()
+# Stage 3 measurement counters are built per run so they follow refine()'s
+# ``seed`` (the pipeline's seed+2) rather than a fixed seed — keeping the whole
+# generation reproducible from the single master seed. Swap the counter type /
+# n_samples here; the seed is always supplied by refine() at generation time.
 
-# Motif counter used for periodic remeasurement every remeasure_interval accepted swaps.
-# HybridMotifCounter: exact for k≤4, CC with CC_CYCLE_SAMPLES for k=5/6.
-#REMEASURE_MOTIF_COUNTER: MotifCounter = CCMotifCounter(n_samples=CC4_SAMPLES, seed=43)
-REMEASURE_MOTIF_COUNTER: MotifCounter = HybridMotifCounter(n_samples=CC_CYCLE_SAMPLES, seed=43)
+def _make_initial_motif_counter(seed: int) -> MotifCounter:
+    """Counter for the initial measurement at the start of the SA walk."""
+    # return CCMotifCounter(n_samples=CC4_SAMPLES, seed=seed)  # CC-only alternative
+    return HybridMotifCounter(seed=seed)
+
+
+def _make_remeasure_motif_counter(seed: int) -> MotifCounter:
+    """Counter for periodic remeasurement every remeasure_interval accepted swaps.
+
+    HybridMotifCounter: exact for k≤4, CC with CC_CYCLE_SAMPLES for k=5/6.
+    """
+    # return CCMotifCounter(n_samples=CC4_SAMPLES, seed=seed)  # CC-only alternative
+    return HybridMotifCounter(n_samples=CC_CYCLE_SAMPLES, seed=seed)
 
 
 
@@ -151,6 +161,9 @@ def refine(
         Best graph encountered during the annealing walk.
     """
     rng = np.random.default_rng(seed)
+    # Measurement counters follow the same run seed as the rewiring RNG.
+    initial_motif_counter = _make_initial_motif_counter(seed)
+    remeasure_motif_counter = _make_remeasure_motif_counter(seed)
 
     # ------------------------------------------------------------------ setup
     type_edge_data: list[tuple[int, int, str]] = []
