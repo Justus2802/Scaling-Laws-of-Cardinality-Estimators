@@ -2,14 +2,14 @@
 across graphs.  One figure is produced per block; each subplot shows the
 per-graph values for a single feature, annotated with its name and block context.
 
-By default reads the full signature from sig_out/ and writes to
-sig_out/distribution_plots/.  With ``--reduced`` it reads the reduced signature
-(signature_reduced, no motif block) from the canonical graph store data/graphs/
-and writes to data/graph_population/.  ``--source`` / ``--out`` override either.
+Both the full signature and the reduced signature (``--reduced``;
+signature_reduced, no motif block) are read from the canonical graph store
+data/graphs/. The full signature writes to data/graphs/distribution_plots/; the
+reduced one writes to data/graph_population/. ``--source`` / ``--out`` override either.
 
-Signatures are discovered as ``<source>/*/signature.json`` (flat sig_out layout)
-or ``<source>/*/signature/signature.json`` (the data/graphs/<name>/signature/
-bundle layout); both are scanned, so the same script serves either store.
+Signatures are discovered as ``<source>/*/signature.json`` (flat layout) or
+``<source>/*/signature/signature.json`` (the data/graphs/<name>/signature/ bundle
+layout); both are scanned, so the same script serves either store.
 """
 
 import argparse
@@ -36,10 +36,9 @@ _BLOCK_COLOURS: dict[str, str] = {
 def _block_config(reduced: bool) -> tuple[list[tuple[str, type, str, str]], Path]:
     """Return (block metadata, sig_out dir) for the selected signature.
 
-    The reduced signature (``signature_reduced``) has no motif block (E) and
-    reads from the canonical store ``data/graphs/``; the full signature reads
-    from ``sig_out/``. Imports are local so the unused package isn't required to
-    run either mode.
+    The reduced signature (``signature_reduced``) has no motif block (E); both
+    signatures read from the canonical store ``data/graphs/``. Imports are local
+    so the unused package isn't required to run either mode.
     """
     if reduced:
         from signature_reduced import BlockA, BlockB, BlockC, BlockD, BlockF
@@ -61,7 +60,7 @@ def _block_config(reduced: bool) -> tuple[list[tuple[str, type, str, str]], Path
             ("e", BlockE, "Block E — Motifs"),
             ("f", BlockF, "Block F — Connectivity"),
         ]
-        sig_out = ROOT / "sig_out"
+        sig_out = ROOT / "data" / "graphs"
     return [(c, cls, title, _BLOCK_COLOURS[c]) for c, cls, title in blocks], sig_out
 
 
@@ -183,8 +182,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--reduced", action="store_true",
-        help="Plot the reduced signature (signature_reduced) from data/graphs/ "
-             "instead of the full signature from sig_out/.",
+        help="Plot the reduced signature (signature_reduced) instead of the full "
+             "signature; both are read from data/graphs/.",
     )
     parser.add_argument(
         "--source", type=Path, default=None,

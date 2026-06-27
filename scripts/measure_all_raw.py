@@ -2,11 +2,10 @@
 """Measure graph signatures for every graph in the ``data/graphs/`` corpus.
 
 Each ``data/graphs/<name>/`` directory holds one graph file (``.nt``/``.ttl``)
-plus its ``signature/`` output. By default runs the original full signature
-(all blocks incl. motifs, Block E) and writes to ``sig_out/``. With ``--reduced``
-it runs the reduced (non-over-determined) signature (Blocks A–F, incl. the Block E
-motifs), which writes its ``signature/`` directory **next to each graph file**
-(i.e. ``data/graphs/<name>/signature/``).
+plus its ``signature/`` output. By default runs the reduced (non-over-determined)
+signature (Blocks A–F, incl. the Block E motifs); pass ``--full`` for the original
+full signature. Either way the ``signature/`` directory is written **next to each
+graph file** (i.e. ``data/graphs/<name>/signature/``).
 
 Pass ``--blocks`` to measure only a subset for every graph (e.g. ``--blocks c`` to
 re-measure just Block C after a change); the labels are forwarded to the per-graph
@@ -54,9 +53,9 @@ def main() -> int:
     """Measure each corpus graph in turn and print a success/failure summary."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--reduced", action="store_true",
-        help="Measure the reduced signature (Blocks A–F → data/graphs/<name>/signature/) "
-             "instead of the original full signature (all blocks → sig_out/).",
+        "--full", action="store_true",
+        help="Measure the original full signature instead of the (default) reduced "
+             "signature. Both write to data/graphs/<name>/signature/.",
     )
     parser.add_argument(
         "--blocks", default=None,
@@ -65,14 +64,14 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if args.reduced:
-        script = ROOT / "scripts/measure_signature_reduced.py"
-        blocks = REDUCED_BLOCKS
-        kind = "reduced"
-    else:
+    if args.full:
         script = ROOT / "scripts/measure_signature.py"
         blocks = FULL_BLOCKS
         kind = "full"
+    else:
+        script = ROOT / "scripts/measure_signature_reduced.py"
+        blocks = REDUCED_BLOCKS
+        kind = "reduced"
 
     # An explicit --blocks overrides the per-kind default and is passed straight
     # through to the per-graph measurement script (which validates the labels).

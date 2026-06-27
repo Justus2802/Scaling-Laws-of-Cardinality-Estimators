@@ -10,7 +10,7 @@ Downloads the AIFB knowledge graph from Figshare and saves it as `aifb.ttl`. One
 ## Signature Measurement
 
 ### `measure_signature.py`
-Computes the full graph signature (Blocks A–F) for a single KG file and writes block plots, JSON results, and a text summary to `sig_out/<graph>/` (or `--output-dir`).
+Computes the full graph signature (Blocks A–F) for a single KG file and writes block plots, JSON results, and a text summary to a `signature/` directory next to the graph file (i.e. `data/graphs/<name>/signature/`), or to `--output-dir`.
 
 ```
 python scripts/measure_signature.py data/graphs/aids/AIDS.nt
@@ -34,11 +34,11 @@ python scripts/measure_block_e.py --force
 ```
 
 ### `measure_all_raw.py`
-Batch-measures the full corpus under `data/graphs/` by calling the per-graph measurement scripts as subprocesses. Supports `--reduced` to run the reduced signature and `--blocks` to re-measure only a subset of blocks.
+Batch-measures the full corpus under `data/graphs/` by calling the per-graph measurement scripts as subprocesses. Defaults to the reduced signature; pass `--full` for the original full signature. Either way each graph's `signature/` directory is written next to its graph file. `--blocks` re-measures only a subset of blocks.
 
 ```
 python scripts/measure_all_raw.py
-python scripts/measure_all_raw.py --reduced
+python scripts/measure_all_raw.py --full
 python scripts/measure_all_raw.py --blocks e    # re-measure Block E only
 ```
 
@@ -73,15 +73,16 @@ python scripts/sweep_collect.py fb237_v4_ind --append
 ```
 
 ### `cc_variance.py`
-Collects the **exact-vs-CC counter benchmark** (accuracy + runtime) per motif size for Block E motif counts. Runs `CCMotifCounter` with N seeds over an `n_samples × n_colorings` grid, recording per seed the estimated counts **and the wall-clock time of each family call** (`runtime_triangle_s`, `runtime_motif4_s`, `runtime_motif5_s`, `runtime_motif6_s`, `runtime_stars_s`). The exact ground-truth counts and per-family exact runtimes are computed once via `ExactMotifCounter` and stored in the `_meta.json` sidecar. Covers triangle (k=3), 4-node motifs (k=4), 5-cycle (k=5), 6-cycle (k=6, exact via the ESCAPE enumerator), and stars k=2..10. Output goes to `experiments/cc_variance_sweeps/`.
+Collects the **exact-vs-CC counter benchmark** (accuracy + runtime) per motif size for Block E motif counts. Runs `CCMotifCounter` with N seeds over an `n_samples × n_colorings` grid, recording per seed the estimated counts **and the wall-clock time of each family call** (`runtime_triangle_s`, `runtime_motif4_s`, `runtime_motif5_s`, `runtime_motif6_s`, `runtime_stars_s`). The exact ground-truth counts and per-family exact runtimes are computed once via `ExactMotifCounter` and stored in the `_meta.json` sidecar. Covers triangle (k=3), 4-node motifs (k=4), 5-cycle (k=5), 6-cycle (k=6, exact via the ESCAPE enumerator), and stars k=2..10. Output goes to `experiments/cc_variance_sweeps/`. The exact-baseline phase logs per-family progress (`[1/4] triangle … [4/4] stars`). Two degree guards keep that phase tractable on hub graphs and leave the affected ground-truth values `None` (CC estimates are still swept): `--exact-max-degree` (default 100) gates exact c5/c6 ESCAPE enumeration, and a fixed degree-50 guard (`_STAR_EXACT_MAX_DEGREE`, matching the counter's `_HUB_THRESH`) skips exact stars when any hub would trigger the intractable `C(d,k)` subset enumeration.
 
-Caveats: the triangle is counted with `list_triangles` in *both* counters (exact in each — not a real sampler race, variance 0); stars are counted jointly (one call yields k=2..10), so `runtime_stars_s` is a single value for the family while accuracy stays per-k. `--n-timings N` averages the exact runtime over N repeats (the exact counter has no seed axis); `--exact-max-degree D` (default 100) raises the ESCAPE degree guard so an isolated hub — e.g. wn18rr_v4's single degree-68 node — doesn't suppress the exact c5/c6 baseline (exact c6 on wn18rr_v4 takes ~2.5 min).
+Caveats: the triangle is counted with `list_triangles` in *both* counters (exact in each — not a real sampler race, variance 0); stars are counted jointly (one call yields k=2..10), so `runtime_stars_s` is a single value for the family while accuracy stays per-k. `--n-timings N` averages the exact runtime over N repeats (the exact counter has no seed axis); `--exact-max-degree D` (default 100) raises the ESCAPE degree guard so an isolated hub — e.g. wn18rr_v4's single degree-68 node — doesn't suppress the exact c5/c6 baseline (exact c6 on wn18rr_v4 takes ~2.5 min). `--skip-exact` bypasses the exact ground-truth phase entirely (truth counts and exact per-family runtimes are all recorded as `None`); use it when exact enumeration is intractable or only the CC variance/runtime is of interest.
 
 ```
 python scripts/cc_variance.py wn18rr_v4
 python scripts/cc_variance.py fb237_v4_ind --n-runs 100 --n-samples 10000 50000
 python scripts/cc_variance.py wn18rr_v4 --n-colorings 1 4 16 64 --n-samples 1000 10000 100000
 python scripts/cc_variance.py wn18rr_v4 --n-timings 5            # smooth exact runtime
+python scripts/cc_variance.py wn18rr_v4 --skip-exact            # CC sweep only, no exact baseline
 ```
 
 ### `cc_variance_viz.py`
@@ -113,7 +114,7 @@ python scripts/sweep_viz.py experiments/fb237_v4_ind.jsonl --list-features
 ```
 
 ### `plot_signature_distributions.py`
-Loads all `signature.json` files from a corpus and plots component-wise value distributions across graphs (one figure per block). Reads the full signature from `sig_out/` by default; `--reduced` reads the reduced signature from `data/graphs/`.
+Loads all `signature.json` files from a corpus and plots component-wise value distributions across graphs (one figure per block). Reads from `data/graphs/` (full signature by default; `--reduced` reads the reduced signature).
 
 ```
 python scripts/plot_signature_distributions.py

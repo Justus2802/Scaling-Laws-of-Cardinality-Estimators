@@ -20,9 +20,10 @@ build records) in [`notes/`](notes/).
   property guards, `visualize` split, logging conventions, selective block computation).
 
 Two signatures coexist: the original full signature (`src/signature/`,
-`scripts/measure_signature.py` → `sig_out/`) and the reduced one
-(`src/signature_reduced/`, `scripts/measure_signature_reduced.py` → `data/graphs/<name>/signature/`).
-`scripts/measure_all_raw.py [--reduced]` runs either over all raw KGs.
+`scripts/measure_signature.py`) and the reduced one (`src/signature_reduced/`,
+`scripts/measure_signature_reduced.py`). Both write a `signature/` directory next
+to each graph file (`data/graphs/<name>/signature/`). `scripts/measure_all_raw.py`
+runs the reduced signature over all raw KGs by default; pass `--full` for the full one.
 
 ## Plans (future)
 
