@@ -74,7 +74,11 @@ USE_INCREMENTAL_MOTIF4 = True
 # so it is best left off for high-degree graphs.  Only active when a cycle target is set.
 USE_INCREMENTAL_CYCLES = True
 # Accepted-swap interval between convergence CSV rows; 0 disables logging entirely.
-CONVERGENCE_LOG_INTERVAL: int = 0
+CONVERGENCE_LOG_INTERVAL: int = 1000
+# True = also log ground-truth errors (sig_* columns) by remeasuring the full graph
+# via REMEASURE_MOTIF_COUNTER on every convergence row. False = log only the locally
+# updated (incrementally tracked) errors, avoiding the expensive global remeasurement.
+CONVERGENCE_LOG_GLOBAL_REMEASURE: bool = False
 # Motif counter used for the initial measurement at the start of the SA walk.
 #INITIAL_MOTIF_COUNTER: MotifCounter = CCMotifCounter(n_samples=CC4_SAMPLES, seed=42)
 INITIAL_MOTIF_COUNTER: MotifCounter = HybridMotifCounter()
@@ -374,15 +378,18 @@ def refine(
         _conv_fields.append("assort_err")
     if use_tree_entropy:
         _conv_fields.append("tree_entropy_err")
-    # sig_ columns: triangle always included; 4-motif only when the target is active
-    _conv_fields.append("sig_tri_err")
-    for attr, ds, col in _SIG_ATTRS[1:]:
-        if ds in _motif4_targets:
-            _conv_fields.append(col)
-    # Ground-truth 5-cycle error: global (induced) 5-cycle count measured on the
-    # full graph (HybridMotifCounter) vs the target — validates the incremental
-    # cycle delta. Always logged.
-    _conv_fields.append("sig_c5_err")
+    # sig_ columns are only logged when the global remeasurement is enabled; they
+    # hold ground-truth errors from remeasuring the full graph (see _write_conv_row).
+    if CONVERGENCE_LOG_GLOBAL_REMEASURE:
+        # sig_ columns: triangle always included; 4-motif only when the target is active
+        _conv_fields.append("sig_tri_err")
+        for attr, ds, col in _SIG_ATTRS[1:]:
+            if ds in _motif4_targets:
+                _conv_fields.append(col)
+        # Ground-truth 5-cycle error: global (induced) 5-cycle count measured on the
+        # full graph (HybridMotifCounter) vs the target — validates the incremental
+        # cycle delta.
+        _conv_fields.append("sig_c5_err")
 
     _conv_fh = open(convergence_log, "w", newline="") if convergence_log else None  # noqa: SIM115
     _conv_writer = csv.DictWriter(_conv_fh, fieldnames=_conv_fields) if _conv_fh else None
@@ -416,21 +423,23 @@ def refine(
                 abs(tree_entropy_current - _target_tree_entropy) / max(1e-9, _target_tree_entropy), 6
             )
 
-        # Ground-truth errors via periodic counter (same strategy as remeasure)
-        _g_sig = _build_und_graph()
-        tri_sig = REMEASURE_MOTIF_COUNTER.count_triangles(_g_sig)
-        row["sig_tri_err"] = round(abs(tri_sig - target_tri) / max(1, target_tri), 6)
-        if any(col in _conv_fields for _, _, col in _SIG_ATTRS[1:]):
-            _sig_motifs4 = REMEASURE_MOTIF_COUNTER.count_motifs4(_g_sig)
-            for _, ds, col in _SIG_ATTRS[1:]:
-                if col in _conv_fields:
-                    tgt = _motif4_targets[ds]
-                    row[col] = round(abs(_sig_motifs4.get(ds, 0) - tgt) / max(1, tgt), 6)
+        # Ground-truth errors via a full-graph remeasurement (expensive); only when
+        # enabled. Otherwise the row carries just the locally tracked errors above.
+        if CONVERGENCE_LOG_GLOBAL_REMEASURE:
+            _g_sig = _build_und_graph()
+            tri_sig = REMEASURE_MOTIF_COUNTER.count_triangles(_g_sig)
+            row["sig_tri_err"] = round(abs(tri_sig - target_tri) / max(1, target_tri), 6)
+            if any(col in _conv_fields for _, _, col in _SIG_ATTRS[1:]):
+                _sig_motifs4 = REMEASURE_MOTIF_COUNTER.count_motifs4(_g_sig)
+                for _, ds, col in _SIG_ATTRS[1:]:
+                    if col in _conv_fields:
+                        tgt = _motif4_targets[ds]
+                        row[col] = round(abs(_sig_motifs4.get(ds, 0) - tgt) / max(1, tgt), 6)
 
-        # Ground-truth 5-cycle relative error: global (induced/chordless) count
-        # measured via the hybrid counter vs target (raw count when target is 0).
-        c5_sig = REMEASURE_MOTIF_COUNTER.count_cycles(_g_sig, k5=True, k6=False)[0]
-        row["sig_c5_err"] = round(abs(c5_sig - _target_c5) / max(1, _target_c5), 6)
+            # Ground-truth 5-cycle relative error: global (induced/chordless) count
+            # measured via the hybrid counter vs target (raw count when target is 0).
+            c5_sig = REMEASURE_MOTIF_COUNTER.count_cycles(_g_sig, k5=True, k6=False)[0]
+            row["sig_c5_err"] = round(abs(c5_sig - _target_c5) / max(1, _target_c5), 6)
 
         _conv_writer.writerow(row)
 

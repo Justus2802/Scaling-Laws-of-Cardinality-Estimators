@@ -92,11 +92,18 @@ def main() -> None:
     if n == 0:
         sys.exit("No features to plot.")
 
-    fig, axes = plt.subplots(1, n, figsize=(max(5, 4 * n), 4), squeeze=False)
+    # Wrap into two rows when there are more than 3 features, otherwise a single row.
+    import math
+    nrows = 2 if n > 3 else 1
+    ncols = math.ceil(n / nrows)
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(max(5, 4 * ncols), 4 * nrows), squeeze=False
+    )
     fig.suptitle("Stage 3 convergence", fontsize=12)
+    flat_axes = axes.flatten()
 
-    for col_idx, feat in enumerate(selected):
-        ax = axes[0][col_idx]
+    for idx, feat in enumerate(selected):
+        ax = flat_axes[idx]
         for label, data in datasets.items():
             if feat not in data:
                 continue
@@ -105,19 +112,28 @@ def main() -> None:
         ax.axhline(0, color="gray", linewidth=0.8, linestyle="--")
         ax.set_title(feat, fontsize=9)
         ax.set_xlabel("accepted swaps")
-        if col_idx == 0:
+        if idx % ncols == 0:
             ax.set_ylabel("error")
         if len(datasets) > 1:
             ax.legend(fontsize=7)
 
+    # Hide any unused axes in the grid.
+    for ax in flat_axes[n:]:
+        ax.set_visible(False)
+
     fig.tight_layout()
 
-    if args.out:
-        args.out.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(args.out, dpi=150, bbox_inches="tight")
-        print(f"Saved → {args.out}")
-    else:
-        plt.show()
+    # Default output name: <first-csv-stem>__<feature1>_<feature2>_….png next to
+    # the first input CSV. Truncate the feature list so the filename stays sane.
+    out_path = args.out
+    if out_path is None:
+        first_csv = args.csvfiles[0]
+        feat_tag = "_".join(selected[:6]) + ("_etc" if len(selected) > 6 else "")
+        out_path = first_csv.with_name(f"{first_csv.stem}__{feat_tag}.png")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    print(f"Saved → {out_path}")
 
 
 if __name__ == "__main__":

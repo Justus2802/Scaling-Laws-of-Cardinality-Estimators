@@ -5,6 +5,7 @@ Graphlet-type constants live on MotifCounter (the base class) and are accessed
 here via MotifCounter.SIGMA.
 """
 
+import logging
 import math
 from collections import defaultdict
 
@@ -13,6 +14,16 @@ import numpy as np
 import scipy.sparse
 
 from ._base import MotifCounter
+
+log = logging.getLogger(__name__)
+
+# Emit a progress log every this many colourings in the CC estimators.
+_COLORING_LOG_EVERY = 4
+
+# Centre samples per colouring for the CC star estimator (cc_run_stars). Stars
+# converge with far fewer samples than the path/treelet motifs, so this is kept
+# small and independent of the shared n_samples budget.
+_STAR_SAMPLES = 10000
 
 
 def _count_motifs4_through_edge(adj: list, u: int, v: int) -> dict[tuple, int]:
@@ -189,9 +200,12 @@ def cc_run(
 
     # Average the per-colouring estimates (missing types contribute 0).
     sums: defaultdict[tuple[int, ...], float] = defaultdict(float)
-    for _ in range(max(1, n_colorings)):
+    _n = max(1, n_colorings)
+    for _i in range(_n):
         for deg_seq, est in _one_coloring().items():
             sums[deg_seq] += est
+        if (_i + 1) % _COLORING_LOG_EVERY == 0:
+            log.info("CC k=%d motifs: %d/%d colourings done", k, _i + 1, _n)
 
     denom = max(1, n_colorings)
     result: dict[tuple[int, ...], int] = {}
@@ -252,7 +266,7 @@ def cc_run_stars(
             return 0.0
 
         w       = dp_star / t
-        centres = rng.choice(n, size=n_samples, p=w)
+        centres = rng.choice(n, size=_STAR_SAMPLES, p=w)
 
         unique_centres = np.unique(centres)
         adj_by_color: dict[int, dict[int, np.ndarray]] = {}
@@ -304,8 +318,12 @@ def cc_run_stars(
         K   = k + 1
         p_K = math.factorial(K) / (K ** K)
         # Average the unbiased per-colouring estimate over n_colorings draws.
-        est = sum(_one_coloring(k, K, p_K) for _ in range(n_colorings)) / n_colorings
-        results[k] = max(0, int(round(est)))
+        total = 0.0
+        for _i in range(n_colorings):
+            total += _one_coloring(k, K, p_K)
+            if (_i + 1) % _COLORING_LOG_EVERY == 0:
+                log.info("CC k=%d stars: %d/%d colourings done", k, _i + 1, n_colorings)
+        results[k] = max(0, int(round(total / n_colorings)))
 
     return results
 

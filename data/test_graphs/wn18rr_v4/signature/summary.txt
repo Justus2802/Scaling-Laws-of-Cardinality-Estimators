@@ -34,31 +34,34 @@
 
 --- Subgraph counts ---
   triangles:           660
-  4-cycles:            1385
-  5-cycles (est):      682
-  6-cycles (est):      1162
-  diamonds:            534
-  K4:                  19
-  tailed triangles:    6816
+  4-cycles:            1351
+  5-cycles (est):      841
+  6-cycles (est):      1305
+  diamonds:            659
+  K4:                  23
+  tailed triangles:    7848
+
+--- Star counts (induced) ---
+  k=2: 31662  k=3: 127377  k=4: 1068111  k=5: 11892775  k=6: 122553724  k=7: 1135175285  k=8: 7681635802  k=9: 39390552622  k=10: 373233936358
 
 --- Path templates ---
     k  zipf_alpha     entropy
     2         nan     -0.0000
-    3      1.4373      0.0570
-    4      1.2248      0.2979
-    5      1.3261      0.7632
-    6      1.3152      1.1556
-    7      1.2191      1.4530
-    8      1.3089      1.6593
-    9      1.2896      1.7698
-   10      1.3180      2.4270
+    3      1.5173      0.1000
+    4      1.2295      0.3258
+    5      1.3807      0.9892
+    6      1.2752      1.3537
+    7      1.2798      1.6202
+    8      1.2195      1.8746
+    9      1.2211      2.0899
+   10      1.2459      2.3331
 
 --- Tree templates ---
-  zipf_alpha=1.1731  entropy=0.6090
+  zipf_alpha=1.1567  entropy=0.7273
 
 === Reduced Block F: Connectivity (G4) ===
   num_components            : 1
   largest_component_fraction: 1.0000
   clustering_coefficient    : 0.0955
   degree_assortativity      : -0.0791
-  shortest path             : skew-normal(loc=8.118, scale=1.915, shape=-0.930)
+  shortest path             : max=14.0, mean=7.169, var=2.698
