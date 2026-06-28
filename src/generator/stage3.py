@@ -28,7 +28,7 @@ import numpy as np
 
 from ._constants import _RDF_TYPE
 from motif_counter import ExactMotifCounter, HybridMotifCounter, MotifCounter  # CCMotifCounter available as swap-in
-from .local_updates import _adj_inc, _adj_dec, _triangle_node_delta, _motif4_delta, _cycle_delta
+from .local_updates import _adj_inc, _adj_dec, _triangle_node_delta, _motif4_delta, _cycle_delta, _tree_entropy_delta
 from ._logging import get_logger
 from .stage2 import _connect_components
 
@@ -50,6 +50,7 @@ LOSS_WEIGHT_C5:            float = 1
 LOSS_WEIGHT_C6:            float = 1
 LOSS_WEIGHT_ASSORTATIVITY: float = 1.0
 LOSS_WEIGHT_CC_AVG:        float = 1.0
+LOSS_WEIGHT_TREE_ENTROPY:  float = 1.0
 
 # Lookup table used by _loss; keeps the function body concise.
 _MOTIF4_WEIGHTS: dict[tuple, float] = {
@@ -282,8 +283,46 @@ def refine(
             return 0.0
         return (2.0 * M_e * Q - S_deg ** 2 / 2.0) / denom
 
+    # ----------------------------------------- depth-2 tree template entropy
+    # rel_out[v] = list of outgoing relation labels from v (content edges only,
+    # one entry per edge so multi-edges are counted multiple times — mirrors
+    # how Block E samples tree templates).
+    # pair_freq[(r1, r2)] = number of root→child(r1)→grandchild(r2) observations.
+    _target_tree_entropy = float(getattr(target_e, "tree_template_entropy", float("nan")))
+    use_tree_entropy = (
+        not math.isnan(_target_tree_entropy)
+        and _target_tree_entropy > 0
+        and LOSS_WEIGHT_TREE_ENTROPY > 0
+    )
+
+    rel_out: list[list[str]] = [[] for _ in range(n)]
+    for s, o, p in content_edge_data:
+        rel_out[s].append(p)
+
+    # Build initial (r1, r2) pair frequency dict from all root→child→grandchild triples.
+    _pair_freq: dict[tuple, int] = {}
+    if use_tree_entropy:
+        for s, o, p in content_edge_data:
+            for r2 in rel_out[o]:
+                key = (p, r2)
+                _pair_freq[key] = _pair_freq.get(key, 0) + 1
+
+    def _entropy_from_freq(freq: dict) -> float:
+        total = sum(freq.values())
+        if total == 0:
+            return 0.0
+        inv = 1.0 / total
+        h = 0.0
+        for c in freq.values():
+            if c > 0:
+                p_i = c * inv
+                h -= p_i * math.log(p_i)
+        return h
+
+    tree_entropy_current = _entropy_from_freq(_pair_freq) if use_tree_entropy else 0.0
+
     # ------------------------------------------------------- loss function
-    def _loss(tri: int, motifs: dict, Q: float, cc: float, c5: int, c6: int) -> float:
+    def _loss(tri: int, motifs: dict, Q: float, cc: float, c5: int, c6: int, tree_h: float) -> float:
         """SA objective: weighted sum of relative errors across all active targets.
 
         All terms use |current − target| / |target|.  A floor of 1e-9 guards
@@ -300,9 +339,11 @@ def refine(
             loss += LOSS_WEIGHT_ASSORTATIVITY * abs(_assort_from_Q(Q) - target_r) / max(1e-9, abs(target_r))
         if use_cc:
             loss += LOSS_WEIGHT_CC_AVG * abs(cc - target_cc) / max(1e-9, target_cc)
+        if use_tree_entropy:
+            loss += LOSS_WEIGHT_TREE_ENTROPY * abs(tree_h - _target_tree_entropy) / max(1e-9, _target_tree_entropy)
         return loss
 
-    current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6)
+    current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6, tree_entropy_current)
     best_loss = current_loss
     best_content = list(content_edge_data)
     best_accepted = 0
@@ -331,6 +372,8 @@ def refine(
         _conv_fields.append("cc_err")
     if use_assort:
         _conv_fields.append("assort_err")
+    if use_tree_entropy:
+        _conv_fields.append("tree_entropy_err")
     # sig_ columns: triangle always included; 4-motif only when the target is active
     _conv_fields.append("sig_tri_err")
     for attr, ds, col in _SIG_ATTRS[1:]:
@@ -368,6 +411,10 @@ def refine(
             row["cc_err"] = round(abs(cc_current - target_cc) / max(1e-9, target_cc), 6)
         if use_assort:
             row["assort_err"] = round(abs(_assort_from_Q(Q_deg) - target_r) / max(1e-9, abs(target_r)), 6)
+        if use_tree_entropy:
+            row["tree_entropy_err"] = round(
+                abs(tree_entropy_current - _target_tree_entropy) / max(1e-9, _target_tree_entropy), 6
+            )
 
         # Ground-truth errors via periodic counter (same strategy as remeasure)
         _g_sig = _build_und_graph()
@@ -391,14 +438,15 @@ def refine(
 
     log.info(
         "Stage 3: refining (seed=%d, budget=%d) — target triangles=%d, motif4 targets=%s, "
-        "5-cycle=%s, 6-cycle=%s, assortativity=%s, cc_avg=%s; "
-        "initial loss=%.4f (triangles=%d, cc_avg=%.4f)",
+        "5-cycle=%s, 6-cycle=%s, assortativity=%s, cc_avg=%s, tree_entropy=%s; "
+        "initial loss=%.4f (triangles=%d, cc_avg=%.4f, tree_entropy=%.4f)",
         seed, budget, target_tri, sorted(_motif4_targets),
         _target_c5 if use_c5 else "off",
         _target_c6 if use_c6 else "off",
         f"{target_r:.4f}" if use_assort else "off",
         f"{target_cc:.4f}" if use_cc else "off",
-        current_loss, current_tri, cc_current,
+        f"{_target_tree_entropy:.4f}" if use_tree_entropy else "off",
+        current_loss, current_tri, cc_current, tree_entropy_current,
     )
 
     # -------------------------------------------- triangle-targeting indexes
@@ -492,7 +540,15 @@ def refine(
             new_c6 = current_c6 + _dc6
         else:
             new_c5, new_c6 = current_c5, current_c6
-        new_loss = _loss(new_tri, new_motifs4, new_Q, new_cc, new_c5, new_c6)
+        # Tree template entropy: exact incremental update via _tree_entropy_delta.
+        # rel_out is kept in sync with content_edge_data on accept.
+        if use_tree_entropy:
+            new_tree_h, new_pair_freq = _tree_entropy_delta(
+                rel_out, _pair_freq, s1, o1, p1, s2, o2
+            )
+        else:
+            new_tree_h, new_pair_freq = tree_entropy_current, _pair_freq
+        new_loss = _loss(new_tri, new_motifs4, new_Q, new_cc, new_c5, new_c6, new_tree_h)
 
         if new_loss < current_loss:
             accept = True
@@ -529,14 +585,21 @@ def refine(
                 current_motifs4 = new_motifs4
             if USE_INCREMENTAL_CYCLES and (use_c5 or use_c6):
                 current_c5, current_c6 = new_c5, new_c6
+            if use_tree_entropy:
+                # rel_out tracks outgoing relations per node as *source*.
+                # A same-relation swap leaves every node's outgoing relation list
+                # unchanged (source s1 still has relation p1, just to a new object).
+                # _pair_freq and entropy are already computed correctly by _tree_entropy_delta.
+                tree_entropy_current = new_tree_h
+                _pair_freq = new_pair_freq
 
             do_remeasure = accepted % remeasure_interval == 0
             if not USE_INCREMENTAL_MOTIF4 and _motif4_targets and do_remeasure:
                 current_motifs4 = REMEASURE_MOTIF_COUNTER.count_motifs4(_build_und_graph())
-                current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6)
+                current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6, tree_entropy_current)
             if not USE_INCREMENTAL_CYCLES and (use_c5 or use_c6) and do_remeasure:
                 current_c5, current_c6 = _measure_cycles(_build_und_graph())
-                current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6)
+                current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6, tree_entropy_current)
 
             if CONVERGENCE_LOG_INTERVAL > 0 and accepted % CONVERGENCE_LOG_INTERVAL == 0:
                 _write_conv_row()

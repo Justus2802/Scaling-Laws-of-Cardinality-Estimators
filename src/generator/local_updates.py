@@ -15,6 +15,7 @@ _motif4_delta               — Δ(4-node motif counts) for one swap
 _induced_paths              — induced (chordless) a→b paths up to a length
 _induced_cycles_through_pair — set of induced k-cycles containing a given vertex pair
 _cycle_delta                — Δ(induced 5-/6-cycle counts) for one swap
+_tree_entropy_delta         — Δ(depth-2 tree template entropy) and updated freq dict
 
 The per-edge motif primitive ``_count_motifs4_through_edge`` lives in
 ``motif_counter._common`` (shared with ``ExactMotifCounter``).
@@ -30,6 +31,7 @@ both by adding/removing a cycle edge and by adding a chord (destroys an
 induced cycle) or removing a chord (can create one).
 """
 
+import math
 from collections import Counter, defaultdict
 
 
@@ -272,6 +274,52 @@ def _induced_cycles_through_pair(adj: list, a: int, b: int, k: int) -> set[froze
                 if ok:
                     found.add(frozenset(v))
     return found
+
+
+def _tree_entropy_delta(
+    rel_out: list[dict],
+    pair_freq: dict,
+    s1: int, o1: int, p: str,
+    s2: int, o2: int,
+) -> tuple[float, dict]:
+    """Compute Δ(depth-2 tree template entropy) for swapping (s1 →p o1, s2 →p o2).
+
+    A depth-2 tree template rooted at node v is the multiset of (p, r') pairs
+    where p is the relation on the root→child edge and r' is any relation on a
+    child→grandchild edge.  Swapping (s1 →p o1) to (s1 →p o2) replaces all
+    (p, r') pairs contributed by o1's outgoing relations with those from o2.
+    Symmetrically for the (s2 →p o2) → (s2 →p o1) side.
+
+    Returns (new_entropy, new_pair_freq) — the caller applies them only on accept.
+    Cost: O(out_degree(o1) + out_degree(o2)) per swap.
+    """
+    new_freq = dict(pair_freq)
+
+    def _swap_child(old_obj: int, new_obj: int) -> None:
+        for r2 in rel_out[old_obj]:
+            key = (p, r2)
+            c = new_freq.get(key, 0) - 1
+            if c <= 0:
+                new_freq.pop(key, None)
+            else:
+                new_freq[key] = c
+        for r2 in rel_out[new_obj]:
+            key = (p, r2)
+            new_freq[key] = new_freq.get(key, 0) + 1
+
+    _swap_child(o1, o2)  # s1: old child o1 → new child o2
+    _swap_child(o2, o1)  # s2: old child o2 → new child o1
+
+    total = sum(new_freq.values())
+    if total == 0:
+        return 0.0, new_freq
+    inv = 1.0 / total
+    h = 0.0
+    for c in new_freq.values():
+        if c > 0:
+            p_i = c * inv
+            h -= p_i * math.log(p_i)
+    return h, new_freq
 
 
 def _cycle_delta(
