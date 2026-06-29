@@ -113,7 +113,7 @@ def _load_target_from_corpus(graph_name: str, search_dirs: list[Path]):
     return sig, blocks, graph_dir
 
 
-def _measure_target_from_file(kg_file: Path):
+def _measure_target_from_file(kg_file: Path, skip_templates: bool = False):
     """Measure the full reduced target signature from a graph file."""
     print(f"Loading   : {kg_file}")
     g = load_kg(kg_file)
@@ -122,7 +122,8 @@ def _measure_target_from_file(kg_file: Path):
     blocks = {
         "a": BlockA().calculate(g), "b": BlockB().calculate(g),
         "c": BlockC().calculate(g), "d": BlockD().calculate(g),
-        "e": BlockE().calculate(g), "f": BlockF().calculate(g),
+        "e": BlockE().calculate(g, skip_stars_and_paths=skip_templates),
+        "f": BlockF().calculate(g),
     }
     sig = Signature(
         a=blocks["a"], b=blocks["b"], c=blocks["c"],
@@ -183,12 +184,15 @@ def main():
     parser.add_argument("--rewire-budget", type=int, default=5_000)
     parser.add_argument("--convergence-log", default=None,
                         help="Write Stage 3 convergence CSV to this path.")
+    parser.add_argument("--skip-templates", action="store_true",
+                        help="Skip path/tree template and star measurement on both "
+                             "target and synthetic (saves ~8 min on medium graphs).")
     args = parser.parse_args()
 
     # ── Step 1: obtain the target signature ──────────────────────────────────
     if args.kg_file:
         kg_path = Path(args.kg_file)
-        target_sig, tblocks = _measure_target_from_file(kg_path)
+        target_sig, tblocks = _measure_target_from_file(kg_path, skip_templates=args.skip_templates)
         default_out = kg_path.with_name(kg_path.stem + "_synth.ttl")
     elif args.graph:
         search_dirs = [Path(args.graphs_dir)] if args.graphs_dir else _DEFAULT_SEARCH_DIRS
@@ -223,7 +227,7 @@ def main():
     sb = BlockB().calculate(g_synth)
     sc = BlockC().calculate(g_synth)
     sd = BlockD().calculate(g_synth)
-    se = BlockE().calculate(g_synth, skip_stars_and_paths=True)
+    se = BlockE().calculate(g_synth, skip_stars_and_paths=args.skip_templates)
     sf = BlockF().calculate(g_synth, skip_shortest_paths=True)
 
     # ── Step 5: full reduced-signature comparison ────────────────────────────

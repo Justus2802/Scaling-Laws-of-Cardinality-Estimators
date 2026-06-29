@@ -88,7 +88,9 @@ needs. All randomness from one seeded `np.random.Generator`.
    [§ Co-occurrence groups](#co-occurrence-groups) below.
 7. **Multiplicity / degree (Block B).** `obj_alpha_skew`, `subj_alpha_skew`, `a_obj` passed
    through; `in_pa_exponent = clip(1/(α_in−2), 0.1, 2)` (Dorogovtsev–Mendes); expected
-   `max_in_degree = n^(1/(α_in−1))`.
+   `max_in_degree = n^(1/(α_in−1))`.  `max_out_degree` is derived via the alpha ratio:
+   `max_out_degree = round(max_in_degree / (α_in / α_out))`.  Both caps default to 0 (uncapped)
+   when the corresponding alpha is unavailable or ≤ the minimum threshold.
 
 ---
 
@@ -135,8 +137,13 @@ where most of the fidelity fixes live.
      each subject at 1**, allocate the surplus by `multinomial`, then **cap at `|O_r|`** + redistribute.
    - **In-side** (per object over `O_r`): weight `power-law(α_subj_r) · in_degree^pa · inv_cs_size^a_subj`
      (subject-multiplicity tail × hub preference × **G2b in-side offset**), masked by `max_in_degree`;
-     allocate by `multinomial`, then **cap at `|S_r|`** + redistribute. The cap prevents condensation
-     (`α_subj<2` or superlinear PA) from dumping the whole budget onto one object.
+     allocate by `multinomial`, then **cap at `|S_r|`** + redistribute. A global in-degree hard cap
+     (`max_in_degree` across all relations combined, tracked by `in_degrees[v]`) is applied via
+     `_cap_redistribute`'s `hard_cap` parameter to prevent hub accumulation across relations.
+   - **Out-side global cap:** an `out_degrees[v]` tracker enforces `max_out_degree` across all relations.
+     Subject nodes that have already reached the global cap have their out-side weight zeroed before
+     multinomial allocation; a per-node hard cap is then applied post-allocation. This prevents
+     high-out-degree hubs (subjects) that would otherwise explode star counts and inflate path entropy errors.
    - **Pair** subject-stubs with object-stubs within `S_r × O_r` (configuration model); on a
      self-loop or duplicate `(s,o)` **retry** by swapping in another pending object stub.
 7. **Connect components** — bridge isolated components into the giant.
@@ -183,6 +190,17 @@ live adjacency dict (not an `igraph.Graph`) so each swap is cheap.
   removing one (can create an induced cycle). Otherwise re-measured every `remeasure_interval`
   accepted swaps via CC sampling. Only active when a Block-E cycle target is > 0.
 - **Degree assortativity** — exact, incremental (only the cross-product sum `Q` changes).
+- **Depth-2 tree template entropy** — exact, incremental `_tree_entropy_delta` (O(Δ) per swap).
+  Maintains a live `(r1, r2)` pair-frequency dict across the SA walk; on each candidate swap the
+  old child's outgoing relations are removed and the new child's are inserted before computing
+  Shannon entropy.  Only steered when `BlockE.tree_template_entropy > 0` and
+  `LOSS_WEIGHT_TREE_ENTROPY > 0`.
+- **k=3 path template entropy** — exact, incremental `_path_entropy_delta` (O(Δ) for k=2,
+  O(Δ²) for k=3 per swap).  Tracks live `(r1, r2)` and `(r1, r2, r3)` path-frequency dicts using
+  `out_edges[v] = [(rel, target), ...]` (directed adjacency).  The target object changes on accept,
+  so `out_edges` is updated in-place per accepted swap.  Only steered when
+  `BlockE.path_template_entropy[3] > 0` and `LOSS_WEIGHT_PATH_ENTROPY > 0`; inactive when Block E
+  was measured with `skip_stars_and_paths=True`.
 
 The SA loss is a weighted sum of relative errors; the best graph seen is returned, then components
 are re-bridged.
@@ -360,7 +378,8 @@ Each round:
   small `rewire-budget` can't close the gap; motif counts can land well above target. Larger budget
   / better Stage-2 clustering control is the open item.
 - **Out of scope:** literals/datatypes (G6); semantic types (synthetic clusters only); depth-3 tree
-  templates.
+  templates; path template entropy for k≥4 (cost grows as O(Δ^(k-1)) per swap — prohibitive for
+  large k).
 
 ---
 

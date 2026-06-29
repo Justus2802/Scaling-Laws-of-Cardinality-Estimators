@@ -285,27 +285,34 @@ def instantiate(
         size = float(vals[0]) if vals is not None else float(rng.poisson(fallback_cs_mean))
         return max(1, int(round(size)))
 
-    def _cap_redistribute(m: np.ndarray, cap: int, w: np.ndarray) -> None:
-        """Cap each count at ``cap`` and redistribute the overflow by weights ``w``.
+    def _cap_redistribute(m: np.ndarray, cap, w: np.ndarray, hard_cap: np.ndarray | None = None) -> None:
+        """Cap each count and redistribute overflow by weights ``w``.
 
+        ``cap`` is a scalar upper bound (used for |S_r| / |O_r| side caps).
+        ``hard_cap``, if given, is a per-node integer array of remaining capacity;
+        it overrides ``cap`` element-wise with ``min(cap, hard_cap[i])``.
         Used on both sides: an object takes ≤ |S_r| distinct subjects, a subject
         reaches ≤ |O_r| distinct objects. Bounded passes; tiny residual is dropped.
         """
-        if m.size == 0 or cap <= 0:
+        if m.size == 0:
+            return
+        caps = np.minimum(cap, hard_cap) if hard_cap is not None else np.full(m.shape, cap, dtype=np.int64)
+        if (caps <= 0).all():
+            m[:] = 0
             return
         for _ in range(CAP_REDISTRIBUTE_PASSES):
-            overflow = int(np.maximum(m - cap, 0).sum())
+            overflow = int(np.maximum(m - caps, 0).sum())
             if overflow == 0:
                 break
-            np.minimum(m, cap, out=m)
-            free = np.where(m < cap)[0]
+            np.minimum(m, caps, out=m)
+            free = np.where(m < caps)[0]
             if free.size == 0:
                 break
             wf = w[free]
             swf = wf.sum()
             pf = wf / swf if swf > 0 else np.full(free.size, 1.0 / free.size)
             m[free] += rng.multinomial(overflow, pf)
-        np.minimum(m, cap, out=m)
+        np.minimum(m, caps, out=m)
 
     log.info(
         "Stage 2: instantiating (seed=%d) V=%d, content-edge target=%d (+%d type edges), "
@@ -542,6 +549,7 @@ def instantiate(
     #    tail × in_degree^pa × inv_cs_size^a_subj, cap at |S_r|), then pair the stubs.
     # ------------------------------------------------------------------
     in_degrees = np.ones(actual_V, dtype=float)
+    out_degrees = np.zeros(actual_V, dtype=np.int64)   # total out-edges placed so far
     # unique_src_count[o] = number of distinct subjects that point to o (any pred)
     # Used as proxy for undirected in-degree under the simplification step.
     unique_src_count = np.zeros(actual_V, dtype=int)
@@ -606,9 +614,13 @@ def instantiate(
         # Out-side: edges per subject = power-law(α_obj) tail × cs_size^a_obj (G2b). Floor each
         # subject at ≥1 (object-multiplicity ≥1 when r ∈ CS), distribute the surplus, then cap
         # at |O_r| (a subject reaches ≤ |O_r| distinct objects) + redistribute.
+        subj_ids = np.asarray(S_r, dtype=np.int64)
         w_out = sample_powerlaw(_relation_alpha(schema.obj_alpha_skew), n_sr, rng)
         cs_sizes = np.array([len(entity_cs[s]) for s in S_r], dtype=float)
         w_out = w_out * np.power(np.maximum(cs_sizes, 1.0), schema.a_obj)
+        if schema.max_out_degree > 0:
+            # Zero weight for subjects already at / above the global out-degree cap.
+            w_out[out_degrees[subj_ids] >= schema.max_out_degree] = 0.0
         sw_out = w_out.sum()
         w_out = w_out / sw_out if sw_out > 0 else np.full(n_sr, 1.0 / n_sr)
         if edges_r >= n_sr:
@@ -617,6 +629,10 @@ def instantiate(
             m_obj = np.zeros(n_sr, dtype=np.int64)
             m_obj[rng.choice(n_sr, size=edges_r, replace=False, p=w_out)] = 1
         _cap_redistribute(m_obj, n_or, w_out)
+        if schema.max_out_degree > 0:
+            # Hard per-subject global out-degree cap (same logic as in-side global cap).
+            out_cap = np.maximum(schema.max_out_degree - out_degrees[subj_ids], 0).astype(np.int64)
+            _cap_redistribute(m_obj, n_or, w_out, hard_cap=out_cap)
 
         # In-side: edges per object (over O_r) = power-law(α_subj) subject-multiplicity tail ×
         # in_degree^pa hub preference × inv_cs_size^a_subj (G2b), masked by max_in_degree, then
@@ -628,12 +644,23 @@ def instantiate(
             inv_sizes = np.array([len(entity_inv_cs[o]) for o in O_r], dtype=float)
             w_in = w_in * np.power(np.maximum(inv_sizes, 1.0), schema.a_subj)
         if schema.max_in_degree > 0:
+            # Per-relation cap: no object receives more distinct subjects than max_in_degree.
             w_in[unique_src_count[obj_ids] >= schema.max_in_degree] = 0.0
+            # Global weight cap: zero out nodes already at / above the global degree limit
+            # so they receive no further allocation weight.
+            w_in[in_degrees[obj_ids] >= schema.max_in_degree] = 0.0
         sw_in = w_in.sum()
         if sw_in <= 0.0:
             continue
         m_in = rng.multinomial(edges_r, w_in / sw_in)
         _cap_redistribute(m_in, n_sr, w_in)
+        if schema.max_in_degree > 0:
+            # Hard per-node global cap: m_in[i] is limited so that total in_degrees[o]
+            # does not exceed max_in_degree.  The multinomial above can still over-allocate
+            # to a single node within one relation pass (all edges placed before in_degrees
+            # is updated).  Redistribute the excess proportionally to uncapped nodes.
+            global_cap = np.maximum(schema.max_in_degree - in_degrees[obj_ids], 0).astype(np.int64)
+            _cap_redistribute(m_in, n_sr, w_in, hard_cap=global_cap)
 
         # Pair subject-stubs with object-stubs within S_r × O_r (configuration model). Each
         # object stub is consumed once (preserving m_in); on a self-loop or duplicate (s, o)
@@ -655,6 +682,7 @@ def instantiate(
                 content_edges.append((s, o, predicate))
                 seen.add((s, o, predicate))
                 in_degrees[o] += 1.0
+                out_degrees[s] += 1
                 if s not in seen_src[o]:
                     seen_src[o].add(s)
                     unique_src_count[o] += 1

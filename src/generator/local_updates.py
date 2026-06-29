@@ -15,6 +15,8 @@ _motif4_delta               — Δ(4-node motif counts) for one swap
 _induced_paths              — induced (chordless) a→b paths up to a length
 _induced_cycles_through_pair — set of induced k-cycles containing a given vertex pair
 _cycle_delta                — Δ(induced 5-/6-cycle counts) for one swap
+_tree_entropy_delta         — Δ(depth-2 tree template entropy) and updated freq dict
+_path_entropy_delta         — Δ(k-hop path template entropy) for k=2..K and updated freq dicts
 
 The per-edge motif primitive ``_count_motifs4_through_edge`` lives in
 ``motif_counter._common`` (shared with ``ExactMotifCounter``).
@@ -30,6 +32,7 @@ both by adding/removing a cycle edge and by adding a chord (destroys an
 induced cycle) or removing a chord (can create one).
 """
 
+import math
 from collections import Counter, defaultdict
 
 
@@ -272,6 +275,123 @@ def _induced_cycles_through_pair(adj: list, a: int, b: int, k: int) -> set[froze
                 if ok:
                     found.add(frozenset(v))
     return found
+
+
+def _tree_entropy_delta(
+    rel_out: list[dict],
+    pair_freq: dict,
+    s1: int, o1: int, p: str,
+    s2: int, o2: int,
+) -> tuple[float, dict]:
+    """Compute Δ(depth-2 tree template entropy) for swapping (s1 →p o1, s2 →p o2).
+
+    A depth-2 tree template rooted at node v is the multiset of (p, r') pairs
+    where p is the relation on the root→child edge and r' is any relation on a
+    child→grandchild edge.  Swapping (s1 →p o1) to (s1 →p o2) replaces all
+    (p, r') pairs contributed by o1's outgoing relations with those from o2.
+    Symmetrically for the (s2 →p o2) → (s2 →p o1) side.
+
+    Returns (new_entropy, new_pair_freq) — the caller applies them only on accept.
+    Cost: O(out_degree(o1) + out_degree(o2)) per swap.
+    """
+    new_freq = dict(pair_freq)
+
+    def _swap_child(old_obj: int, new_obj: int) -> None:
+        for r2 in rel_out[old_obj]:
+            key = (p, r2)
+            c = new_freq.get(key, 0) - 1
+            if c <= 0:
+                new_freq.pop(key, None)
+            else:
+                new_freq[key] = c
+        for r2 in rel_out[new_obj]:
+            key = (p, r2)
+            new_freq[key] = new_freq.get(key, 0) + 1
+
+    _swap_child(o1, o2)  # s1: old child o1 → new child o2
+    _swap_child(o2, o1)  # s2: old child o2 → new child o1
+
+    total = sum(new_freq.values())
+    if total == 0:
+        return 0.0, new_freq
+    inv = 1.0 / total
+    h = 0.0
+    for c in new_freq.values():
+        if c > 0:
+            p_i = c * inv
+            h -= p_i * math.log(p_i)
+    return h, new_freq
+
+
+def _entropy_from_freq(freq: dict) -> float:
+    """Shannon entropy of a frequency dict {key: count}."""
+    total = sum(freq.values())
+    if total == 0:
+        return 0.0
+    inv = 1.0 / total
+    h = 0.0
+    for c in freq.values():
+        if c > 0:
+            p_i = c * inv
+            h -= p_i * math.log(p_i)
+    return h
+
+
+def _path_entropy_delta(
+    out_edges: list[list],
+    path_freqs: dict[int, dict],
+    s1: int, o1: int, p: str,
+    s2: int, o2: int,
+) -> tuple[dict[int, float], dict[int, dict]]:
+    """Compute Δ(path template entropy) for k=2 and k=3 for swapping (s1 →p o1, s2 →p o2).
+
+    ``out_edges[v]`` is a list of ``(relation, target)`` pairs for directed
+    outgoing edges from node v.  Tracks only walks where the swapped edge is
+    the **first hop** (root→child), so templates have the form (p, r2[, r3]).
+
+    - k=2: template (p, r2) for each r2 ∈ out_edges[child].
+      Cost: O(deg(o1) + deg(o2)).
+    - k=3: template (p, r2, r3) for each (r2, mid) ∈ out_edges[child],
+      r3 ∈ out_edges[mid].  Cost: O(Δ²) worst case.
+
+    Returns (new_entropies, new_path_freqs) keyed by k.
+    The caller applies them only on accept.
+    """
+    new_freqs: dict[int, dict] = {k: dict(path_freqs[k]) for k in path_freqs}
+
+    def _dec(freq: dict, key) -> None:
+        c = freq.get(key, 0) - 1
+        if c <= 0:
+            freq.pop(key, None)
+        else:
+            freq[key] = c
+
+    def _update_child(old_obj: int, new_obj: int) -> None:
+        # k=2: (p, r2)
+        if 2 in new_freqs:
+            f2 = new_freqs[2]
+            for r2, _ in out_edges[old_obj]:
+                _dec(f2, (p, r2))
+            for r2, _ in out_edges[new_obj]:
+                key = (p, r2)
+                f2[key] = f2.get(key, 0) + 1
+
+        # k=3: (p, r2, r3)
+        if 3 in new_freqs:
+            f3 = new_freqs[3]
+            for r2, mid in out_edges[old_obj]:
+                for r3, _ in out_edges[mid]:
+                    _dec(f3, (p, r2, r3))
+            for r2, mid in out_edges[new_obj]:
+                for r3, _ in out_edges[mid]:
+                    key = (p, r2, r3)
+                    f3[key] = f3.get(key, 0) + 1
+
+    _update_child(o1, o2)  # s1: was going to o1, now goes to o2
+    _update_child(o2, o1)  # s2: was going to o2, now goes to o1
+
+    new_entropies = {k: _entropy_from_freq(new_freqs[k]) for k in new_freqs}
+    return new_entropies, new_freqs
 
 
 def _cycle_delta(

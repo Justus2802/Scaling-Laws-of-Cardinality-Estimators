@@ -51,7 +51,8 @@ class Schema:
     # Block B-derived edge multiplicity and degree distribution
     mean_functionality: float = 1.0      # out-side fallback only (CS-size mean when no Block D)
     in_pa_exponent: float = 0.5          # PA exponent → aggregate in-degree hub preference
-    max_in_degree: int = 0               # 0 → uncapped; limits hub formation
+    max_in_degree: int = 0               # 0 → uncapped; limits in-degree hub formation
+    max_out_degree: int = 0              # 0 → uncapped; limits out-degree hub formation
     # Per-relation multiplicity shape + G2b offset (Block B); CS-size shape (Block D).
     # Defaults are NEUTRAL (no tail shape / no offset / budget-derived CS size), not the
     # old wiring — Stage 2 falls back to uniform per-subject weights when these are NaN.

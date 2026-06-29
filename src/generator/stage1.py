@@ -330,15 +330,27 @@ def sample_schema(
             in_pa_exponent = float(np.clip(1.0 / (alpha_in - 2.0), *PA_EXPONENT_BOUNDS))
         else:
             in_pa_exponent = PA_EXPONENT_DEFAULT
-        # Expected maximum in-degree: n^(1/(α−1)) (extreme-value statistic)
+        # Expected maximum in-degree / out-degree: n^(1/(α−1)) (extreme-value statistic)
         n_ent = a.num_entities
         if not math.isnan(alpha_in) and alpha_in > MIN_ALPHA_FOR_MAX_DEGREE and n_ent > 0:
             max_in_degree = max(MAX_IN_DEGREE_FLOOR, int(round(n_ent ** (1.0 / (alpha_in - 1.0)))))
         else:
             max_in_degree = 0
+        # Out-degree cap: out-degree is bounded by object-multiplicity, not driven by
+        # unbounded PA, so the extreme-value formula n^(1/(α-1)) overshoots badly.
+        # Instead, derive max_out from max_in scaled by the steepness ratio α_in/α_out:
+        # heavier out-degree tail (lower α_out) → relatively larger max_out_degree.
+        alpha_out = b.out_degree_fit.alpha
+        if (not math.isnan(alpha_out) and alpha_out > MIN_ALPHA_FOR_MAX_DEGREE
+                and max_in_degree > 0):
+            alpha_ratio = alpha_in / max(alpha_out, 1.0)
+            max_out_degree = max(MAX_IN_DEGREE_FLOOR, int(round(max_in_degree / alpha_ratio)))
+        else:
+            max_out_degree = 0
     else:
         in_pa_exponent = PA_EXPONENT_DEFAULT
         max_in_degree = 0
+        max_out_degree = 0
 
     # --- Per-relation multiplicity shape (G2) + CS-size offset (G2b) + CS-size shape ---
     # Stored as plain tuples; Stage 2 samples a per-relation α from obj_alpha_skew and
@@ -360,8 +372,8 @@ def sample_schema(
 
     log.info(
         "Stage 1: schema ready — mean_functionality=%.3f, in_pa_exponent=%.3f, "
-        "max_in_degree=%d, cs_num_templates=%d, a_obj=%.3f, obj_alpha_loc=%.3f",
-        mean_functionality, in_pa_exponent, max_in_degree, cs_num_templates,
+        "max_in_degree=%d, max_out_degree=%d, cs_num_templates=%d, a_obj=%.3f, obj_alpha_loc=%.3f",
+        mean_functionality, in_pa_exponent, max_in_degree, max_out_degree, cs_num_templates,
         a_obj, obj_alpha_skew[0],
     )
     target_num_components = int(f.num_components) if f is not None else DEFAULT_NUM_COMPONENTS
@@ -390,6 +402,7 @@ def sample_schema(
         mean_functionality=mean_functionality,
         in_pa_exponent=in_pa_exponent,
         max_in_degree=max_in_degree,
+        max_out_degree=max_out_degree,
         obj_alpha_skew=obj_alpha_skew,
         a_obj=a_obj,
         subj_alpha_skew=subj_alpha_skew,
