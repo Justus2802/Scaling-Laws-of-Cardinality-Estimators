@@ -75,7 +75,7 @@ USE_INCREMENTAL_CYCLES = True
 # Accepted-swap interval between convergence CSV rows; 0 disables logging entirely.
 CONVERGENCE_LOG_INTERVAL: int = 1000
 # True = also log ground-truth errors (sig_* columns) by remeasuring the full graph
-# via REMEASURE_MOTIF_COUNTER on every convergence row. False = log only the locally
+# via the remeasure counter on every convergence row. False = log only the locally
 # updated (incrementally tracked) errors, avoiding the expensive global remeasurement.
 CONVERGENCE_LOG_GLOBAL_REMEASURE: bool = False
 # Stage 3 measurement counters are built per run so they follow refine()'s
@@ -234,7 +234,7 @@ def refine(
         return g_tmp
 
     target_tri = int(target_e.triangle_count)
-    current_tri = INITIAL_MOTIF_COUNTER.count_triangles(_build_und_graph())
+    current_tri = initial_motif_counter.count_triangles(_build_und_graph())
 
     # ----------------------------------------- 4-node motif targets & counter
     # Only track a motif type when it has both a positive target AND a nonzero
@@ -255,7 +255,7 @@ def refine(
     # fast O(Δ²) path (valid when the paw is not among them).
     _m4_types = frozenset(_motif4_targets)
 
-    current_motifs4 = INITIAL_MOTIF_COUNTER.count_motifs4(_build_und_graph()) if _motif4_targets else {}
+    current_motifs4 = initial_motif_counter.count_motifs4(_build_und_graph()) if _motif4_targets else {}
 
     # ----------------------------------------- 5/6-cycle targets
     # As with 4-node motifs, only steer a cycle size when its loss weight is
@@ -267,7 +267,7 @@ def refine(
 
     def _measure_cycles(g_und: igraph.Graph) -> tuple[int, int]:
         """Estimate 5- and 6-cycle counts via the remeasure counter."""
-        return REMEASURE_MOTIF_COUNTER.count_cycles(g_und, k5=use_c5, k6=use_c6)
+        return remeasure_motif_counter.count_cycles(g_und, k5=use_c5, k6=use_c6)
 
     _g_init_und = _build_und_graph() if (use_c5 or use_c6) else None
     current_c5, current_c6 = _measure_cycles(_g_init_und) if _g_init_und is not None else (0, 0)
@@ -393,10 +393,10 @@ def refine(
         # enabled. Otherwise the row carries just the locally tracked errors above.
         if CONVERGENCE_LOG_GLOBAL_REMEASURE:
             _g_sig = _build_und_graph()
-            tri_sig = REMEASURE_MOTIF_COUNTER.count_triangles(_g_sig)
+            tri_sig = remeasure_motif_counter.count_triangles(_g_sig)
             row["sig_tri_err"] = round(abs(tri_sig - target_tri) / max(1, target_tri), 6)
             if any(col in _conv_fields for _, _, col in _SIG_ATTRS[1:]):
-                _sig_motifs4 = REMEASURE_MOTIF_COUNTER.count_motifs4(_g_sig)
+                _sig_motifs4 = remeasure_motif_counter.count_motifs4(_g_sig)
                 for _, ds, col in _SIG_ATTRS[1:]:
                     if col in _conv_fields:
                         tgt = _motif4_targets[ds]
@@ -404,7 +404,7 @@ def refine(
 
             # Ground-truth 5-cycle relative error: global (induced/chordless) count
             # measured via the hybrid counter vs target (raw count when target is 0).
-            c5_sig = REMEASURE_MOTIF_COUNTER.count_cycles(_g_sig, k5=True, k6=False)[0]
+            c5_sig = remeasure_motif_counter.count_cycles(_g_sig, k5=True, k6=False)[0]
             row["sig_c5_err"] = round(abs(c5_sig - _target_c5) / max(1, _target_c5), 6)
 
         _conv_writer.writerow(row)
@@ -554,7 +554,7 @@ def refine(
 
             do_remeasure = accepted % remeasure_interval == 0
             if not USE_INCREMENTAL_MOTIF4 and _motif4_targets and do_remeasure:
-                current_motifs4 = REMEASURE_MOTIF_COUNTER.count_motifs4(_build_und_graph())
+                current_motifs4 = remeasure_motif_counter.count_motifs4(_build_und_graph())
                 current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6)
             if not USE_INCREMENTAL_CYCLES and (use_c5 or use_c6) and do_remeasure:
                 current_c5, current_c6 = _measure_cycles(_build_und_graph())
