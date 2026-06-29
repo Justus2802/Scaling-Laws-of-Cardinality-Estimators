@@ -28,7 +28,7 @@ import numpy as np
 
 from ._constants import _RDF_TYPE
 from motif_counter import ExactMotifCounter, HybridMotifCounter, MotifCounter  # CCMotifCounter available as swap-in
-from .local_updates import _adj_inc, _adj_dec, _triangle_node_delta, _motif4_delta, _cycle_delta, _tree_entropy_delta
+from .local_updates import _adj_inc, _adj_dec, _triangle_node_delta, _motif4_delta, _cycle_delta, _tree_entropy_delta, _path_entropy_delta, _entropy_from_freq
 from ._logging import get_logger
 from .stage2 import _connect_components
 
@@ -51,6 +51,7 @@ LOSS_WEIGHT_C6:            float = 1
 LOSS_WEIGHT_ASSORTATIVITY: float = 1.0
 LOSS_WEIGHT_CC_AVG:        float = 1.0
 LOSS_WEIGHT_TREE_ENTROPY:  float = 1.0
+LOSS_WEIGHT_PATH_ENTROPY:  float = 1.0
 
 # Lookup table used by _loss; keeps the function body concise.
 _MOTIF4_WEIGHTS: dict[tuple, float] = {
@@ -288,9 +289,7 @@ def refine(
         return (2.0 * M_e * Q - S_deg ** 2 / 2.0) / denom
 
     # ----------------------------------------- depth-2 tree template entropy
-    # rel_out[v] = list of outgoing relation labels from v (content edges only,
-    # one entry per edge so multi-edges are counted multiple times — mirrors
-    # how Block E samples tree templates).
+    # rel_out[v] = list of outgoing relation labels from v (content edges only).
     # pair_freq[(r1, r2)] = number of root→child(r1)→grandchild(r2) observations.
     _target_tree_entropy = float(getattr(target_e, "tree_template_entropy", float("nan")))
     use_tree_entropy = (
@@ -311,22 +310,48 @@ def refine(
                 key = (p, r2)
                 _pair_freq[key] = _pair_freq.get(key, 0) + 1
 
-    def _entropy_from_freq(freq: dict) -> float:
-        total = sum(freq.values())
-        if total == 0:
-            return 0.0
-        inv = 1.0 / total
-        h = 0.0
-        for c in freq.values():
-            if c > 0:
-                p_i = c * inv
-                h -= p_i * math.log(p_i)
-        return h
-
     tree_entropy_current = _entropy_from_freq(_pair_freq) if use_tree_entropy else 0.0
 
+    # ----------------------------------------- k-hop path template entropy (k=2,3)
+    # out_edges[v] = list of (relation, target) pairs for directed outgoing edges.
+    # path_freqs[k][(r1,...,rk)] = count of first-hop-anchored k-hop paths starting
+    # with the first swapped relation.  We track k=2 and k=3 only.
+    # path_template_entropy is a dict {k: float} on BlockE; use k=3 as the target.
+    _pte_dict = getattr(target_e, "path_template_entropy", None) or {}
+    _target_path_entropy_k3 = float(_pte_dict.get(3, float("nan")) if isinstance(_pte_dict, dict) else float("nan"))
+    use_path_entropy = (
+        not math.isnan(_target_path_entropy_k3)
+        and _target_path_entropy_k3 > 0
+        and LOSS_WEIGHT_PATH_ENTROPY > 0
+    )
+
+    # out_edges is needed for both tree (via rel_out already built) and path entropy.
+    # For path entropy we need (rel, target) pairs, not just labels.
+    out_edges: list[list] = [[] for _ in range(n)]
+    for s, o, p in content_edge_data:
+        out_edges[s].append((p, o))
+
+    _path_freqs: dict[int, dict] = {}
+    if use_path_entropy:
+        # k=2: (r1, r2) sequences, anchored at first-hop relation r1
+        freq2: dict[tuple, int] = {}
+        for s, o, p in content_edge_data:
+            for r2, _ in out_edges[o]:
+                key = (p, r2)
+                freq2[key] = freq2.get(key, 0) + 1
+        # k=3: (r1, r2, r3) sequences
+        freq3: dict[tuple, int] = {}
+        for s, o, p in content_edge_data:
+            for r2, mid in out_edges[o]:
+                for r3, _ in out_edges[mid]:
+                    key = (p, r2, r3)
+                    freq3[key] = freq3.get(key, 0) + 1
+        _path_freqs = {2: freq2, 3: freq3}
+
+    path_entropy_current = _entropy_from_freq(_path_freqs.get(3, {})) if use_path_entropy else 0.0
+
     # ------------------------------------------------------- loss function
-    def _loss(tri: int, motifs: dict, Q: float, cc: float, c5: int, c6: int, tree_h: float) -> float:
+    def _loss(tri: int, motifs: dict, Q: float, cc: float, c5: int, c6: int, tree_h: float, path_h: float) -> float:
         """SA objective: weighted sum of relative errors across all active targets.
 
         All terms use |current − target| / |target|.  A floor of 1e-9 guards
@@ -345,9 +370,11 @@ def refine(
             loss += LOSS_WEIGHT_CC_AVG * abs(cc - target_cc) / max(1e-9, target_cc)
         if use_tree_entropy:
             loss += LOSS_WEIGHT_TREE_ENTROPY * abs(tree_h - _target_tree_entropy) / max(1e-9, _target_tree_entropy)
+        if use_path_entropy:
+            loss += LOSS_WEIGHT_PATH_ENTROPY * abs(path_h - _target_path_entropy_k3) / max(1e-9, _target_path_entropy_k3)
         return loss
 
-    current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6, tree_entropy_current)
+    current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6, tree_entropy_current, path_entropy_current)
     best_loss = current_loss
     best_content = list(content_edge_data)
     best_accepted = 0
@@ -378,6 +405,8 @@ def refine(
         _conv_fields.append("assort_err")
     if use_tree_entropy:
         _conv_fields.append("tree_entropy_err")
+    if use_path_entropy:
+        _conv_fields.append("path_entropy_k3_err")
     # sig_ columns are only logged when the global remeasurement is enabled; they
     # hold ground-truth errors from remeasuring the full graph (see _write_conv_row).
     if CONVERGENCE_LOG_GLOBAL_REMEASURE:
@@ -422,6 +451,10 @@ def refine(
             row["tree_entropy_err"] = round(
                 abs(tree_entropy_current - _target_tree_entropy) / max(1e-9, _target_tree_entropy), 6
             )
+        if use_path_entropy:
+            row["path_entropy_k3_err"] = round(
+                abs(path_entropy_current - _target_path_entropy_k3) / max(1e-9, _target_path_entropy_k3), 6
+            )
 
         # Ground-truth errors via a full-graph remeasurement (expensive); only when
         # enabled. Otherwise the row carries just the locally tracked errors above.
@@ -447,15 +480,16 @@ def refine(
 
     log.info(
         "Stage 3: refining (seed=%d, budget=%d) — target triangles=%d, motif4 targets=%s, "
-        "5-cycle=%s, 6-cycle=%s, assortativity=%s, cc_avg=%s, tree_entropy=%s; "
-        "initial loss=%.4f (triangles=%d, cc_avg=%.4f, tree_entropy=%.4f)",
+        "5-cycle=%s, 6-cycle=%s, assortativity=%s, cc_avg=%s, tree_entropy=%s, path_entropy_k3=%s; "
+        "initial loss=%.4f (triangles=%d, cc_avg=%.4f, tree_entropy=%.4f, path_entropy=%.4f)",
         seed, budget, target_tri, sorted(_motif4_targets),
         _target_c5 if use_c5 else "off",
         _target_c6 if use_c6 else "off",
         f"{target_r:.4f}" if use_assort else "off",
         f"{target_cc:.4f}" if use_cc else "off",
         f"{_target_tree_entropy:.4f}" if use_tree_entropy else "off",
-        current_loss, current_tri, cc_current, tree_entropy_current,
+        f"{_target_path_entropy_k3:.4f}" if use_path_entropy else "off",
+        current_loss, current_tri, cc_current, tree_entropy_current, path_entropy_current,
     )
 
     # -------------------------------------------- triangle-targeting indexes
@@ -557,7 +591,17 @@ def refine(
             )
         else:
             new_tree_h, new_pair_freq = tree_entropy_current, _pair_freq
-        new_loss = _loss(new_tri, new_motifs4, new_Q, new_cc, new_c5, new_c6, new_tree_h)
+        # Path template entropy: exact incremental update via _path_entropy_delta.
+        # out_edges[v] = [(rel, target), ...]; updated on accept when targets change.
+        if use_path_entropy:
+            _new_path_ents, _new_path_freqs = _path_entropy_delta(
+                out_edges, _path_freqs, s1, o1, p1, s2, o2
+            )
+            new_path_h = _new_path_ents.get(3, 0.0)
+        else:
+            _new_path_ents, _new_path_freqs = {}, _path_freqs
+            new_path_h = path_entropy_current
+        new_loss = _loss(new_tri, new_motifs4, new_Q, new_cc, new_c5, new_c6, new_tree_h, new_path_h)
 
         if new_loss < current_loss:
             accept = True
@@ -596,19 +640,32 @@ def refine(
                 current_c5, current_c6 = new_c5, new_c6
             if use_tree_entropy:
                 # rel_out tracks outgoing relations per node as *source*.
-                # A same-relation swap leaves every node's outgoing relation list
-                # unchanged (source s1 still has relation p1, just to a new object).
-                # _pair_freq and entropy are already computed correctly by _tree_entropy_delta.
+                # A same-relation swap leaves source nodes' relation labels unchanged
+                # (s1 still has p1, just to a new object) — only _pair_freq changes.
                 tree_entropy_current = new_tree_h
                 _pair_freq = new_pair_freq
+            if use_path_entropy:
+                # Update out_edges: s1 now points to o2 (was o1), s2 now points to o1 (was o2).
+                # The relation p1 stays the same; only the target changes.
+                # Replace (p1, o1) → (p1, o2) in out_edges[s1] and vice versa for s2.
+                for i, (r, t) in enumerate(out_edges[s1]):
+                    if r == p1 and t == o1:
+                        out_edges[s1][i] = (p1, o2)
+                        break
+                for i, (r, t) in enumerate(out_edges[s2]):
+                    if r == p1 and t == o2:
+                        out_edges[s2][i] = (p1, o1)
+                        break
+                path_entropy_current = new_path_h
+                _path_freqs = _new_path_freqs
 
             do_remeasure = accepted % remeasure_interval == 0
             if not USE_INCREMENTAL_MOTIF4 and _motif4_targets and do_remeasure:
                 current_motifs4 = REMEASURE_MOTIF_COUNTER.count_motifs4(_build_und_graph())
-                current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6, tree_entropy_current)
+                current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6, tree_entropy_current, path_entropy_current)
             if not USE_INCREMENTAL_CYCLES and (use_c5 or use_c6) and do_remeasure:
                 current_c5, current_c6 = _measure_cycles(_build_und_graph())
-                current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6, tree_entropy_current)
+                current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6, tree_entropy_current, path_entropy_current)
 
             if CONVERGENCE_LOG_INTERVAL > 0 and accepted % CONVERGENCE_LOG_INTERVAL == 0:
                 _write_conv_row()

@@ -183,6 +183,17 @@ live adjacency dict (not an `igraph.Graph`) so each swap is cheap.
   removing one (can create an induced cycle). Otherwise re-measured every `remeasure_interval`
   accepted swaps via CC sampling. Only active when a Block-E cycle target is > 0.
 - **Degree assortativity** — exact, incremental (only the cross-product sum `Q` changes).
+- **Depth-2 tree template entropy** — exact, incremental `_tree_entropy_delta` (O(Δ) per swap).
+  Maintains a live `(r1, r2)` pair-frequency dict across the SA walk; on each candidate swap the
+  old child's outgoing relations are removed and the new child's are inserted before computing
+  Shannon entropy.  Only steered when `BlockE.tree_template_entropy > 0` and
+  `LOSS_WEIGHT_TREE_ENTROPY > 0`.
+- **k=3 path template entropy** — exact, incremental `_path_entropy_delta` (O(Δ) for k=2,
+  O(Δ²) for k=3 per swap).  Tracks live `(r1, r2)` and `(r1, r2, r3)` path-frequency dicts using
+  `out_edges[v] = [(rel, target), ...]` (directed adjacency).  The target object changes on accept,
+  so `out_edges` is updated in-place per accepted swap.  Only steered when
+  `BlockE.path_template_entropy[3] > 0` and `LOSS_WEIGHT_PATH_ENTROPY > 0`; inactive when Block E
+  was measured with `skip_stars_and_paths=True`.
 
 The SA loss is a weighted sum of relative errors; the best graph seen is returned, then components
 are re-bridged.
@@ -360,7 +371,8 @@ Each round:
   small `rewire-budget` can't close the gap; motif counts can land well above target. Larger budget
   / better Stage-2 clustering control is the open item.
 - **Out of scope:** literals/datatypes (G6); semantic types (synthetic clusters only); depth-3 tree
-  templates.
+  templates; path template entropy for k≥4 (cost grows as O(Δ^(k-1)) per swap — prohibitive for
+  large k).
 
 ---
 
