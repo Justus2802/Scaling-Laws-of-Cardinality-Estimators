@@ -28,13 +28,17 @@ import numpy as np
 
 from ._constants import _RDF_TYPE
 from motif_counter import ExactMotifCounter, HybridMotifCounter, MotifCounter  # CCMotifCounter available as swap-in
-from .local_updates import _adj_inc, _adj_dec, _triangle_node_delta, _motif4_delta, _cycle_delta, _tree_entropy_delta, _path_entropy_delta, _entropy_from_freq
+from .local_updates import _adj_inc, _adj_dec, _triangle_node_delta, _motif4_delta, _cycle_delta, _star_count_delta, _tree_entropy_delta, _path_entropy_delta, _entropy_from_freq
 from ._logging import get_logger
 from .stage2 import _connect_components
 
 # ── Tuning constants (Stage-3 refinement) — adjust here ─────────────────────────
-MAX_TARGETED_SWAP_PROB = 0.5  # cap on the probability of attempting a triangle-closing swap
+MAX_TARGETED_SWAP_PROB = 0.5   # cap on the probability of attempting a triangle-closing swap
+MAX_STAR_TARGETED_PROB = 0.0   # cap on the probability of attempting a triangle-breaking swap for stars; 0 = disabled
 TEMP_FLOOR = 1e-10             # numerical floor on the SA temperature in the accept test
+# k values tracked for induced star counts in the SA loss.
+# Smaller sets are cheaper (O(Δ²) per swap per k); k=2..4 covers the most sensitive range.
+STAR_K_TRACKED: tuple[int, ...] = (2, 3, 4, 5)
 
 # ── Loss function weights — one per component ────────────────────────────────
 # Triangle and motif terms are normalised by target value (relative error in [0,∞]).
@@ -52,6 +56,7 @@ LOSS_WEIGHT_ASSORTATIVITY: float = 1.0
 LOSS_WEIGHT_CC_AVG:        float = 1.0
 LOSS_WEIGHT_TREE_ENTROPY:  float = 1.0
 LOSS_WEIGHT_PATH_ENTROPY:  float = 1.0
+LOSS_WEIGHT_STARS:         float = 0.0   # applied per k (k=2..STAR_K_TRACKED[-1]); 0 = disabled (stars are structurally set by Stage 2 degree distribution)
 
 # Lookup table used by _loss; keeps the function body concise.
 _MOTIF4_WEIGHTS: dict[tuple, float] = {
@@ -363,8 +368,37 @@ def refine(
 
     path_entropy_current = _entropy_from_freq(_path_freqs.get(3, {})) if use_path_entropy else 0.0
 
+    # ------------------------------------------------- induced k-star targets
+    # star_targets[k] = target count from Block E; only for k in STAR_K_TRACKED.
+    _star_targets: dict[int, int] = {}
+    if LOSS_WEIGHT_STARS > 0:
+        _star_counts_attr = getattr(target_e, "star_counts", None)
+        for k in STAR_K_TRACKED:
+            val = None
+            if isinstance(_star_counts_attr, dict):
+                val = _star_counts_attr.get(k)
+            if val is not None and val > 0:
+                _star_targets[k] = int(val)
+
+    use_stars = bool(_star_targets)
+    _star_max_k = max(STAR_K_TRACKED) if _star_targets else 2
+
+    # Initial star counts: compute from the undirected adjacency (adj tracks undirected neighbors).
+    # Use the same inclusion-exclusion used by the exact counter.
+    from .local_updates import _star_contributions as _sc  # noqa: PLC0415 (local import avoids cycle)
+
+    def _compute_star_counts(max_k: int) -> dict[int, int]:
+        totals: dict[int, int] = {}
+        for v in range(n):
+            for k, cnt in enumerate(_sc(adj, v, max_k)):
+                if cnt and k >= 2:
+                    totals[k] = totals.get(k, 0) + cnt
+        return totals
+
+    current_stars: dict[int, int] = _compute_star_counts(_star_max_k) if use_stars else {}
+
     # ------------------------------------------------------- loss function
-    def _loss(tri: int, motifs: dict, Q: float, cc: float, c5: int, c6: int, tree_h: float, path_h: float) -> float:
+    def _loss(tri: int, motifs: dict, Q: float, cc: float, c5: int, c6: int, tree_h: float, path_h: float, stars: dict) -> float:
         """SA objective: weighted sum of relative errors across all active targets.
 
         All terms use |current − target| / |target|.  A floor of 1e-9 guards
@@ -385,9 +419,12 @@ def refine(
             loss += LOSS_WEIGHT_TREE_ENTROPY * abs(tree_h - _target_tree_entropy) / max(1e-9, _target_tree_entropy)
         if use_path_entropy:
             loss += LOSS_WEIGHT_PATH_ENTROPY * abs(path_h - _target_path_entropy_k3) / max(1e-9, _target_path_entropy_k3)
+        if use_stars:
+            for k, tgt in _star_targets.items():
+                loss += LOSS_WEIGHT_STARS * abs(stars.get(k, 0) - tgt) / tgt
         return loss
 
-    current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6, tree_entropy_current, path_entropy_current)
+    current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6, tree_entropy_current, path_entropy_current, current_stars)
     best_loss = current_loss
     best_content = list(content_edge_data)
     best_accepted = 0
@@ -548,6 +585,95 @@ def refine(
             return None
         return i1, i2, s1, o1, s2, o2, p1
 
+    # hub_nodes: nodes with undirected degree ≥ min star k, sorted by degree descending.
+    # Used by _targeted_star_swap to find triangle-rich centers to de-cluster.
+    _min_star_k = min(_star_targets.keys()) if _star_targets else 2
+    _hub_nodes = sorted(
+        [v for v in range(n) if len(adj[v]) >= _min_star_k],
+        key=lambda v: -len(adj[v]),
+    )
+    # Keep only the top fraction of hubs (the ones with most to gain).
+    _hub_pool = _hub_nodes[:max(1, len(_hub_nodes) // 5)]
+
+    def _targeted_star_swap():
+        """Find a swap that breaks a triangle among the neighbors of a high-degree hub.
+
+        Picks a hub node v (high undirected degree), finds two neighbors u1, u2 that
+        are mutually connected (forming a triangle with v), then proposes redirecting
+        an edge *into* u2 from some other source s2 to a non-neighbor target instead.
+        After the swap, u1 and u2 are no longer connected, increasing v's induced
+        k-star contributions.
+
+        Specifically: pick edge s2→u2 (= i2) and an edge u1→o1 (= i1) with the same
+        predicate p.  The swap produces u1→u2 and s2→o1 — wait, that *closes* u1-u2.
+        Instead we want to *break* the u1-u2 edge by using it as i1 and pairing with
+        a random edge i2 that redirects u2 away from u1.
+
+        Strategy: pick edge i1 = (u1→u2) (the triangle edge to break), find any edge
+        i2 = (s2→o2) with the same predicate where o2 ∉ adj[u1] and s2 ≠ u2.
+        After swap: (u1→o2, s2→u2).  The u1–u2 undirected link is broken (u1 loses u2
+        as neighbor, s2 gains u2 as neighbor).  This increases v's induced star count.
+
+        Returns (i1, i2, s1, o1, s2, o2, p1) or None if no candidate found.
+        """
+        if not _hub_pool:
+            return None
+        v = _hub_pool[int(rng.integers(len(_hub_pool)))]
+        nbrs_v = list(adj[v].keys())
+        if len(nbrs_v) < 2:
+            return None
+        # Find a pair of mutually connected neighbors (triangle through v).
+        rng.shuffle(nbrs_v)
+        u1, u2 = None, None
+        for i, nb in enumerate(nbrs_v):
+            for nb2 in nbrs_v[i + 1:]:
+                if nb2 in adj[nb]:
+                    u1, u2 = nb, nb2
+                    break
+            if u1 is not None:
+                break
+        if u1 is None:
+            return None  # no triangle through v
+        # Find a directed edge u1→u2 (i1 to break).
+        u1_edges = []
+        for p_cand, src_map in edge_src_by_pred.items():
+            idxs = src_map.get(u1, [])
+            for idx in idxs:
+                _, tgt, _ = content_edge_data[idx]
+                if tgt == u2:
+                    u1_edges.append((idx, p_cand))
+        if not u1_edges:
+            # No directed edge u1→u2; try u2→u1 instead.
+            for p_cand, src_map in edge_src_by_pred.items():
+                idxs = src_map.get(u2, [])
+                for idx in idxs:
+                    _, tgt, _ = content_edge_data[idx]
+                    if tgt == u1:
+                        u1_edges.append((idx, p_cand))
+                        u1, u2 = u2, u1  # swap roles so i1 is u1→u2
+                        break
+                if u1_edges:
+                    break
+        if not u1_edges:
+            return None
+        i1, pred = u1_edges[int(rng.integers(len(u1_edges)))]
+        s1, o1, p1 = content_edge_data[i1]  # s1=u1, o1=u2
+        # Find a swap partner i2 = (s2→o2) with same predicate, where:
+        #   o2 ∉ adj[s1] (so we don't just recreate another inner edge)
+        #   s2 ≠ o1 and o2 ≠ s1 (no self-loops)
+        pool = rel_to_idxs.get(pred, [])
+        if len(pool) < 2:
+            return None
+        for _ in range(10):  # up to 10 tries to find a valid partner
+            i2 = pool[int(rng.integers(len(pool)))]
+            if i2 == i1:
+                continue
+            s2, o2, _ = content_edge_data[i2]
+            if s2 == o1 or o2 == s1 or o2 in adj[s1]:
+                continue
+            return i1, i2, s1, o1, s2, o2, p1
+        return None
+
     for step in range(budget):
         if step > 0 and step % 5_000 == 0:
             log.info(
@@ -563,6 +689,18 @@ def refine(
             result = _targeted_swap()
             if result is None:
                 targeted = False
+        # Attempt targeted triangle-breaking swap when stars are below target.
+        # Only attempted when not already doing a triangle-targeting swap.
+        if not targeted and use_stars:
+            star_deficit = sum(
+                max(0, tgt - current_stars.get(k, 0)) / tgt
+                for k, tgt in _star_targets.items()
+            ) / max(1, len(_star_targets))
+            p_star = float(min(MAX_STAR_TARGETED_PROB, star_deficit))
+            if rng.random() < p_star:
+                result = _targeted_star_swap()
+                if result is not None:
+                    targeted = True
         if not targeted:
             rel = swappable_rels[int(rng.integers(len(swappable_rels)))]
             pool = rel_to_idxs[rel]
@@ -614,7 +752,13 @@ def refine(
         else:
             _new_path_ents, _new_path_freqs = {}, _path_freqs
             new_path_h = path_entropy_current
-        new_loss = _loss(new_tri, new_motifs4, new_Q, new_cc, new_c5, new_c6, new_tree_h, new_path_h)
+        # Induced k-star delta: exact O(Δ²) per swap; only computed when stars are steered.
+        if use_stars:
+            _star_d = _star_count_delta(adj, s1, o1, s2, o2, max_k=_star_max_k)
+            new_stars = {k: current_stars.get(k, 0) + _star_d.get(k, 0) for k in _star_targets}
+        else:
+            new_stars = current_stars
+        new_loss = _loss(new_tri, new_motifs4, new_Q, new_cc, new_c5, new_c6, new_tree_h, new_path_h, new_stars)
 
         if new_loss < current_loss:
             accept = True
@@ -671,14 +815,16 @@ def refine(
                         break
                 path_entropy_current = new_path_h
                 _path_freqs = _new_path_freqs
+            if use_stars:
+                current_stars = new_stars
 
             do_remeasure = accepted % remeasure_interval == 0
             if not USE_INCREMENTAL_MOTIF4 and _motif4_targets and do_remeasure:
                 current_motifs4 = remeasure_motif_counter.count_motifs4(_build_und_graph())
-                current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6, tree_entropy_current, path_entropy_current)
+                current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6, tree_entropy_current, path_entropy_current, current_stars)
             if not USE_INCREMENTAL_CYCLES and (use_c5 or use_c6) and do_remeasure:
                 current_c5, current_c6 = _measure_cycles(_build_und_graph())
-                current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6, tree_entropy_current, path_entropy_current)
+                current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6, tree_entropy_current, path_entropy_current, current_stars)
 
             if CONVERGENCE_LOG_INTERVAL > 0 and accepted % CONVERGENCE_LOG_INTERVAL == 0:
                 _write_conv_row()

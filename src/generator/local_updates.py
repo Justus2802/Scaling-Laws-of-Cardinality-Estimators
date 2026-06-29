@@ -15,6 +15,7 @@ _motif4_delta               — Δ(4-node motif counts) for one swap
 _induced_paths              — induced (chordless) a→b paths up to a length
 _induced_cycles_through_pair — set of induced k-cycles containing a given vertex pair
 _cycle_delta                — Δ(induced 5-/6-cycle counts) for one swap
+_star_count_delta           — Δ(induced k-star counts) for one swap (exact, O(Δ²))
 _tree_entropy_delta         — Δ(depth-2 tree template entropy) and updated freq dict
 _path_entropy_delta         — Δ(k-hop path template entropy) for k=2..K and updated freq dicts
 
@@ -275,6 +276,119 @@ def _induced_cycles_through_pair(adj: list, a: int, b: int, k: int) -> set[froze
                 if ok:
                     found.add(frozenset(v))
     return found
+
+
+def _inner_edge_count(adj: list, v: int) -> int:
+    """Count edges among the neighbors of v (inner edges for induced-star computation)."""
+    nbrs = set(adj[v])
+    count = 0
+    for u in nbrs:
+        for w in adj[u]:
+            if w in nbrs and w > u:
+                count += 1
+    return count
+
+
+def _star_contributions(adj: list, v: int, max_k: int) -> list[int]:
+    """Induced k-star counts contributed by node v as center, for k=2..max_k.
+
+    Uses inclusion-exclusion over inner edges (edges between neighbors of v).
+    Triangle-free centers contribute C(d, k) exactly; others are corrected.
+    Returns list of length max_k+1 indexed by k (indices 0,1 unused).
+    """
+    nbrs_v = set(adj[v])
+    d = len(nbrs_v)
+    totals = [0] * (max_k + 1)
+    if d < 2:
+        return totals
+
+    inner_edges = [
+        (u, w)
+        for u in nbrs_v
+        for w in adj[u]
+        if w in nbrs_v and w > u
+    ]
+
+    if not inner_edges:
+        for k in range(2, min(d, max_k) + 1):
+            totals[k] = math.comb(d, k)
+        return totals
+
+    # Inclusion-exclusion: subtract subsets containing ≥1 inner edge
+    ie = len(inner_edges)
+    correction = [0] * (max_k + 1)
+    for mask in range(1, 1 << ie):
+        verts: set[int] = set()
+        bits = mask
+        sign_exp = 0
+        while bits:
+            idx = (bits & -bits).bit_length() - 1
+            u, w = inner_edges[idx]
+            verts.add(u)
+            verts.add(w)
+            sign_exp += 1
+            bits &= bits - 1
+        s = len(verts)
+        sign = (-1) ** (sign_exp + 1)
+        for k in range(s, min(d, max_k) + 1):
+            correction[k] += sign * math.comb(d - s, k - s)
+
+    for k in range(2, min(d, max_k) + 1):
+        totals[k] = math.comb(d, k) - correction[k]
+    return totals
+
+
+def _star_count_delta(
+    adj: list,
+    s1: int, o1: int, s2: int, o2: int,
+    max_k: int = 10,
+) -> dict[int, int]:
+    """Compute Δ(induced k-star counts) for k=2..max_k for swapping (s1,o1)↔(s2,o2).
+
+    Only nodes whose neighborhood structure changes can change their star
+    contributions: the four endpoint nodes s1, o1, s2, o2, and any node that
+    has both of a changed pair among its neighbors (because its inner-edge set
+    changes).  This is O(Δ²) total, matching the exactness of the counter.
+
+    Returns a dict {k: delta} with only nonzero entries.
+    """
+    # Nodes whose neighbor sets change: s1 loses o1/gains o2, s2 loses o2/gains o1.
+    # Their star contributions change because their degree changes — but degree is
+    # preserved (they keep the same total degree), so only inner-edge changes matter.
+    # Nodes that *contain* a changed pair {s1,o1},{s2,o2},{s1,o2},{s2,o1} as neighbors
+    # also change their inner-edge set.
+    affected: set[int] = {s1, o1, s2, o2}
+    for u in list(adj[s1]):
+        if u in adj[o1] or u in adj[o2]:
+            affected.add(u)
+    for u in list(adj[s2]):
+        if u in adj[o1] or u in adj[o2]:
+            affected.add(u)
+
+    before: dict[int, int] = {}
+    for v in affected:
+        for k, cnt in enumerate(_star_contributions(adj, v, max_k)):
+            if cnt:
+                before[k] = before.get(k, 0) + cnt
+
+    _adj_dec(adj, s1, o1)
+    _adj_dec(adj, s2, o2)
+    _adj_inc(adj, s1, o2)
+    _adj_inc(adj, s2, o1)
+
+    after: dict[int, int] = {}
+    for v in affected:
+        for k, cnt in enumerate(_star_contributions(adj, v, max_k)):
+            if cnt:
+                after[k] = after.get(k, 0) + cnt
+
+    _adj_dec(adj, s1, o2)
+    _adj_dec(adj, s2, o1)
+    _adj_inc(adj, s1, o1)
+    _adj_inc(adj, s2, o2)
+
+    return {k: after.get(k, 0) - before.get(k, 0) for k in set(before) | set(after)
+            if after.get(k, 0) != before.get(k, 0)}
 
 
 def _tree_entropy_delta(
