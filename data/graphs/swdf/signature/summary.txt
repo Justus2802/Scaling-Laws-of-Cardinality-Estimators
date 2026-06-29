@@ -7,15 +7,15 @@
   out-degree fit : alpha=2.4410  xmin=7.0
   in-degree fit  : alpha=2.3111  xmin=15.0
   relation Zipf  : exponent=1.5284  xmin=185.0
-  obj  mult-alpha skew-normal: loc=3.000 scale=0.596 shape=-5311498.175 cutoffs=[1.40,3.00]
-  subj mult-alpha skew-normal: loc=3.000 scale=0.753 shape=-17568446.419 cutoffs=[1.40,3.00]
+  obj  mult-alpha skew-normal: loc=3.000 scale=0.596 shape=-5755605.953 cutoffs=[1.40,3.00]
+  subj mult-alpha skew-normal: loc=3.000 scale=0.753 shape=-29470552.031 cutoffs=[1.40,3.00]
   CS-size offset : a_obj=0.1758  a_subj=0.1220
 
 === Reduced Block C: Schema & Co-occurrence (G3) ===
   num_classes        : 0
   class size power-law: alpha=nan  xmin=nan
-  subj co-occurrence : exp(rate=0.347, scale=32129.273)  density=0.1428
-  obj  co-occurrence : exp(rate=0.259, scale=20440.852)  density=0.0445
+  subj co-occurrence : exp(rate=0.347, scale=0.419)  density=0.1428
+  obj  co-occurrence : exp(rate=0.259, scale=0.266)  density=0.0445
   subj row entropy   : skew-normal(loc=3.205, scale=0.924, shape=-5.184)
   obj  row entropy   : skew-normal(loc=-0.000, scale=1.269, shape=2864286.169)
   P(r|t) spectrum    : exp(rate=nan, scale=nan)
@@ -25,12 +25,43 @@
   num_distinct_cs    : 1001
   CS frequency       : power-law(alpha=1.5770, xmin=1.0)
   CS size            : skew-normal(loc=2.426, scale=6.132, shape=5.517, cutoffs=[1.0,24.0])
+  inv_num_distinct_cs: 1024
+  inverse-CS freq    : power-law(alpha=1.4768, xmin=2.0)
   inverse-CS size    : skew-normal(loc=1.000, scale=1.606, shape=15378472.760, cutoffs=[1.0,15.0])
   two-step path count: trunc. power-law(alpha=1.1550, range=[1,640617])
+
+=== Reduced Block E: Motif Shape Distribution (G5) ===
+
+--- Subgraph counts ---
+  triangles:           20827
+  4-cycles:            7162501
+  5-cycles (est):      659117
+  6-cycles (est):      325558592
+  diamonds:            237858
+  K4:                  120
+  tailed triangles:    2619758
+
+--- Star counts (induced) ---
+  k=2: 61836443  k=3: 142691134138  k=4: 305227070062421  k=5: 541710937552198272  k=6: 811826027379012141056  k=7: 1061334937032243726516224  k=8: 1215369918070294530293235712  k=9: 1235032646247384903640533696512  k=10: 1137589653459753639392531984678912
+
+--- Path templates ---
+    k  zipf_alpha     entropy
+    2         nan     -0.0000
+    3      1.2503      0.0030
+    4      1.1120      0.0565
+    5      1.2022      0.8080
+    6      1.1565      1.3381
+    7      1.1713      2.3800
+    8      1.2001      2.4880
+    9         nan         nan
+   10         nan         nan
+
+--- Tree templates ---
+  zipf_alpha=1.0765  entropy=0.1041
 
 === Reduced Block F: Connectivity (G4) ===
   num_components            : 3
   largest_component_fraction: 0.9999
   clustering_coefficient    : 0.0385
   degree_assortativity      : -0.0545
-  shortest path             : skew-normal(loc=3.632, scale=1.215, shape=1.129)
+  shortest path             : max=7.0, mean=4.406, var=0.965

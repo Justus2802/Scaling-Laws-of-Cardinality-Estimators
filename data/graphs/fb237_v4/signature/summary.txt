@@ -14,8 +14,8 @@
 === Reduced Block C: Schema & Co-occurrence (G3) ===
   num_classes        : 0
   class size power-law: alpha=nan  xmin=nan
-  subj co-occurrence : exp(rate=0.223, scale=1712.920)  density=0.0898
-  obj  co-occurrence : exp(rate=0.189, scale=941.975)  density=0.0717
+  subj co-occurrence : exp(rate=0.223, scale=0.364)  density=0.0898
+  obj  co-occurrence : exp(rate=0.189, scale=0.200)  density=0.0717
   subj row entropy   : skew-normal(loc=3.145, scale=1.304, shape=-11.670)
   obj  row entropy   : skew-normal(loc=3.239, scale=1.627, shape=-9.025)
   P(r|t) spectrum    : exp(rate=nan, scale=nan)
@@ -24,39 +24,44 @@
 === Reduced Block D: Characteristic Sets & Two-step (G3) ===
   num_distinct_cs    : 2370
   CS frequency       : power-law(alpha=2.6583, xmin=1.0)
-  CS size            : skew-normal(loc=1.000, scale=3.927, shape=76847553.205, cutoffs=[1.0,20.0])
+  CS size            : skew-normal(loc=1.000, scale=3.927, shape=67964430.989, cutoffs=[1.0,20.0])
+  inv_num_distinct_cs: 1425
+  inverse-CS freq    : power-law(alpha=2.0353, xmin=2.0)
   inverse-CS size    : skew-normal(loc=1.000, scale=2.500, shape=20406449.748, cutoffs=[1.0,25.0])
   two-step path count: trunc. power-law(alpha=1.2796, range=[1,115200])
+
+=== Reduced Block E: Motif Shape Distribution (G5) ===
+
+--- Subgraph counts ---
+  triangles:           17114
+  4-cycles:            1609953
+  5-cycles (est):      3457411
+  6-cycles (est):      156044074
+  diamonds:            419534
+  K4:                  15038
+  tailed triangles:    5512162
+
+--- Star counts (induced) ---
+  k=2: 2936121  k=3: 671123714  k=4: 155311726868  k=5: 30460750447255  k=6: 4930222235044137  k=7: 691332614924740992  k=8: 84523669710987804672  k=9: 9294002503128291737600  k=10: 922056277506573325041664
+
+--- Path templates ---
+    k  zipf_alpha     entropy
+    2         nan     -0.0000
+    3      1.3889      0.0357
+    4      1.2274      0.4919
+    5      1.2583      1.4257
+    6      1.1546      2.4524
+    7      1.1795      3.2427
+    8      1.1997      4.1314
+    9      1.2728      5.0070
+   10      1.3699      5.7593
+
+--- Tree templates ---
+  zipf_alpha=1.0621  entropy=0.1149
 
 === Reduced Block F: Connectivity (G4) ===
   num_components            : 11
   largest_component_fraction: 0.9890
   clustering_coefficient    : 0.1483
   degree_assortativity      : -0.1547
-  shortest path             : skew-normal(loc=2.241, scale=1.534, shape=2.833)
-
-=== Reduced Block E: Motif Shape Distribution (G5) ===
-
---- Subgraph counts ---
-  triangles:           17114
-  4-cycles:            1437806
-  5-cycles (est):      3476550
-  6-cycles (est):      155871637
-  diamonds:            417637
-  K4:                  11859
-  tailed triangles:    5617326
-
---- Path templates ---
-    k  zipf_alpha     entropy
-    2         nan     -0.0000
-    3      1.3360      0.0180
-    4      1.2192      0.4956
-    5      1.2911      1.4428
-    6      1.2299      2.4980
-    7      1.2965      3.1264
-    8      1.3752      4.1720
-    9      1.5277      5.1328
-   10      1.6373      5.7178
-
---- Tree templates ---
-  zipf_alpha=1.0639  entropy=0.1200
+  shortest path             : max=8.0, mean=3.386, var=0.983
