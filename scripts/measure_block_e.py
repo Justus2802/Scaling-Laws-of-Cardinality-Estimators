@@ -29,7 +29,7 @@ _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO / "src"))
 
 from kg_io import load_kg
-from signature_reduced import BlockE
+from signature import BlockE
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 

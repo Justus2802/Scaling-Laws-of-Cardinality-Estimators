@@ -2,10 +2,9 @@
 across graphs.  One figure is produced per block; each subplot shows the
 per-graph values for a single feature, annotated with its name and block context.
 
-Both the full signature and the reduced signature (``--reduced``;
-signature_reduced, no motif block) are read from the canonical graph store
-data/graphs/. The full signature writes to data/graphs/distribution_plots/; the
-reduced one writes to data/graph_population/. ``--source`` / ``--out`` override either.
+The signature (``signature`` package, Blocks A–F) is read from the canonical graph
+store data/graphs/ and plots are written to data/graph_population/.
+``--source`` / ``--out`` override either.
 
 Signatures are discovered as ``<source>/*/signature.json`` (flat layout) or
 ``<source>/*/signature/signature.json`` (the data/graphs/<name>/signature/ bundle
@@ -33,34 +32,22 @@ _BLOCK_COLOURS: dict[str, str] = {
 }
 
 
-def _block_config(reduced: bool) -> tuple[list[tuple[str, type, str, str]], Path]:
-    """Return (block metadata, sig_out dir) for the selected signature.
+def _block_config() -> tuple[list[tuple[str, type, str, str]], Path]:
+    """Return (block metadata, sig_out dir) for the signature.
 
-    The reduced signature (``signature_reduced``) has no motif block (E); both
-    signatures read from the canonical store ``data/graphs/``. Imports are local
-    so the unused package isn't required to run either mode.
+    Reads from the canonical store ``data/graphs/``. The import is local so the
+    signature package isn't required just to print ``--help``.
     """
-    if reduced:
-        from signature_reduced import BlockA, BlockB, BlockC, BlockD, BlockF
-        blocks = [
-            ("a", BlockA, "Block A — Size & Vocabulary"),
-            ("b", BlockB, "Block B — Relation Freq & Multiplicity"),
-            ("c", BlockC, "Block C — Schema & Co-occurrence"),
-            ("d", BlockD, "Block D — Characteristic Sets & Two-step"),
-            ("f", BlockF, "Block F — Connectivity"),
-        ]
-        sig_out = ROOT / "data" / "graphs"
-    else:
-        from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
-        blocks = [
-            ("a", BlockA, "Block A — Size & Density"),
-            ("b", BlockB, "Block B — Degree Structure"),
-            ("c", BlockC, "Block C — Schema & Co-occurrence"),
-            ("d", BlockD, "Block D — Characteristic Sets"),
-            ("e", BlockE, "Block E — Motifs"),
-            ("f", BlockF, "Block F — Connectivity"),
-        ]
-        sig_out = ROOT / "data" / "graphs"
+    from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
+    blocks = [
+        ("a", BlockA, "Block A — Size & Vocabulary"),
+        ("b", BlockB, "Block B — Relation Freq & Multiplicity"),
+        ("c", BlockC, "Block C — Schema & Co-occurrence"),
+        ("d", BlockD, "Block D — Characteristic Sets & Two-step"),
+        ("e", BlockE, "Block E — Motifs"),
+        ("f", BlockF, "Block F — Connectivity"),
+    ]
+    sig_out = ROOT / "data" / "graphs"
     return [(c, cls, title, _BLOCK_COLOURS[c]) for c, cls, title in blocks], sig_out
 
 
@@ -181,30 +168,19 @@ def plot_block(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--reduced", action="store_true",
-        help="Plot the reduced signature (signature_reduced) instead of the full "
-             "signature; both are read from data/graphs/.",
-    )
-    parser.add_argument(
         "--source", type=Path, default=None,
-        help="Override the signature source directory (default per --reduced).",
+        help="Override the signature source directory (default: data/graphs/).",
     )
     parser.add_argument(
         "--out", type=Path, default=None,
-        help="Override the output directory (default: data/graph_population/ for "
-             "--reduced, else <source>/distribution_plots/).",
+        help="Override the output directory (default: data/graph_population/).",
     )
     args = parser.parse_args()
 
-    blocks, sig_out = _block_config(args.reduced)
+    blocks, sig_out = _block_config()
     if args.source is not None:
         sig_out = args.source
-    if args.out is not None:
-        out_dir = args.out
-    elif args.reduced:
-        out_dir = ROOT / "data" / "graph_population"
-    else:
-        out_dir = sig_out / "distribution_plots"
+    out_dir = args.out if args.out is not None else ROOT / "data" / "graph_population"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Scanning : {sig_out}")

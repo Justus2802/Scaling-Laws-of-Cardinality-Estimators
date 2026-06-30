@@ -37,7 +37,7 @@ from pathlib import Path
 
 import numpy as np
 
-from signature_reduced import BlockA, BlockB, BlockC, BlockD, BlockF
+from signature import BlockA, BlockB, BlockC, BlockD, BlockF
 
 # Repo root: src/signature_sampler.py -> parents[1] == repo root.
 _ROOT = Path(__file__).resolve().parents[1]

@@ -114,10 +114,9 @@ python scripts/sweep_viz.py experiments/fb237_v4_ind.jsonl --list-features
 ```
 
 ### `plot_signature_distributions.py`
-Loads all `signature.json` files from a corpus and plots component-wise value distributions across graphs (one figure per block). Reads from `data/graphs/` (full signature by default; `--reduced` reads the reduced signature).
+Loads all `signature.json` files from a corpus and plots component-wise value distributions across graphs (one figure per block, A–F). Reads from `data/graphs/` and writes to `data/graph_population/`.
 
 ```
 python scripts/plot_signature_distributions.py
-python scripts/plot_signature_distributions.py --reduced
 python scripts/plot_signature_distributions.py --source my_sigs/ --out my_plots/
 ```

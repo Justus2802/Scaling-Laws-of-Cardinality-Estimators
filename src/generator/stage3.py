@@ -56,7 +56,7 @@ LOSS_WEIGHT_ASSORTATIVITY: float = 1.0
 LOSS_WEIGHT_CC_AVG:        float = 1.0
 LOSS_WEIGHT_TREE_ENTROPY:  float = 1.0
 LOSS_WEIGHT_PATH_ENTROPY:  float = 1.0
-LOSS_WEIGHT_STARS:         float = 0.0   # applied per k (k=2..STAR_K_TRACKED[-1]); 0 = disabled (stars are structurally set by Stage 2 degree distribution)
+LOSS_WEIGHT_STARS:         float = 1.0   # applied per k (k=2..STAR_K_TRACKED[-1]); 0 = disabled (stars are structurally set by Stage 2 degree distribution)
 
 # Lookup table used by _loss; keeps the function body concise.
 _MOTIF4_WEIGHTS: dict[tuple, float] = {
@@ -457,6 +457,8 @@ def refine(
         _conv_fields.append("tree_entropy_err")
     if use_path_entropy:
         _conv_fields.append("path_entropy_k3_err")
+    if use_stars:
+        _conv_fields += [f"star_k{k}_err" for k in sorted(_star_targets)]
     # sig_ columns are only logged when the global remeasurement is enabled; they
     # hold ground-truth errors from remeasuring the full graph (see _write_conv_row).
     if CONVERGENCE_LOG_GLOBAL_REMEASURE:
@@ -505,6 +507,9 @@ def refine(
             row["path_entropy_k3_err"] = round(
                 abs(path_entropy_current - _target_path_entropy_k3) / max(1e-9, _target_path_entropy_k3), 6
             )
+        if use_stars:
+            for k, tgt in _star_targets.items():
+                row[f"star_k{k}_err"] = round(abs(current_stars.get(k, 0) - tgt) / max(1, tgt), 6)
 
         # Ground-truth errors via a full-graph remeasurement (expensive); only when
         # enabled. Otherwise the row carries just the locally tracked errors above.

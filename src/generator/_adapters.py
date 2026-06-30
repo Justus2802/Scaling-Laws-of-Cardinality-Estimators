@@ -1,6 +1,6 @@
 """Reduced-signature adapters.
 
-The reduced signature blocks (``signature_reduced``) store the *parameters of a
+The reduced signature blocks (``signature``) store the *parameters of a
 distribution family* rather than the raw moments the generator originally read
 from the full blocks. These helpers reconstruct the few quantities Stage 1
 needs from those parameters, so the Stage-1/2/3 logic stays unchanged.

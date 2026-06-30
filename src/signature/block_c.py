@@ -1,4 +1,22 @@
-"""Block C — Schema and relation correlation features."""
+"""Reduced Block C — Schema: co-occurrence & type-relation structure (G3).
+
+Replaces the raw 10 singular values with the **exponential-decay** parameters of
+each spectrum (rate λ, scale A), and the moment summaries of row entropy with a
+**skew-normal**. Adds the ``P(r|t)`` type-relation spectrum as its own exp-decay
+curve (the original conflated it with ``M``). Co-occurrence density and per-type
+relation entropy are kept as targets — functionals the lossy spectrum does not
+pin. The matrix/SVD/row-entropy machinery is reused from the original Block C.
+
+The ``M`` co-occurrence spectrum is **V-normalised** (the singular values are
+divided by the entity count, i.e. ``M/V``) so its ``scale`` is size-free; the
+normalised entries are the empirical joint ``P(i,j)`` = fraction of entities
+using both relations. This mirrors — but is distinct from — the *row*-normalised
+``P(r|t)`` spectrum (whose scale is already bounded); see
+``docs/notes/signature_size_dependence.md``.
+
+The unsummarised spectra and entropy samples are kept on the object so
+``visualize`` can overlay each fit on the data it was computed from.
+"""
 
 from collections import defaultdict
 
@@ -10,88 +28,105 @@ import scipy.sparse.linalg
 
 from ._logging import get_logger
 from ._block_base import SignatureBlock, _NOT_CALCULATED
-from ._utils import RDF_TYPE, _fit_powerlaw
+from ._utils import RDF_TYPE, PowerLawStats, _fit_powerlaw, _nan_power_law_stats
+from ._orig_block_c import BlockC as _OrigBlockC, _TOP_K_SV
+from ._fits import (
+    ExpDecayFit,
+    SkewNormFit,
+    fit_exp_decay_rank,
+    fit_skewnorm,
+    nan_exp_decay,
+    nan_skewnorm,
+)
+from ._plot_helpers import overlay_exp_decay_rank, overlay_skewnorm
 
 log = get_logger(__name__)
 
-_TOP_K_SV = 10  # number of singular values to keep
-
 
 class BlockC(SignatureBlock):
-    """Block C — Schema and relation correlation features of a KG.
-
-    Captures how relations co-occur on subjects and objects (via co-occurrence
-    matrices summarised by singular values, density, and row entropy), plus
-    type-level statistics derived from rdf:type triples.
+    """Reduced Block C — schema, co-occurrence and type-relation structure.
 
     Usage::
 
         c = BlockC().calculate(g)
-        c.as_vector()                      # fixed-length comparison vector
-        c.as_dict()                        # named key-value pairs
-        c.visualize()                      # interactive matplotlib figure
-        c.visualize(mode="text")           # CLI summary
-        c.visualize(path="out.png")        # save plot to file
+        c.as_vector()                # fixed-length comparison vector
+        c.as_dict()                  # named key-value pairs
+        c.visualize(mode="text")     # CLI summary
+        c.visualize(path="out.png")  # save plot to file
     """
 
     def __init__(self) -> None:
-        self._subj_singular_values = _NOT_CALCULATED
-        self._subj_cooc_density = _NOT_CALCULATED
-        self._subj_row_entropies = _NOT_CALCULATED
-        self._obj_singular_values = _NOT_CALCULATED
-        self._obj_cooc_density = _NOT_CALCULATED
-        self._obj_row_entropies = _NOT_CALCULATED
+        self._class_size_fit = _NOT_CALCULATED
         self._num_classes = _NOT_CALCULATED
-        self._class_size_zipf_exponent = _NOT_CALCULATED
-        self._class_sizes = _NOT_CALCULATED
-        self._type_relation_conditional = _NOT_CALCULATED
+        self._subj_cooc_exp = _NOT_CALCULATED
+        self._subj_cooc_density = _NOT_CALCULATED
+        self._subj_row_entropy_skew = _NOT_CALCULATED
+        self._obj_cooc_exp = _NOT_CALCULATED
+        self._obj_cooc_density = _NOT_CALCULATED
+        self._obj_row_entropy_skew = _NOT_CALCULATED
+        self._type_rel_spectrum_exp = _NOT_CALCULATED
+        self._per_type_entropy_exp = _NOT_CALCULATED
+        # unsummarised data kept for visualization
+        self._subj_singular_values = _NOT_CALCULATED
+        self._obj_singular_values = _NOT_CALCULATED
+        self._type_rel_singular_values = _NOT_CALCULATED
+        self._subj_row_entropies = _NOT_CALCULATED
+        self._obj_row_entropies = _NOT_CALCULATED
+        self._per_type_entropies = _NOT_CALCULATED
+
+    # ── properties ────────────────────────────────────────────────────────────
+    # Exp-decay / skew-normal fits are NamedTuples re-wrapped on access so they
+    # survive the JSON round-trip (which restores plain tuples).
 
     @property
-    def subj_singular_values(self) -> np.ndarray:
-        return self._require("subj_singular_values", self._subj_singular_values)
-
-    @property
-    def subj_cooc_density(self) -> float:
-        return self._require("subj_cooc_density", self._subj_cooc_density)
-
-    @property
-    def subj_row_entropies(self) -> np.ndarray:
-        return self._require("subj_row_entropies", self._subj_row_entropies)
-
-    @property
-    def obj_singular_values(self) -> np.ndarray:
-        return self._require("obj_singular_values", self._obj_singular_values)
-
-    @property
-    def obj_cooc_density(self) -> float:
-        return self._require("obj_cooc_density", self._obj_cooc_density)
-
-    @property
-    def obj_row_entropies(self) -> np.ndarray:
-        return self._require("obj_row_entropies", self._obj_row_entropies)
+    def class_size_fit(self) -> PowerLawStats:
+        return self._require("class_size_fit", self._class_size_fit)
 
     @property
     def num_classes(self) -> int:
         return self._require("num_classes", self._num_classes)
 
     @property
-    def class_size_zipf_exponent(self) -> float:
-        return self._require("class_size_zipf_exponent", self._class_size_zipf_exponent)
+    def subj_cooc_exp(self) -> ExpDecayFit:
+        return ExpDecayFit(*self._require("subj_cooc_exp", self._subj_cooc_exp))
 
     @property
-    def class_sizes(self) -> dict[str, int]:
-        return self._require("class_sizes", self._class_sizes)
+    def subj_cooc_density(self) -> float:
+        return self._require("subj_cooc_density", self._subj_cooc_density)
 
     @property
-    def type_relation_conditional(self) -> dict[str, dict[str, float]]:
-        return self._require("type_relation_conditional", self._type_relation_conditional)
+    def subj_row_entropy_skew(self) -> SkewNormFit:
+        return SkewNormFit(*self._require("subj_row_entropy_skew", self._subj_row_entropy_skew))
+
+    @property
+    def obj_cooc_exp(self) -> ExpDecayFit:
+        return ExpDecayFit(*self._require("obj_cooc_exp", self._obj_cooc_exp))
+
+    @property
+    def obj_cooc_density(self) -> float:
+        return self._require("obj_cooc_density", self._obj_cooc_density)
+
+    @property
+    def obj_row_entropy_skew(self) -> SkewNormFit:
+        return SkewNormFit(*self._require("obj_row_entropy_skew", self._obj_row_entropy_skew))
+
+    @property
+    def type_rel_spectrum_exp(self) -> ExpDecayFit:
+        return ExpDecayFit(*self._require("type_rel_spectrum_exp", self._type_rel_spectrum_exp))
+
+    @property
+    def per_type_entropy_exp(self) -> ExpDecayFit:
+        return ExpDecayFit(*self._require("per_type_entropy_exp", self._per_type_entropy_exp))
+
+    # ── core ──────────────────────────────────────────────────────────────────
 
     def calculate(self, g: igraph.Graph) -> "BlockC":
-        """Compute Block C (schema and relation correlation) of the graph signature.
+        """Compute reduced Block C (schema & co-occurrence).
 
-        Builds subject-side and object-side relation co-occurrence matrices, summarises
-        them by top-10 singular values, density, and per-row entropy, then extracts
-        type statistics from rdf:type triples.
+        Builds subject/object relation co-occurrence matrices and summarises each
+        by an exp-decay spectrum + density + skew-normal row entropy; fits the
+        class-size power-law; and builds the type→relation matrix to summarise
+        ``P(r|t)`` by its own spectrum plus a per-type entropy rank curve.
         """
         predicates: list[str] = g.es["predicate"] if g.ecount() > 0 else []
         unique_rels: list[str] = sorted(set(predicates))
@@ -105,121 +140,123 @@ class BlockC(SignatureBlock):
             subj_to_rels[e.source].add(ri)
             obj_to_rels[e.target].add(ri)
 
-        M_subj = self._build_cooc_matrix(subj_to_rels, num_relations)
-        M_obj = self._build_cooc_matrix(obj_to_rels, num_relations)
+        # Reuse the original matrix builder + SVD/density/row-entropy summary.
+        M_subj = _OrigBlockC._build_cooc_matrix(subj_to_rels, num_relations)
+        M_obj = _OrigBlockC._build_cooc_matrix(obj_to_rels, num_relations)
+        subj_svs, self._subj_cooc_density, subj_ent = _OrigBlockC._cooc_stats(M_subj)
+        obj_svs, self._obj_cooc_density, obj_ent = _OrigBlockC._cooc_stats(M_obj)
 
-        self._subj_singular_values, self._subj_cooc_density, self._subj_row_entropies = self._cooc_stats(M_subj)
-        log.info(
-            "Block C: computed subj_cooc stats (density=%.4f, top_sv=%.3f, n_rows=%d)",
-            self._subj_cooc_density,
-            float(self._subj_singular_values[0]) if self._subj_singular_values.size else 0.0,
-            self._subj_row_entropies.size,
-        )
-        self._obj_singular_values, self._obj_cooc_density, self._obj_row_entropies = self._cooc_stats(M_obj)
-        log.info(
-            "Block C: computed obj_cooc stats (density=%.4f, top_sv=%.3f, n_rows=%d)",
-            self._obj_cooc_density,
-            float(self._obj_singular_values[0]) if self._obj_singular_values.size else 0.0,
-            self._obj_row_entropies.size,
-        )
+        # Normalise the spectra by V so the exp-decay `scale` is size-free: M holds
+        # raw entity counts (top singular value ∝ V), so we divide by the entity
+        # count. SVD is linear, so svds(M/V) == svds(M)/V — scaling the returned
+        # singular values is identical to normalising M and avoids copying the
+        # sparse matrix. M/V entries are the empirical joint P(i,j) (fraction of
+        # entities using both relations i and j). Only `scale` shifts; the decay
+        # `rate` (log-rank slope) is invariant to this rescale. Density and row
+        # entropy come from the unnormalised M and are already size-free, so they
+        # are left as-is. See docs/notes/signature_size_dependence.md.
+        num_entities = len(g.vs.select(is_literal_eq=False))
+        norm = float(num_entities) if num_entities > 0 else 1.0
+        self._subj_singular_values = subj_svs / norm
+        self._obj_singular_values = obj_svs / norm
+        self._subj_row_entropies = subj_ent
+        self._obj_row_entropies = obj_ent
+        self._subj_cooc_exp = fit_exp_decay_rank(self._subj_singular_values)
+        self._obj_cooc_exp = fit_exp_decay_rank(self._obj_singular_values)
+        self._subj_row_entropy_skew = fit_skewnorm(subj_ent) if subj_ent.size else nan_skewnorm()
+        self._obj_row_entropy_skew = fit_skewnorm(obj_ent) if obj_ent.size else nan_skewnorm()
 
+        # --- Types ---
         subj_types: defaultdict[int, set[str]] = defaultdict(set)
         for e in g.es:
             if e["predicate"] == RDF_TYPE:
-                type_name: str = g.vs[e.target]["name"]
-                subj_types[e.source].add(type_name)
+                subj_types[e.source].add(g.vs[e.target]["name"])
 
         class_counts: defaultdict[str, int] = defaultdict(int)
         for types in subj_types.values():
             for t in types:
                 class_counts[t] += 1
-
-        self._class_sizes = dict(class_counts)
-        self._num_classes = len(self._class_sizes)
-        log.info(
-            "Block C: computed class_sizes (num_classes=%d)", self._num_classes
-        )
-        self._class_size_zipf_exponent = _fit_powerlaw(
-            np.array(list(self._class_sizes.values()), dtype=float)
-        ).alpha
-        log.info(
-            "Block C: computed class_size_zipf_exponent (alpha=%.4f)",
-            self._class_size_zipf_exponent,
+        self._num_classes = len(class_counts)
+        self._class_size_fit = (
+            _fit_powerlaw(np.array(list(class_counts.values()), dtype=float))
+            if class_counts else _nan_power_law_stats()
         )
 
-        type_rel_counts: defaultdict[str, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int))
-        for subj_vid, types in subj_types.items():
-            rels_used: list[str] = [g.es[eid]["predicate"] for eid in g.incident(subj_vid, mode="out")]
-            for t in types:
-                for r in rels_used:
-                    type_rel_counts[t][r] += 1
-
-        type_relation_conditional: dict[str, dict[str, float]] = {}
-        for t, rel_counts in type_rel_counts.items():
-            total = sum(rel_counts.values())
-            type_relation_conditional[t] = {r: cnt / total for r, cnt in rel_counts.items()}
-        self._type_relation_conditional = type_relation_conditional
-        log.info(
-            "Block C: computed type_relation_conditional (n_types=%d)",
-            len(type_relation_conditional),
+        # --- P(r|t) spectrum + per-type relation entropy ---
+        svs, spectrum_exp, per_type_exp, per_type_entropies = self._type_relation_stats(
+            g, subj_types, rel_idx, num_relations
         )
+        self._type_rel_singular_values = svs
+        self._type_rel_spectrum_exp = spectrum_exp
+        self._per_type_entropy_exp = per_type_exp
+        self._per_type_entropies = per_type_entropies
 
+        log.info(
+            "Block C: classes=%d, subj_cooc(rate=%.3f), type_rel(rate=%.3f)",
+            self._num_classes, self._subj_cooc_exp.rate, self._type_rel_spectrum_exp.rate,
+        )
         return self
 
     def as_vector(self) -> list[float]:
-        """Flatten to a fixed-length 29-vector for cross-KG comparison.
+        """Flatten to a fixed-length 23-vector for cross-KG comparison.
 
-        Layout (in order):
-          - subj_singular_values: 10 floats (zero-padded)
-          - subj_cooc_density, mean subj row entropy, std subj row entropy → 3 floats
-          - obj_singular_values: 10 floats (zero-padded)
-          - obj_cooc_density, mean obj row entropy, std obj row entropy → 3 floats
-          - num_classes, class_size_zipf_exponent, mean type-relation entropy → 3 floats
+        Layout: class power-law (alpha, xmin); num_classes; subj co-occurrence
+        (rate, scale, density); obj co-occurrence (rate, scale, density); subj
+        row-entropy skew-normal (5); obj row-entropy skew-normal (5); P(r|t)
+        spectrum (rate, scale); per-type entropy curve (rate, scale).
+
+        Attributes absent from stale serialized data are emitted as NaN.
         """
-        subj_ent = float(np.mean(self.subj_row_entropies)) if self.subj_row_entropies.size else 0.0
-        subj_ent_std = float(np.std(self.subj_row_entropies)) if self.subj_row_entropies.size else 0.0
-        obj_ent = float(np.mean(self.obj_row_entropies)) if self.obj_row_entropies.size else 0.0
-        obj_ent_std = float(np.std(self.obj_row_entropies)) if self.obj_row_entropies.size else 0.0
-
-        type_rel_entropies = []
-        for dist in self.type_relation_conditional.values():
-            p = np.array(list(dist.values()), dtype=float)
-            p = p[p > 0]
-            if p.size:
-                type_rel_entropies.append(-float(np.sum(p * np.log(p))))
-        mean_type_rel_ent = float(np.mean(type_rel_entropies)) if type_rel_entropies else 0.0
-
-        return (
-            list(self.subj_singular_values)
-            + [self.subj_cooc_density, subj_ent, subj_ent_std]
-            + list(self.obj_singular_values)
-            + [self.obj_cooc_density, obj_ent, obj_ent_std]
-            + [float(self.num_classes), self.class_size_zipf_exponent, mean_type_rel_ent]
-        )
+        return [
+            self._safe_scalar(lambda: self.class_size_fit.alpha),
+            self._safe_scalar(lambda: self.class_size_fit.xmin),
+            self._safe_scalar(lambda: self.num_classes),
+            self._safe_scalar(lambda: self.subj_cooc_exp.rate),
+            self._safe_scalar(lambda: self.subj_cooc_exp.scale),
+            self._safe_scalar(lambda: self.subj_cooc_density),
+            self._safe_scalar(lambda: self.obj_cooc_exp.rate),
+            self._safe_scalar(lambda: self.obj_cooc_exp.scale),
+            self._safe_scalar(lambda: self.obj_cooc_density),
+            *self._safe_iter(lambda: self.subj_row_entropy_skew, 5),
+            *self._safe_iter(lambda: self.obj_row_entropy_skew, 5),
+            self._safe_scalar(lambda: self.type_rel_spectrum_exp.rate),
+            self._safe_scalar(lambda: self.type_rel_spectrum_exp.scale),
+            self._safe_scalar(lambda: self.per_type_entropy_exp.rate),
+            self._safe_scalar(lambda: self.per_type_entropy_exp.scale),
+        ]
 
     @classmethod
     def feature_names(cls) -> list[str]:
         """Return feature names in the same order as :meth:`as_vector`."""
-        names: list[str] = []
-        names += [f"subj_singular_value_{i:02d}" for i in range(1, _TOP_K_SV + 1)]
-        names += ["subj_cooc_density", "subj_row_entropy_mean", "subj_row_entropy_std"]
-        names += [f"obj_singular_value_{i:02d}" for i in range(1, _TOP_K_SV + 1)]
-        names += ["obj_cooc_density", "obj_row_entropy_mean", "obj_row_entropy_std"]
-        names += ["num_classes", "class_size_zipf_exponent", "mean_type_relation_entropy"]
+        names = [
+            "class_size_alpha", "class_size_xmin",
+            "num_classes",
+            "subj_cooc_rate", "subj_cooc_scale", "subj_cooc_density",
+            "obj_cooc_rate", "obj_cooc_scale", "obj_cooc_density",
+        ]
+        for side in ("subj", "obj"):
+            names += [
+                f"{side}_row_entropy_loc", f"{side}_row_entropy_scale",
+                f"{side}_row_entropy_shape", f"{side}_row_entropy_lo",
+                f"{side}_row_entropy_hi",
+            ]
+        names += [
+            "type_rel_spectrum_rate", "type_rel_spectrum_scale",
+            "per_type_entropy_rate", "per_type_entropy_scale",
+        ]
         return names
 
     @classmethod
     def get_na_vec(cls) -> list[float]:
-        """Return a 29-element NaN vector (same length as as_vector())."""
-        return [float("nan")] * 29
+        """Return a 23-element NaN vector (same length as as_vector())."""
+        return [float("nan")] * 23
 
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
-        """Display or save diagnostics for this block's computed features.
+        """Display or save diagnostics for reduced Block C.
 
         Args:
             mode: "plot" for a matplotlib figure, "text" for a CLI summary.
-            path: if given, write output to this file path instead of
-                  displaying interactively (savefig for plot, write for text).
+            path: write to this file instead of displaying interactively.
         """
         if mode == "text":
             self._visualize_text(path)
@@ -231,46 +268,79 @@ class BlockC(SignatureBlock):
     # ── private helpers ───────────────────────────────────────────────────────
 
     @staticmethod
-    def _short_uri(uri: str) -> str:
-        return uri.split("/")[-1].split("#")[-1]
+    def _type_relation_stats(
+        g: igraph.Graph,
+        subj_types: dict[int, set[str]],
+        rel_idx: dict[str, int],
+        num_relations: int,
+    ) -> tuple[np.ndarray, ExpDecayFit, ExpDecayFit, np.ndarray]:
+        """Build the type→relation matrix and summarise P(r|t).
+
+        Returns the raw singular values of the ``T×R`` matrix, their exp-decay
+        fit, the exp-decay fit of the per-type relation-entropy rank curve, and
+        the raw per-type entropies.
+        """
+        empty = np.array([], dtype=float)
+        if not subj_types or num_relations == 0:
+            return empty, nan_exp_decay(), nan_exp_decay(), empty
+
+        types: list[str] = sorted({t for ts in subj_types.values() for t in ts})
+        type_idx: dict[str, int] = {t: i for i, t in enumerate(types)}
+
+        # Type×relation usage counts: for each typed subject, the relations it uses.
+        counts: defaultdict[tuple[int, int], int] = defaultdict(int)
+        for subj_vid, ts in subj_types.items():
+            rels_used = [g.es[eid]["predicate"] for eid in g.incident(subj_vid, mode="out")]
+            for t in ts:
+                ti = type_idx[t]
+                for r in rels_used:
+                    counts[(ti, rel_idx[r])] += 1
+        if not counts:
+            return empty, nan_exp_decay(), nan_exp_decay(), empty
+
+        rows = np.fromiter((ti for ti, _ in counts), dtype=int, count=len(counts))
+        cols = np.fromiter((ri for _, ri in counts), dtype=int, count=len(counts))
+        data = np.fromiter(counts.values(), dtype=float, count=len(counts))
+        M = scipy.sparse.csr_matrix((data, (rows, cols)), shape=(len(types), num_relations))
+
+        # P(r|t) = row-normalised type×relation matrix; summarise by its spectrum.
+        row_sums = np.asarray(M.sum(axis=1)).ravel()
+        row_sums[row_sums == 0] = 1.0
+        P = M.multiply(1.0 / row_sums[:, None]).tocsr()
+        k = min(_TOP_K_SV, min(P.shape) - 1)
+        if k > 0 and P.nnz > 0:
+            svs = np.sort(scipy.sparse.linalg.svds(
+                P.astype(float), k=k, return_singular_vectors=False))[::-1]
+        else:
+            svs = empty
+        spectrum = fit_exp_decay_rank(svs)
+
+        # Per-type relation entropy H(r|t), as a rank curve (top = most diffuse).
+        entropies: list[float] = []
+        P_lil = P.tolil()
+        for i in range(len(types)):
+            p = np.asarray(P_lil.getrow(i).todense(), dtype=float).ravel()
+            p = p[p > 0]
+            if p.size:
+                entropies.append(-float(np.sum(p * np.log(p))))
+        per_type_entropies = np.array(entropies, dtype=float)
+        per_type_exp = fit_exp_decay_rank(per_type_entropies)
+
+        return svs, spectrum, per_type_exp, per_type_entropies
 
     def _visualize_text(self, path: str | None) -> None:
-        lines: list[str] = []
-        lines.append("=== Block C: Schema and Relation Correlation ===\n")
-
-        lines.append("--- Subject-side co-occurrence ---")
-        lines.append(f"  density:       {self.subj_cooc_density:.4f}")
-        lines.append(f"  top SVs:       {', '.join(f'{v:.3f}' for v in self.subj_singular_values if v > 0) or '(none)'}")
-        if self.subj_row_entropies.size:
-            lines.append(
-                f"  row entropy:   mean={np.mean(self.subj_row_entropies):.4f}"
-                f"  std={np.std(self.subj_row_entropies):.4f}"
-            )
-
-        lines.append("\n--- Object-side co-occurrence ---")
-        lines.append(f"  density:       {self.obj_cooc_density:.4f}")
-        lines.append(f"  top SVs:       {', '.join(f'{v:.3f}' for v in self.obj_singular_values if v > 0) or '(none)'}")
-        if self.obj_row_entropies.size:
-            lines.append(
-                f"  row entropy:   mean={np.mean(self.obj_row_entropies):.4f}"
-                f"  std={np.std(self.obj_row_entropies):.4f}"
-            )
-
-        lines.append(f"\n--- Type statistics ({self.num_classes} classes) ---")
-        lines.append(f"  class_size_zipf_exponent: {self.class_size_zipf_exponent:.4f}")
-        if self.class_sizes:
-            top_classes = sorted(self.class_sizes.items(), key=lambda x: x[1], reverse=True)[:10]
-            lines.append("  top classes by size:")
-            for uri, cnt in top_classes:
-                lines.append(f"    {self._short_uri(uri):<40s}  {cnt}")
-
-        if self.type_relation_conditional:
-            lines.append("\n--- P(r | type) — top relations per type ---")
-            for t_uri, dist in sorted(self.type_relation_conditional.items()):
-                top_rels = sorted(dist.items(), key=lambda x: x[1], reverse=True)[:5]
-                rel_str = ", ".join(f"{self._short_uri(r)}={p:.2f}" for r, p in top_rels)
-                lines.append(f"  {self._short_uri(t_uri):<30s}  {rel_str}")
-
+        s, o = self.subj_row_entropy_skew, self.obj_row_entropy_skew
+        lines = [
+            "=== Reduced Block C: Schema & Co-occurrence (G3) ===",
+            f"  num_classes        : {self.num_classes}",
+            f"  class size power-law: alpha={self.class_size_fit.alpha:.4f}  xmin={self.class_size_fit.xmin}",
+            f"  subj co-occurrence : exp(rate={self.subj_cooc_exp.rate:.3f}, scale={self.subj_cooc_exp.scale:.3f})  density={self.subj_cooc_density:.4f}",
+            f"  obj  co-occurrence : exp(rate={self.obj_cooc_exp.rate:.3f}, scale={self.obj_cooc_exp.scale:.3f})  density={self.obj_cooc_density:.4f}",
+            f"  subj row entropy   : skew-normal(loc={s.loc:.3f}, scale={s.scale:.3f}, shape={s.shape:.3f})",
+            f"  obj  row entropy   : skew-normal(loc={o.loc:.3f}, scale={o.scale:.3f}, shape={o.shape:.3f})",
+            f"  P(r|t) spectrum    : exp(rate={self.type_rel_spectrum_exp.rate:.3f}, scale={self.type_rel_spectrum_exp.scale:.3f})",
+            f"  per-type entropy   : exp(rate={self.per_type_entropy_exp.rate:.3f}, scale={self.per_type_entropy_exp.scale:.3f})",
+        ]
         text = "\n".join(lines)
         if path is None:
             print(text)
@@ -280,66 +350,41 @@ class BlockC(SignatureBlock):
 
     def _visualize_plot(self, path: str | None) -> None:
         try:
-            fig, axes = plt.subplots(2, 2, figsize=(12, 9))
+            fig, axes = plt.subplots(2, 3, figsize=(16, 9))
 
-            # top-left: singular values for both sides
-            ax = axes[0, 0]
-            x = np.arange(1, _TOP_K_SV + 1)
-            ax.bar(x - 0.2, self.subj_singular_values, width=0.4, label="subject-side", color="steelblue")
-            ax.bar(x + 0.2, self.obj_singular_values,  width=0.4, label="object-side",  color="darkorange", alpha=0.8)
-            ax.set_xlabel("rank")
-            ax.set_ylabel("singular value")
-            ax.set_title("Top singular values of co-occurrence matrices")
-            ax.legend()
+            # Row 0: spectra (raw singular values + exp-decay fit).
+            for ax, svs, fit, title in [
+                (axes[0, 0], self._subj_singular_values, self.subj_cooc_exp, "Subject co-occurrence spectrum"),
+                (axes[0, 1], self._obj_singular_values, self.obj_cooc_exp, "Object co-occurrence spectrum"),
+                (axes[0, 2], self._type_rel_singular_values, self.type_rel_spectrum_exp, "P(r|t) spectrum"),
+            ]:
+                drew = overlay_exp_decay_rank(ax, self._require("svs", svs), fit, label="singular values")
+                if not drew:
+                    ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
+                ax.set_xlabel("rank")
+                ax.set_ylabel("singular value")
+                ax.set_title(title)
 
-            # top-right: row entropy distributions
-            ax = axes[0, 1]
-            if self.subj_row_entropies.size:
-                ax.hist(self.subj_row_entropies, bins=20, alpha=0.7, label="subject-side", color="steelblue")
-            if self.obj_row_entropies.size:
-                ax.hist(self.obj_row_entropies,  bins=20, alpha=0.5, label="object-side",  color="darkorange")
-            ax.set_xlabel("row entropy (nats)")
-            ax.set_ylabel("count (relations)")
-            ax.set_title("Row entropy distribution of co-occurrence matrices")
-            ax.legend()
+            # Row 1: row entropies (skew-normal) and per-type entropy (exp-decay).
+            for ax, ent, fit, title, color in [
+                (axes[1, 0], self._subj_row_entropies, self.subj_row_entropy_skew, "Subject row entropy", "steelblue"),
+                (axes[1, 1], self._obj_row_entropies, self.obj_row_entropy_skew, "Object row entropy", "darkorange"),
+            ]:
+                drew = overlay_skewnorm(ax, self._require("ent", ent), fit, color=color)
+                if not drew:
+                    ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
+                ax.set_xlabel("row entropy (nats)")
+                ax.set_ylabel("count (relations)")
+                ax.set_title(title)
 
-            # bottom-left: class size distribution
-            ax = axes[1, 0]
-            if self.class_sizes:
-                sizes = sorted(self.class_sizes.values(), reverse=True)
-                ax.bar(range(1, len(sizes) + 1), sizes, color="mediumseagreen")
-                ax.set_xlabel("class rank")
-                ax.set_ylabel("number of entities")
-                ax.set_title(f"Class size distribution ({self.num_classes} classes)")
-            else:
-                ax.set_title("Class size distribution (no rdf:type triples)")
-                ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
-
-            # bottom-right: mean P(r|type) entropy per type
-            ax = axes[1, 1]
-            if self.type_relation_conditional:
-                entropies = []
-                labels = []
-                for t_uri, dist in sorted(self.type_relation_conditional.items()):
-                    p = np.array(list(dist.values()), dtype=float)
-                    p = p[p > 0]
-                    entropies.append(-float(np.sum(p * np.log(p))) if p.size else 0.0)
-                    labels.append(self._short_uri(t_uri))
-                order = np.argsort(entropies)[::-1]
-                top_n = min(20, len(order))
-                ax.barh(
-                    range(top_n),
-                    [entropies[i] for i in order[:top_n]],
-                    color="mediumpurple",
-                )
-                ax.set_yticks(range(top_n))
-                ax.set_yticklabels([labels[i] for i in order[:top_n]], fontsize=8)
-                ax.invert_yaxis()
-                ax.set_xlabel("H(r | type) (nats)")
-                ax.set_title("Per-type relation entropy (top 20)")
-            else:
-                ax.set_title("Per-type relation entropy (no rdf:type triples)")
-                ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
+            ax = axes[1, 2]
+            drew = overlay_exp_decay_rank(ax, self._require("per_type", self._per_type_entropies),
+                                          self.per_type_entropy_exp, label="H(r|type)")
+            if not drew:
+                ax.text(0.5, 0.5, "no rdf:type", ha="center", va="center", transform=ax.transAxes)
+            ax.set_xlabel("type rank")
+            ax.set_ylabel("H(r | type) (nats)")
+            ax.set_title("Per-type relation entropy")
 
             plt.tight_layout()
             if path is None:
@@ -350,54 +395,3 @@ class BlockC(SignatureBlock):
         except Exception as exc:
             log.warning("Block C: plot failed: %s", exc, exc_info=True)
             plt.close("all")
-
-    @staticmethod
-    def _build_cooc_matrix(
-        entity_to_rels: dict[int, set[int]],
-        num_relations: int,
-    ) -> scipy.sparse.csr_matrix:
-        """Build a relation co-occurrence count matrix from a mapping entity -> {rel_idx}."""
-        rows, cols, data = [], [], []
-        for rel_set in entity_to_rels.values():
-            rel_list = list(rel_set)
-            for ri in rel_list:
-                for rj in rel_list:
-                    rows.append(ri)
-                    cols.append(rj)
-                    data.append(1)
-        if not rows:
-            return scipy.sparse.csr_matrix((num_relations, num_relations), dtype=np.int32)
-        return scipy.sparse.csr_matrix(
-            (data, (rows, cols)),
-            shape=(num_relations, num_relations),
-            dtype=np.int32,
-        )
-
-    @staticmethod
-    def _cooc_stats(
-        M: scipy.sparse.csr_matrix,
-    ) -> tuple[np.ndarray, float, np.ndarray]:
-        """Return (top-k singular values padded to _TOP_K_SV, density, row entropies)."""
-        n_rows, n_cols = M.shape
-        total_cells = n_rows * n_cols
-        density = M.nnz / total_cells if total_cells > 0 else 0.0
-
-        k = min(_TOP_K_SV, min(n_rows, n_cols) - 1)
-        svs = np.zeros(_TOP_K_SV)
-        if k > 0 and M.nnz > 0:
-            computed = scipy.sparse.linalg.svds(
-                M.astype(float), k=k, return_singular_vectors=False
-            )
-            computed = np.sort(computed)[::-1]
-            svs[:len(computed)] = computed
-
-        row_entropies = np.zeros(n_rows)
-        for i in range(n_rows):
-            row = np.asarray(M.getrow(i).todense(), dtype=float).ravel()
-            s = row.sum()
-            if s > 0:
-                p = row / s
-                p = p[p > 0]
-                row_entropies[i] = -np.sum(p * np.log(p))
-
-        return svs, density, row_entropies

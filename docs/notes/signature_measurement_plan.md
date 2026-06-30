@@ -3,7 +3,7 @@
 Branch: `feat/measure-reduced-signature`. Implements
 [../signature.md](../signature.md). **Integration mode: coexisting module**
 (revised from the original in-place *replace*). The reduced signature lives in a new
-sibling package `src/signature_reduced/` that reuses the existing block infrastructure;
+sibling package `src/signature/` that reuses the existing block infrastructure;
 the original `src/signature/` package and `generator.py` are left untouched, so both
 signatures remain runnable side by side. See **Realised implementation** below.
 
@@ -13,7 +13,7 @@ many / how often), not redundant.
 
 ## Realised implementation (coexisting module)
 
-Built as `src/signature_reduced/`, importing the shared base from `signature` (the
+Built as `src/signature/`, importing the shared base from `signature` (the
 `SignatureBlock` ABC with its `as_dict`/`to_serializable`/`from_serializable`,
 `_serialize`, `_logging`, and `_utils`'s `_fit_powerlaw`/`PowerLawStats`). Scope =
 Blocks **A, B, C, D, F**; Block **E (motifs) is deferred**. Library-backed fits live in

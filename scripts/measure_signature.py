@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from signature import compute_signature, _ALL_BLOCKS
+from signature import compute_reduced_signature as compute_signature, _ALL_BLOCKS
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 

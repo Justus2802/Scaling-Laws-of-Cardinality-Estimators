@@ -44,8 +44,8 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 sys.path.insert(0, os.path.dirname(__file__))  # for the sibling oracle module
-from signature import BlockE
-from signature.block_e import _LARGE_N
+from signature._orig_block_e import BlockE
+from signature._orig_block_e import _LARGE_N
 from _block_e_library_oracle import load_graph
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

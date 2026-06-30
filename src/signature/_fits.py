@@ -24,7 +24,7 @@ import scipy.stats
 
 # Reuse the existing power-law fitter and the shared minimum-sample threshold so
 # the two signatures agree on when a fit is trustworthy.
-from signature._utils import MIN_SAMPLES_FOR_FIT, _fit_powerlaw
+from ._utils import MIN_SAMPLES_FOR_FIT, _fit_powerlaw
 
 # Rank curves (singular-value spectra, per-type entropy) are inherently short —
 # only a handful of ranks exist — so they use a smaller minimum than the
@@ -33,22 +33,32 @@ _MIN_RANK_POINTS = 3
 
 _NAN = float("nan")
 
+# Probability levels at which sample distributions are summarised as a quantile
+# function (the non-parametric replacement for the skew-normal fits). The first
+# and last levels (0.0 / 1.0) are the lower/upper clip bounds, so the quantile
+# vector folds in the old truncation. Kept as a module constant — not stored per
+# fit — so the feature-vector / JSON length stays fixed at ``len(QUANTILE_LEVELS)``.
+QUANTILE_LEVELS = (0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0)
+
 
 # ── return types ───────────────────────────────────────────────────────────────
 
 
-class SkewNormFit(NamedTuple):
-    """Skew-normal fit with hard truncation bounds.
+class QuantileFit(NamedTuple):
+    """Empirical quantile function evaluated at :data:`QUANTILE_LEVELS`.
 
-    ``loc`` (ξ), ``scale`` (ω) and ``shape`` (α_skew) are the scipy
-    parameterisation; ``lo``/``hi`` are the lower/upper cutoffs the quantity is
-    truncated to (observed range, or fixed bounds when supplied).
+    Each field is the sample quantile at the corresponding level; ``q0``/``q100``
+    are the min/max (the truncation cutoffs). The values are non-decreasing by
+    construction, so they double as an invertible CDF for inverse-transform
+    sampling and their L1 difference is the Wasserstein-1 distance.
     """
-    loc: float
-    scale: float
-    shape: float
-    lo: float
-    hi: float
+    q0: float
+    q10: float
+    q25: float
+    q50: float
+    q75: float
+    q90: float
+    q100: float
 
 
 class ExpDecayFit(NamedTuple):
@@ -74,9 +84,13 @@ class ZipfFit(NamedTuple):
     x_min: float
 
 
-def nan_skewnorm() -> SkewNormFit:
-    """Return the canonical 'fit unavailable' skew-normal value."""
-    return SkewNormFit(_NAN, _NAN, _NAN, _NAN, _NAN)
+# The NamedTuple field count must track the level grid (they are splatted together).
+assert len(QuantileFit._fields) == len(QUANTILE_LEVELS)
+
+
+def nan_quantiles() -> QuantileFit:
+    """Return the canonical 'fit unavailable' quantile value (all NaN)."""
+    return QuantileFit(*([_NAN] * len(QUANTILE_LEVELS)))
 
 
 def nan_exp_decay() -> ExpDecayFit:

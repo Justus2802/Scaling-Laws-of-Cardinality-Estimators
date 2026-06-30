@@ -1,6 +1,6 @@
 # The Reduced, Non-Over-Determined Signature
 
-Status: **implemented** as the `signature_reduced` package (Blocks A, B, C, D, E, F).
+Status: **implemented** as the `signature` package (Blocks A, B, C, D, E, F).
 This document is the design **and the reasoning** behind that
 signature. For the concrete module/feature reference jump to
 [Implemented module](#implemented-module); for the per-block measurement assumptions see
@@ -13,8 +13,11 @@ below as "the notes"). For which features scale with graph size vs. which are si
 
 ## Implemented module
 
-`src/signature_reduced/` is a coexisting sibling of `signature/` that reuses its block
-infrastructure (the `SignatureBlock` ABC with `as_dict` / `to_serializable`, JSON
+`src/signature/` is the signature package (Blocks A–F). The public blocks are the reduced,
+non-over-determined measurements; the over-determined "full" measurement each block reduces
+from lives alongside as an internal `_orig_block_*` module (e.g. `_orig_block_e.py`), which the
+public reduced block delegates to. The package reuses a shared block infrastructure (the
+`SignatureBlock` ABC with `as_dict` / `to_serializable`, JSON
 serialization, logging, and the `powerlaw` fitter). Library-backed distribution fits live
 in `_fits.py` (`scipy.stats.skewnorm`, `scipy.stats.linregress`, the `powerlaw` package);
 `_plot_helpers.py` overlays each fit on the raw data it was computed from — every block

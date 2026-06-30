@@ -8,7 +8,7 @@ import igraph
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from kg_io import load_kg
-from signature import BlockF
+from signature._orig_block_f import BlockF
 
 _VECTOR_LEN = 6
 

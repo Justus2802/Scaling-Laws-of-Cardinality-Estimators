@@ -7,7 +7,7 @@ build records) in [`notes/`](notes/).
 ## Implemented
 
 - **[signature.md](signature.md)** — the reduced, non-over-determined signature
-  (`src/signature_reduced/`): the implemented module reference **and** the reasoning behind
+  (`src/signature/`): the implemented module reference **and** the reasoning behind
   it (non-over-determination, the derivability criterion, the multiplicity↔degree
   investigation, and the per-group G0–G6 justification). Start here.
 - **[generator.md](generator.md)** — the `kgsynth` generator (`src/generator/`): the three-stage
@@ -19,11 +19,13 @@ build records) in [`notes/`](notes/).
   pattern shared by every block (lifecycle methods, the `_NOT_CALCULATED` sentinel,
   property guards, `visualize` split, logging conventions, selective block computation).
 
-Two signatures coexist: the original full signature (`src/signature/`,
-`scripts/measure_signature.py`) and the reduced one (`src/signature_reduced/`,
-`scripts/measure_signature_reduced.py`). Both write a `signature/` directory next
-to each graph file (`data/graphs/<name>/signature/`). `scripts/measure_all_raw.py`
-runs the reduced signature over all raw KGs by default; pass `--full` for the full one.
+A single `signature` package (`src/signature/`) provides the public Blocks A–F as the
+reduced, non-over-determined measurements; the over-determined "full" measurements are
+retained internally as `_orig_block_*` modules (the reduced blocks delegate to them, and the
+`test_signature_block_*` tests exercise them directly). Both `scripts/measure_signature.py`
+and `scripts/measure_signature_reduced.py` now produce the reduced signature and write a
+`signature/` directory next to each graph file (`data/graphs/<name>/signature/`).
+`scripts/measure_all_raw.py` runs it over all raw KGs.
 
 ## Plans (future)
 

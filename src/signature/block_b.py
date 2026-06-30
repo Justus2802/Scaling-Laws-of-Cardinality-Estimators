@@ -1,4 +1,17 @@
-"""Block B — Degree structure features."""
+"""Reduced Block B — Relation frequency & per-relation multiplicity (G1/G2/G2b).
+
+Stores the *shape* of each relation's fan-out/fan-in rather than redundant
+moments: the spread of per-relation power-law exponents as a skew-normal, the
+relation-usage frequency as a Zipf exponent, and the CS-size→multiplicity offset
+``a`` (G2b) that injects the out-degree-shaping correlation the marginals
+discard. Aggregate out/in-degree power-laws are kept as *targets* (a compound
+sum the marginals do not pin). ``functionality`` and the multiplicity *scale*
+are dropped — both are guaranteed by the stored law and edge conservation.
+
+The unsummarised inputs to the fits (the per-relation exponents and the degree
+sequences) are kept on the object so ``visualize`` can overlay each fit on the
+data it came from.
+"""
 
 from collections import defaultdict
 
@@ -8,47 +21,55 @@ import numpy as np
 
 from ._logging import get_logger
 from ._block_base import SignatureBlock, _NOT_CALCULATED
-from ._utils import (
-    MIN_SAMPLES_FOR_FIT,
-    PowerLawStats,
-    _fit_powerlaw,
-    _nan_power_law_stats,
-    _summarize_values,
+from ._utils import MIN_SAMPLES_FOR_FIT, PowerLawStats, _fit_powerlaw
+from ._orig_block_b import BlockB as _OrigBlockB
+from ._fits import (
+    SkewNormFit,
+    ZipfFit,
+    fit_skewnorm,
+    fit_zipf,
+    fit_cs_size_offset,
+    nan_zipf,
 )
+from ._plot_helpers import overlay_skewnorm
 
 log = get_logger(__name__)
 
-_DEGREE_HIST_LOG_SCALE: bool = False  # set False for linear axes on degree histograms
+# Per-relation multiplicity exponents are confined to this range for generation;
+# stored as the skew-normal truncation cutoffs (docs/signature_redesign.md G2).
+_ALPHA_LO = 1.4
+_ALPHA_HI = 3.0
 
 
 class BlockB(SignatureBlock):
-    """Block B — Degree structure features of a KG.
-
-    Aggregate features fit the in/out-degree distributions (over non-literal
-    vertices) with the `powerlaw` package. Per-relation features quantify how
-    multi-valued each predicate is, distinguishing functional relations like
-    `bornIn` from many-to-many ones like `friend`/`type` — they have very
-    different join selectivities.
+    """Reduced Block B — relation frequency and per-relation multiplicity.
 
     Usage::
 
         b = BlockB().calculate(g)
-        b.as_vector()     # fixed-length comparison vector
-        b.as_dict()       # named key-value pairs
-        b.visualize()     # interactive matplotlib figure
-        b.visualize(mode="text")          # CLI summary
-        b.visualize(path="out.png")       # save plot to file
+        b.as_vector()                # fixed-length comparison vector
+        b.as_dict()                  # named key-value pairs
+        b.visualize(mode="text")     # CLI summary
+        b.visualize(path="out.png")  # save plot to file
     """
 
     def __init__(self) -> None:
-        self._out_degree_fit = _NOT_CALCULATED
-        self._in_degree_fit = _NOT_CALCULATED
-        self._object_multiplicity = _NOT_CALCULATED
-        self._subject_multiplicity = _NOT_CALCULATED
-        self._functionality = _NOT_CALCULATED
-        self._inverse_functionality = _NOT_CALCULATED
+        self._out_degree_fit = _NOT_CALCULATED          # target
+        self._in_degree_fit = _NOT_CALCULATED           # target
+        self._relation_zipf = _NOT_CALCULATED           # G1
+        self._obj_alpha_skew = _NOT_CALCULATED          # G2 object side
+        self._subj_alpha_skew = _NOT_CALCULATED         # G2 subject side
+        self._a_obj = _NOT_CALCULATED                   # G2b object-side offset
+        self._a_subj = _NOT_CALCULATED                  # G2b subject-side offset
+        # unsummarised data kept for visualization
+        self._obj_alphas = _NOT_CALCULATED
+        self._subj_alphas = _NOT_CALCULATED
         self._out_degrees = _NOT_CALCULATED
         self._in_degrees = _NOT_CALCULATED
+
+    # ── properties ────────────────────────────────────────────────────────────
+    # The skew-normal / Zipf fits are NamedTuples; the JSON round-trip restores
+    # them as plain tuples, so each accessor re-wraps to recover attribute access.
 
     @property
     def out_degree_fit(self) -> PowerLawStats:
@@ -59,149 +80,177 @@ class BlockB(SignatureBlock):
         return self._require("in_degree_fit", self._in_degree_fit)
 
     @property
-    def object_multiplicity(self) -> dict[str, PowerLawStats]:
-        return self._require("object_multiplicity", self._object_multiplicity)
+    def relation_zipf(self) -> ZipfFit:
+        return ZipfFit(*self._require("relation_zipf", self._relation_zipf))
 
     @property
-    def subject_multiplicity(self) -> dict[str, PowerLawStats]:
-        return self._require("subject_multiplicity", self._subject_multiplicity)
+    def obj_alpha_skew(self) -> SkewNormFit:
+        return SkewNormFit(*self._require("obj_alpha_skew", self._obj_alpha_skew))
 
     @property
-    def functionality(self) -> dict[str, float]:
-        return self._require("functionality", self._functionality)
+    def subj_alpha_skew(self) -> SkewNormFit:
+        return SkewNormFit(*self._require("subj_alpha_skew", self._subj_alpha_skew))
 
     @property
-    def inverse_functionality(self) -> dict[str, float]:
-        return self._require("inverse_functionality", self._inverse_functionality)
+    def a_obj(self) -> float:
+        return self._require("a_obj", self._a_obj)
 
     @property
-    def out_degrees(self) -> np.ndarray:
-        return self._require("out_degrees", self._out_degrees)
+    def a_subj(self) -> float:
+        return self._require("a_subj", self._a_subj)
 
-    @property
-    def in_degrees(self) -> np.ndarray:
-        return self._require("in_degrees", self._in_degrees)
+    # ── core ──────────────────────────────────────────────────────────────────
 
     def calculate(self, g: igraph.Graph) -> "BlockB":
-        """Compute Block B (degree structure) of the graph signature.
+        """Compute reduced Block B (relation frequency & multiplicity).
 
-        Degree distributions are taken over non-literal vertices only (matching
-        Block A's |V| definition); literals can only appear as RDF objects and
-        would always have d_out=0. Self-loops contribute 1 to each side, which is
-        the RDF-correct count of triples-as-subject and triples-as-object.
-
-        The aggregate power-law fits use `powerlaw.Fit` (KS-optimized x_min,
-        discrete-aware, with alternative-distribution KS distances); per-relation
-        fits reuse the same helper. See `_fit_powerlaw` for the short-circuit on
-        small samples.
+        One edge pass builds, per predicate ``r``: the object-multiplicity
+        ``m_obj(s,r)`` (distinct objects per subject) and subject-multiplicity
+        ``m_subj(o,r)`` (distinct subjects per object), plus each entity's
+        characteristic-set size on both sides. From those it derives the
+        per-relation power-law exponents, the across-relation skew-normal of
+        those exponents, the relation-usage Zipf exponent, and the
+        CS-size→multiplicity OLS offsets.
         """
-        non_lit_vs: igraph.VertexSeq = g.vs.select(is_literal_eq=False)
+        non_lit_vs = g.vs.select(is_literal_eq=False)
         if len(non_lit_vs):
-            out_degrees: np.ndarray = np.array(g.degree(non_lit_vs, mode="out"), dtype=int)
-            in_degrees: np.ndarray = np.array(g.degree(non_lit_vs, mode="in"), dtype=int)
+            out_degrees = np.array(g.degree(non_lit_vs, mode="out"), dtype=int)
+            in_degrees = np.array(g.degree(non_lit_vs, mode="in"), dtype=int)
         else:
             out_degrees = np.array([], dtype=int)
             in_degrees = np.array([], dtype=int)
-
         self._out_degrees = out_degrees
         self._in_degrees = in_degrees
         self._out_degree_fit = _fit_powerlaw(out_degrees)
-        log.info(
-            "Block B: computed out_degree_fit (alpha=%.4f, xmin=%s, ks=%.4f, n=%d)",
-            self._out_degree_fit.alpha, self._out_degree_fit.xmin,
-            self._out_degree_fit.ks, out_degrees.size,
-        )
         self._in_degree_fit = _fit_powerlaw(in_degrees)
-        log.info(
-            "Block B: computed in_degree_fit (alpha=%.4f, xmin=%s, ks=%.4f, n=%d)",
-            self._in_degree_fit.alpha, self._in_degree_fit.xmin,
-            self._in_degree_fit.ks, in_degrees.size,
+
+        is_literal: list[bool] = g.vs["is_literal"] if g.vcount() else []
+
+        # Per-relation (subject→#objects) and (object→#subjects) counts, plus the
+        # forward/inverse CS of every entity, in a single edge pass.
+        subj_obj_count: defaultdict[str, defaultdict[int, int]] = defaultdict(lambda: defaultdict(int))
+        obj_subj_count: defaultdict[str, defaultdict[int, int]] = defaultdict(lambda: defaultdict(int))
+        cs_of: defaultdict[int, set[str]] = defaultdict(set)
+        inv_cs_of: defaultdict[int, set[str]] = defaultdict(set)
+        rel_edge_counts: defaultdict[str, int] = defaultdict(int)
+        for e in g.es:
+            r: str = e["predicate"]
+            subj_obj_count[r][e.source] += 1
+            cs_of[e.source].add(r)
+            rel_edge_counts[r] += 1
+            if not is_literal[e.target]:
+                obj_subj_count[r][e.target] += 1
+                inv_cs_of[e.target].add(r)
+
+        # --- G1: relation-usage frequency (Zipf over per-predicate edge counts) ---
+        self._relation_zipf = (
+            fit_zipf(np.fromiter(rel_edge_counts.values(), dtype=float, count=len(rel_edge_counts)))
+            if rel_edge_counts else nan_zipf()
         )
 
-        obj_mult, subj_mult, func, inv_func = self._per_relation_features(g)
-        self._object_multiplicity = obj_mult
-        log.info(
-            "Block B: computed object_multiplicity (n_relations=%d)", len(obj_mult)
-        )
-        self._subject_multiplicity = subj_mult
-        log.info(
-            "Block B: computed subject_multiplicity (n_relations=%d)", len(subj_mult)
-        )
-        self._functionality = func
-        log.info(
-            "Block B: computed functionality (n_relations=%d)", len(func)
-        )
-        self._inverse_functionality = inv_func
-        log.info(
-            "Block B: computed inverse_functionality (n_relations=%d)", len(inv_func)
-        )
+        # --- G2: per-relation exponents, then skew-normal across relations ---
+        obj_alphas: list[float] = []
+        for subj_map in subj_obj_count.values():
+            counts = np.fromiter(subj_map.values(), dtype=int, count=len(subj_map))
+            obj_alphas.append(_fit_powerlaw(counts).alpha)
+        subj_alphas: list[float] = []
+        for obj_map in obj_subj_count.values():
+            counts = np.fromiter(obj_map.values(), dtype=int, count=len(obj_map))
+            subj_alphas.append(_fit_powerlaw(counts).alpha)
 
+        self._obj_alphas = np.array([a for a in obj_alphas if np.isfinite(a)], dtype=float)
+        self._subj_alphas = np.array([a for a in subj_alphas if np.isfinite(a)], dtype=float)
+        self._obj_alpha_skew = fit_skewnorm(self._obj_alphas, lo=_ALPHA_LO, hi=_ALPHA_HI)
+        if np.isnan(self._obj_alpha_skew.loc):
+            log.warning(
+                "Block B: obj_alpha skew-normal fit skipped — only %d finite per-relation "
+                "alphas (need ≥ %d); obj_mult_alpha metrics will be NaN. "
+                "Most likely cause: most relations have constant object-multiplicity (all 1s), "
+                "so per-relation power-law fits are degenerate.",
+                self._obj_alphas.size, MIN_SAMPLES_FOR_FIT,
+            )
+        self._subj_alpha_skew = fit_skewnorm(self._subj_alphas, lo=_ALPHA_LO, hi=_ALPHA_HI)
+        if np.isnan(self._subj_alpha_skew.loc):
+            log.warning(
+                "Block B: subj_alpha skew-normal fit skipped — only %d finite per-relation "
+                "alphas (need ≥ %d); subj_mult_alpha metrics will be NaN.",
+                self._subj_alphas.size, MIN_SAMPLES_FOR_FIT,
+            )
+
+        # --- G2b: CS-size→multiplicity offset (OLS slope per side) ---
+        obj_cs_sizes: list[int] = []
+        obj_mults: list[int] = []
+        for subj_map in subj_obj_count.values():
+            for s, m in subj_map.items():
+                obj_cs_sizes.append(len(cs_of[s]))
+                obj_mults.append(m)
+        self._a_obj = fit_cs_size_offset(obj_cs_sizes, obj_mults)
+
+        subj_cs_sizes: list[int] = []
+        subj_mults: list[int] = []
+        for obj_map in obj_subj_count.values():
+            for o, m in obj_map.items():
+                subj_cs_sizes.append(len(inv_cs_of[o]))
+                subj_mults.append(m)
+        self._a_subj = fit_cs_size_offset(subj_cs_sizes, subj_mults)
+
+        log.info(
+            "Block B: rel_zipf=%.3f, obj_alpha(loc=%.3f), a_obj=%.3f, a_subj=%.3f",
+            self._relation_zipf.exponent, self._obj_alpha_skew.loc,
+            self._a_obj, self._a_subj,
+        )
         return self
 
     def as_vector(self) -> list[float]:
-        """Flatten to a fixed-length 22-vector for cross-KG comparison.
+        """Flatten to a fixed-length 18-vector for cross-KG comparison.
 
-        Layout (in order):
-          - out_degree_fit: alpha, ks → 2 floats
-          - in_degree_fit:  alpha, ks → 2 floats
-          - For object_multiplicity: (mean, std, median) of alpha and
-            (mean, std, median) of ks over per-relation values → 6 floats
-          - Same for subject_multiplicity → 6 floats
-          - (mean, std, median) of functionality.values() → 3 floats
-          - (mean, std, median) of inverse_functionality.values() → 3 floats
+        Layout: out-degree (alpha, xmin); in-degree (alpha, xmin); relation Zipf
+        (exponent, x_min); object-α skew-normal (loc, scale, shape, lo, hi);
+        subject-α skew-normal (loc, scale, shape, lo, hi); offsets a_obj, a_subj.
 
-        Per-relation dicts are summarized rather than emitted directly so the
-        vector length stays fixed across KGs with any number of predicates.
+        Attributes absent from stale serialized data are emitted as NaN.
         """
-        om_alpha = _summarize_values(v.alpha for v in self.object_multiplicity.values())
-        om_ks    = _summarize_values(v.ks    for v in self.object_multiplicity.values())
-        sm_alpha = _summarize_values(v.alpha for v in self.subject_multiplicity.values())
-        sm_ks    = _summarize_values(v.ks    for v in self.subject_multiplicity.values())
-        func     = _summarize_values(self.functionality.values())
-        inv_func = _summarize_values(self.inverse_functionality.values())
-
         return [
-            # aggregate degree fits
-            self.out_degree_fit.alpha, self.out_degree_fit.ks,
-            self.in_degree_fit.alpha,  self.in_degree_fit.ks,
-            # per-relation object multiplicity (alpha, then ks)
-            om_alpha.mean, om_alpha.std, om_alpha.median,
-            om_ks.mean,    om_ks.std,    om_ks.median,
-            # per-relation subject multiplicity (alpha, then ks)
-            sm_alpha.mean, sm_alpha.std, sm_alpha.median,
-            sm_ks.mean,    sm_ks.std,    sm_ks.median,
-            # functionality / inverse functionality
-            func.mean,     func.std,     func.median,
-            inv_func.mean, inv_func.std, inv_func.median,
+            self._safe_scalar(lambda: self.out_degree_fit.alpha),
+            self._safe_scalar(lambda: self.out_degree_fit.xmin),
+            self._safe_scalar(lambda: self.in_degree_fit.alpha),
+            self._safe_scalar(lambda: self.in_degree_fit.xmin),
+            self._safe_scalar(lambda: self.relation_zipf.exponent),
+            self._safe_scalar(lambda: self.relation_zipf.x_min),
+            *self._safe_iter(lambda: self.obj_alpha_skew, 5),
+            *self._safe_iter(lambda: self.subj_alpha_skew, 5),
+            self._safe_scalar(lambda: self.a_obj),
+            self._safe_scalar(lambda: self.a_subj),
         ]
 
     @classmethod
     def feature_names(cls) -> list[str]:
         """Return feature names in the same order as :meth:`as_vector`."""
         names = [
-            "out_degree_alpha", "out_degree_ks",
-            "in_degree_alpha", "in_degree_ks",
+            "out_degree_alpha", "out_degree_xmin",
+            "in_degree_alpha", "in_degree_xmin",
+            "relation_zipf_exponent", "relation_zipf_xmin",
         ]
-        for prefix in (
-            "obj_multiplicity_alpha", "obj_multiplicity_ks",
-            "subj_multiplicity_alpha", "subj_multiplicity_ks",
-            "functionality", "inverse_functionality",
-        ):
-            names += [f"{prefix}_mean", f"{prefix}_std", f"{prefix}_median"]
+        for side in ("obj", "subj"):
+            names += [
+                f"{side}_mult_alpha_loc", f"{side}_mult_alpha_scale",
+                f"{side}_mult_alpha_shape", f"{side}_mult_alpha_lo",
+                f"{side}_mult_alpha_hi",
+            ]
+        names += ["a_obj", "a_subj"]
         return names
 
     @classmethod
     def get_na_vec(cls) -> list[float]:
-        """Return a 22-element NaN vector (same length as as_vector())."""
-        return [float("nan")] * 22
+        """Return an 18-element NaN vector (same length as as_vector())."""
+        return [float("nan")] * 18
 
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
-        """Display or save diagnostics for this block's computed features.
+        """Display or save diagnostics for reduced Block B.
 
         Args:
-            mode: "plot" for a 2x2 matplotlib figure, "text" for a CLI summary.
-            path: if given, write output to this file path instead of
-                  displaying interactively (savefig for plot, write for text).
+            mode: "plot" for a matplotlib figure, "text" for a CLI summary.
+            path: write to this file instead of displaying interactively.
         """
         if mode == "text":
             self._visualize_text(path)
@@ -212,47 +261,18 @@ class BlockB(SignatureBlock):
 
     # ── private helpers ───────────────────────────────────────────────────────
 
-    @staticmethod
-    def _short_uri(uri: str) -> str:
-        return uri.split("/")[-1].split("#")[-1]
-
     def _visualize_text(self, path: str | None) -> None:
-        lines: list[str] = []
-        lines.append("=== Block B: Degree Structure ===\n")
-
-        for label, arr, fit in [
-            ("Out-degree", self.out_degrees, self.out_degree_fit),
-            ("In-degree ", self.in_degrees,  self.in_degree_fit),
-        ]:
-            if arr.size:
-                lines.append(
-                    f"{label}: n={arr.size}  min={arr.min()}  max={arr.max()}"
-                    f"  mean={arr.mean():.2f}  median={np.median(arr):.1f}"
-                )
-            else:
-                lines.append(f"{label}: n=0 (no data)")
-            lines.append(
-                f"  fit: alpha={fit.alpha:.4f}  xmin={fit.xmin}  ks={fit.ks:.4f}"
-            )
-
-        lines.append("\n--- Functionality (sorted desc) ---")
-        for rel, val in sorted(self.functionality.items(), key=lambda x: x[1], reverse=True):
-            inv = self.inverse_functionality.get(rel, float("nan"))
-            lines.append(
-                f"  {self._short_uri(rel):<40s}  func={val:.3f}  inv_func={inv:.3f}"
-            )
-
-        lines.append("\n--- Per-relation powerlaw fits ---")
-        lines.append(f"  {'relation':<40s}  {'om_alpha':>9s}  {'om_xmin':>7s}  {'sm_alpha':>9s}  {'sm_xmin':>7s}")
-        for r in sorted(self.object_multiplicity.keys()):
-            om = self.object_multiplicity[r]
-            sm = self.subject_multiplicity.get(r)
-            sm_a = f"{sm.alpha:.4f}" if sm else "n/a"
-            sm_x = str(sm.xmin) if sm else "n/a"
-            lines.append(
-                f"  {self._short_uri(r):<40s}  {om.alpha:>9.4f}  {om.xmin:>7}  {sm_a:>9}  {sm_x:>7}"
-            )
-
+        s = self.obj_alpha_skew
+        ss = self.subj_alpha_skew
+        lines = [
+            "=== Reduced Block B: Relation Frequency & Multiplicity (G1/G2/G2b) ===",
+            f"  out-degree fit : alpha={self.out_degree_fit.alpha:.4f}  xmin={self.out_degree_fit.xmin}",
+            f"  in-degree fit  : alpha={self.in_degree_fit.alpha:.4f}  xmin={self.in_degree_fit.xmin}",
+            f"  relation Zipf  : exponent={self.relation_zipf.exponent:.4f}  xmin={self.relation_zipf.x_min}",
+            f"  obj  mult-alpha skew-normal: loc={s.loc:.3f} scale={s.scale:.3f} shape={s.shape:.3f} cutoffs=[{s.lo:.2f},{s.hi:.2f}]",
+            f"  subj mult-alpha skew-normal: loc={ss.loc:.3f} scale={ss.scale:.3f} shape={ss.shape:.3f} cutoffs=[{ss.lo:.2f},{ss.hi:.2f}]",
+            f"  CS-size offset : a_obj={self.a_obj:.4f}  a_subj={self.a_subj:.4f}",
+        ]
         text = "\n".join(lines)
         if path is None:
             print(text)
@@ -262,43 +282,34 @@ class BlockB(SignatureBlock):
 
     def _visualize_plot(self, path: str | None) -> None:
         try:
+            obj_alphas = self._require("_obj_alphas", self._obj_alphas)
+            subj_alphas = self._require("_subj_alphas", self._subj_alphas)
+            out_degrees = self._require("_out_degrees", self._out_degrees)
+            in_degrees = self._require("_in_degrees", self._in_degrees)
             fig, axes = plt.subplots(2, 2, figsize=(12, 9))
 
-            self._plot_degree_hist(axes[0, 0], self.out_degrees, self.out_degree_fit, "Out-degree distribution", _DEGREE_HIST_LOG_SCALE)
-            self._plot_degree_hist(axes[0, 1], self.in_degrees,  self.in_degree_fit,  "In-degree distribution",  _DEGREE_HIST_LOG_SCALE)
+            # Degree targets: raw histogram + fitted power-law (reused from original).
+            _OrigBlockB._plot_degree_hist(axes[0, 0], out_degrees, self.out_degree_fit,
+                                          "Out-degree distribution (target)", False)
+            _OrigBlockB._plot_degree_hist(axes[0, 1], in_degrees, self.in_degree_fit,
+                                          "In-degree distribution (target)", False)
 
-            # violin of powerlaw alpha values across all relations
+            # Per-relation exponents: raw histogram + fitted skew-normal.
             ax = axes[1, 0]
-            obj_alphas  = [v.alpha for v in self.object_multiplicity.values()  if not np.isnan(v.alpha)]
-            subj_alphas = [v.alpha for v in self.subject_multiplicity.values() if not np.isnan(v.alpha)]
-            data = [obj_alphas or [float("nan")], subj_alphas or [float("nan")]]
-            if any(len(d) > 1 for d in data):
-                ax.violinplot([d for d in data if len(d) > 1],
-                              positions=[i + 1 for i, d in enumerate(data) if len(d) > 1],
-                              showmedians=True)
-            for pos, d in enumerate(data, start=1):
-                clean = [v for v in d if not np.isnan(v)]
-                if clean:
-                    ax.scatter([pos] * len(clean), clean, color="black", s=15, zorder=3, alpha=0.6)
-            ax.set_xticks([1, 2])
-            ax.set_xticklabels(["object_multiplicity\n(alpha)", "subject_multiplicity\n(alpha)"])
-            ax.set_ylabel("alpha")
-            ax.set_title("Per-relation powerlaw alpha values")
-
-            # binned histogram of functionality values
-            ax = axes[1, 1]
-            func_vals = [v for v in self.functionality.values()         if not np.isnan(v)]
-            inv_vals  = [v for v in self.inverse_functionality.values() if not np.isnan(v)]
-            if func_vals:
-                ax.hist(func_vals, bins=20, range=(0.0, 1.0), alpha=0.7,
-                        label="functionality", color="steelblue")
-            if inv_vals:
-                ax.hist(inv_vals,  bins=20, range=(0.0, 1.0), alpha=0.5,
-                        label="inverse_functionality", color="darkorange")
-            ax.set_xlabel("value")
+            if not overlay_skewnorm(ax, obj_alphas, self.obj_alpha_skew,
+                                    label="per-relation α", color="steelblue"):
+                ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
+            ax.set_xlabel("object-multiplicity exponent α")
             ax.set_ylabel("count (relations)")
-            ax.set_title("Functionality distribution across relations")
-            ax.legend()
+            ax.set_title("Object-multiplicity α (fit: skew-normal)")
+
+            ax = axes[1, 1]
+            if not overlay_skewnorm(ax, subj_alphas, self.subj_alpha_skew,
+                                    label="per-relation α", color="darkorange"):
+                ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
+            ax.set_xlabel("subject-multiplicity exponent α")
+            ax.set_ylabel("count (relations)")
+            ax.set_title("Subject-multiplicity α (fit: skew-normal)")
 
             plt.tight_layout()
             if path is None:
@@ -309,78 +320,3 @@ class BlockB(SignatureBlock):
         except Exception as exc:
             log.warning("Block B: plot failed: %s", exc, exc_info=True)
             plt.close("all")
-
-    @staticmethod
-    def _plot_degree_hist(ax, degrees: np.ndarray, fit: PowerLawStats, title: str, log_scale: bool) -> None:
-        pos = degrees[degrees > 0]
-        if pos.size == 0:
-            ax.set_title(f"{title} (no data)")
-            return
-
-        if log_scale:
-            bins = np.logspace(np.log10(pos.min()), np.log10(pos.max() + 1), 30)
-        else:
-            bins = np.linspace(pos.min(), pos.max() + 1, 30)
-        counts, edges = np.histogram(pos, bins=bins)
-        centers = (edges[:-1] + edges[1:]) / 2
-        plot_fn = ax.loglog if log_scale else ax.plot
-        plot_fn(centers[counts > 0], counts[counts > 0], "o", markersize=4, label="data")
-
-        if not np.isnan(fit.alpha) and not np.isnan(fit.xmin):
-            xmin = max(int(fit.xmin), 1)
-            x_fit = np.arange(xmin, pos.max() + 1, dtype=float)
-            y_fit = x_fit ** (-fit.alpha)
-            # normalize scale to histogram counts above xmin
-            tail_counts, _ = np.histogram(pos[pos >= xmin], bins=bins)
-            total = tail_counts.sum()
-            if total > 0:
-                y_fit = y_fit / y_fit.sum() * total
-            plot_fn(x_fit, y_fit, "-", color="red", linewidth=1.5,
-                    label=f"powerlaw α={fit.alpha:.2f}")
-
-        ax.set_xlabel("degree")
-        ax.set_ylabel("count")
-        ax.set_title(title)
-        ax.legend(fontsize=8)
-
-    @staticmethod
-    def _per_relation_features(
-        g: igraph.Graph,
-    ) -> tuple[dict[str, PowerLawStats], dict[str, PowerLawStats], dict[str, float], dict[str, float]]:
-        """Build per-relation multiplicity / functionality features in one edge pass.
-
-        For each predicate r, computes:
-          - object_multiplicity[r]: PowerLawStats over (#distinct objects per subject)
-          - subject_multiplicity[r]: PowerLawStats over (#distinct subjects per object)
-          - functionality[r]: fraction of subjects whose object-multiplicity == 1
-          - inverse_functionality[r]: fraction of objects whose subject-multiplicity == 1
-
-        Assumes `kg_io.load_kg`'s contract: at most one edge per (subject, predicate,
-        object) triple. Under that invariant, the count of edges with fixed (r, s)
-        equals the number of distinct objects, so plain integer counters suffice.
-        Per-relation `_fit_powerlaw` calls short-circuit to all-NaN for relations
-        with fewer than MIN_SAMPLES_FOR_FIT distinct subjects (or objects).
-        """
-        subj_obj_count: defaultdict[str, defaultdict[int, int]] = defaultdict(lambda: defaultdict(int))
-        obj_subj_count: defaultdict[str, defaultdict[int, int]] = defaultdict(lambda: defaultdict(int))
-        for e in g.es:
-            r: str = e["predicate"]
-            subj_obj_count[r][e.source] += 1
-            obj_subj_count[r][e.target] += 1
-
-        object_multiplicity: dict[str, PowerLawStats] = {}
-        subject_multiplicity: dict[str, PowerLawStats] = {}
-        functionality: dict[str, float] = {}
-        inverse_functionality: dict[str, float] = {}
-
-        for r, subj_map in subj_obj_count.items():
-            obj_counts = np.fromiter(subj_map.values(), dtype=int, count=len(subj_map))
-            object_multiplicity[r] = _fit_powerlaw(obj_counts)
-            functionality[r] = float(np.mean(obj_counts == 1)) if obj_counts.size else float("nan")
-
-        for r, obj_map in obj_subj_count.items():
-            subj_counts = np.fromiter(obj_map.values(), dtype=int, count=len(obj_map))
-            subject_multiplicity[r] = _fit_powerlaw(subj_counts)
-            inverse_functionality[r] = float(np.mean(subj_counts == 1)) if subj_counts.size else float("nan")
-
-        return object_multiplicity, subject_multiplicity, functionality, inverse_functionality

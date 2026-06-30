@@ -21,7 +21,7 @@ from pathlib import Path
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO / "src"))
 
-from signature_reduced import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF  # noqa: E402
+from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF  # noqa: E402
 
 _LETTERS = ("a", "b", "c", "d", "e", "f")
 _BLOCK_CLS = {"a": BlockA, "b": BlockB, "c": BlockC, "d": BlockD, "e": BlockE, "f": BlockF}

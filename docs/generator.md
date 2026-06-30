@@ -201,9 +201,20 @@ live adjacency dict (not an `igraph.Graph`) so each swap is cheap.
   so `out_edges` is updated in-place per accepted swap.  Only steered when
   `BlockE.path_template_entropy[3] > 0` and `LOSS_WEIGHT_PATH_ENTROPY > 0`; inactive when Block E
   was measured with `skip_stars_and_paths=True`.
+- **Induced k-star counts** (`k ∈ STAR_K_TRACKED = (2,3,4,5)`) — exact, incremental
+  `_star_count_delta` (O(Δ²) per swap). Unlike non-induced stars (`C(k_v,2)`, fixed by degree),
+  these are **chordless** stars whose leaves must be mutually non-adjacent, so a degree-preserving
+  swap that removes an inner edge among a hub's neighbours *raises* that hub's induced star count —
+  the lever Stage 3 uses. Steered only when `LOSS_WEIGHT_STARS > 0` (and the Block-E target is > 0);
+  **off by default** since stars are largely set by the Stage-2 out-degree distribution. An optional
+  targeted move (`_targeted_star_swap`, gated by `MAX_STAR_TARGETED_PROB`) biases proposals toward
+  breaking triangles among high-degree hubs to close a star deficit faster; it antagonises the
+  clustering terms (triangles/CC/diamond/K4/paw), so keep the probability modest.
 
 The SA loss is a weighted sum of relative errors; the best graph seen is returned, then components
-are re-bridged.
+are re-bridged. When a `convergence_log` is given, each active term writes a relative-error column
+every `CONVERGENCE_LOG_INTERVAL` accepted swaps (`tri_err`, motif4 `*_err`, `c5/c6_err`, `cc_err`,
+`assort_err`, `tree_entropy_err`, `path_entropy_k3_err`, and `star_k{k}_err` per tracked k).
 
 > **Runtime note.** The incremental deltas are O(Δᵏ⁻¹) per *attempted* swap, so they dominate
 > Stage-3 cost on hub-heavy graphs. Lower `--rewire-budget`, disable a steering term (set its
@@ -391,4 +402,11 @@ Each round:
 ```
 The round-trip loads a cached target signature, generates, re-measures, and prints a per-block
 comparison (median relative error is the meaningful aggregate; mean/max are inflated by
-near-zero-target features).
+near-zero-target features). The synthetic re-measurement runs Block E at a reduced
+`_FINAL_SAMPLE_BUDGET = 20_000` (CC motif/star sampling + path/tree walks) instead of the 100k
+Block-E default, to keep the round-trip fast — the cached target side is unaffected.
+
+Pass `--convergence-log` with no value to record the Stage 3 convergence CSV; the file is
+auto-named from the graph name and run options (e.g. `conv_<graph>_seed42_rb5000.csv`) and written
+to `experiments/convergence_logs/`. An explicit `--convergence-log <path>` overrides both the name
+and location. Plot the result with `scripts/convergence_plot.py`.

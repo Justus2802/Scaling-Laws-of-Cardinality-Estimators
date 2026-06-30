@@ -1,45 +1,39 @@
-"""Block E — Motif shape distribution features."""
+"""Reduced Block E — Motif shape distribution (G5).
 
-import math
-from collections import defaultdict
-from typing import Any
+Keeps the raw motif counts (triangle, 4-/5-/6-cycle, diamond, k4, tailed
+triangle), the ``star_count_k*`` features, and the path/tree template
+zipf+entropy curves, all computed by the original Block E (composed, not
+re-implemented).
+
+The ``star_count_k*`` values are *induced* k-stars (a centre plus k leaves with
+no edges among the leaves), as actually measured by the original Block E's
+``MOTIF_COUNTER.count_stars`` (exact induced counting). They are **not** the
+non-induced ``Σ_v C(deg(v), k)``: induced stars are not determined by the degree
+sequence alone (they depend on the local edge structure among neighbours), so
+they carry information independent of the Block B degree distribution and are
+kept here.
+"""
 
 import igraph
 import matplotlib.pyplot as plt  # type: ignore[import-untyped]
-import numpy as np
-
-from motif_counter import CCMotifCounter, ExactMotifCounter, HybridMotifCounter, MotifCounter
 
 from ._logging import get_logger
 from ._block_base import SignatureBlock, _NOT_CALCULATED
+from ._orig_block_e import BlockE as _OrigBlockE, _SAMPLE_BUDGET, _MAX_K
 
 log = get_logger(__name__)
 
-_SAMPLE_BUDGET = 100_000  # default walk samples for path/tree templates
-_MAX_K         = 10       # longest path template walk
-_LARGE_N       = 50_000   # above this, sample an induced subgraph for structural counts
-_SAMPLE_N      = 10_000   # seed nodes when n > _LARGE_N (expanded to full neighborhoods)
-
-# Counter used for all motif measurement in BlockE.calculate().
-# HybridMotifCounter: exact for k≤4 and (when max_degree ≤ 50) k=5 via ESCAPEFiveNodeCounter;
-# falls back to CC sampling for k=5 on dense graphs, and always uses CC for k≥6 and stars.
-MOTIF_COUNTER: MotifCounter = HybridMotifCounter(n_samples=_SAMPLE_BUDGET, seed=1)
-
 
 class BlockE(SignatureBlock):
-    """Block E — Motif shape distribution of a KG.
-
-    Exact counts for 3- and 4-node motifs on the undirected simplification.
-    Path and tree templates are estimated by random walk sampling.
+    """Reduced Block E — motif shape distribution.
 
     Usage::
 
         b = BlockE().calculate(g)
-        b.as_vector()                      # fixed-length comparison vector
-        b.as_dict()                        # named key-value pairs
-        b.visualize()                      # interactive matplotlib figure
-        b.visualize(mode="text")           # CLI summary
-        b.visualize(path="out.png")        # save plot to file
+        b.as_vector()                # fixed-length comparison vector
+        b.as_dict()                  # named key-value pairs
+        b.visualize(mode="text")     # CLI summary
+        b.visualize(path="out.png")  # save plot to file
     """
 
     def __init__(self) -> None:
@@ -55,6 +49,8 @@ class BlockE(SignatureBlock):
         self._path_template_entropy = _NOT_CALCULATED
         self._tree_template_zipf = _NOT_CALCULATED
         self._tree_template_entropy = _NOT_CALCULATED
+
+    # ── properties ────────────────────────────────────────────────────────────
 
     @property
     def triangle_count(self) -> int:
@@ -104,155 +100,87 @@ class BlockE(SignatureBlock):
     def tree_template_entropy(self) -> float:
         return self._require("tree_template_entropy", self._tree_template_entropy)
 
+    # ── core ──────────────────────────────────────────────────────────────────
+
     def calculate(
         self,
         g: igraph.Graph,
         sample_budget: int = _SAMPLE_BUDGET,
         skip_stars_and_paths: bool = False,
     ) -> "BlockE":
-        """Compute Block E (motif distribution) of the graph signature.
+        """Compute reduced Block E (motif distribution).
 
-        Exact counts for 3- and 4-node motifs on the undirected simplification.
-        Path and tree templates are estimated by random walk sampling.
-        For large graphs (n >= _LARGE_N), 4-node and 5/6-cycle counts are
-        estimated via color coding (Bressan et al. 2021) on the full graph.
-        The CC DP scales with m (edges), not n^k, so no subgraph sampling needed.
+        Composes the original Block E to reuse its color-coding motif counts,
+        induced ``star_count_k*`` values and path/tree template statistics.
 
         Parameters
         ----------
         skip_stars_and_paths : bool
             When True, skip the path-template and tree-template computations.
-            Triangle, 4-node motif, 5/6-cycle and induced star counts are always
-            measured (the latter via the hybrid counter), so the motif counts
-            stay complete.
+            Triangle/4-node motif, 5/6-cycle and induced star counts are always
+            measured (mirroring the original Block E).
         """
-        g_und = g.as_undirected(combine_edges="first").simplify()
-        n = g_und.vcount()
-        m = g_und.ecount()
-        log.info("Block E: graph has %d nodes, %d edges", n, m)
+        orig = _OrigBlockE().calculate(g, sample_budget=sample_budget,
+                                       skip_stars_and_paths=skip_stars_and_paths)
+        self._triangle_count        = orig.triangle_count
+        self._four_cycle_count      = orig.four_cycle_count
+        self._five_cycle_count      = orig.five_cycle_count
+        self._six_cycle_count       = orig.six_cycle_count
+        self._diamond_count         = orig.diamond_count
+        self._k4_count              = orig.k4_count
+        self._tailed_triangle_count = orig.tailed_triangle_count
+        self._star_counts           = orig.star_counts
+        self._path_template_zipf    = orig.path_template_zipf
+        self._path_template_entropy = orig.path_template_entropy
+        self._tree_template_zipf    = orig.tree_template_zipf
+        self._tree_template_entropy = orig.tree_template_entropy
 
-        if n == 0:
-            self._triangle_count = 0
-            self._four_cycle_count = self._diamond_count = 0
-            self._k4_count = self._tailed_triangle_count = 0
-            self._star_counts = {k: 0 for k in range(2, 11)}
-            self._five_cycle_count = self._six_cycle_count = 0
-            self._path_template_zipf = {}
-            self._path_template_entropy = {}
-            self._tree_template_zipf = float("nan")
-            self._tree_template_entropy = float("nan")
-            return self
-
-        self._triangle_count = MOTIF_COUNTER.count_triangles(g_und)
-        log.info("Block E: computed triangle_count (%d)", self._triangle_count)
-
-        motifs3 = MOTIF_COUNTER.count_motifs3(g_und)
-
-        motifs4 = MOTIF_COUNTER.count_motifs4(g_und)
-        self._four_cycle_count      = motifs4.get((2, 2, 2, 2), 0)
-        self._diamond_count         = motifs4.get((2, 2, 3, 3), 0)
-        self._k4_count              = motifs4.get((3, 3, 3, 3), 0)
-        self._tailed_triangle_count = motifs4.get((1, 2, 2, 3), 0)
-        log.info("Block E: computed four_cycle_count (%d)", self._four_cycle_count)
-        log.info("Block E: computed diamond_count (%d)", self._diamond_count)
-        log.info("Block E: computed k4_count (%d)", self._k4_count)
-        log.info("Block E: computed tailed_triangle_count (%d)", self._tailed_triangle_count)
-
-        # 5/6-cycle counts are core motif features, so they are always measured via
-        # the hybrid counter (ESCAPE-exact for k=5 on low-degree graphs, CC otherwise)
-        # — independent of the stars/path-template skip below.  motifs5/motifs6 are
-        # reused by the path-template block when stars/paths are not skipped.
-        motifs5 = MOTIF_COUNTER.count_motifsk(g_und, 5)
-        self._five_cycle_count = motifs5.get((2, 2, 2, 2, 2), 0)
-        log.info("Block E: computed five_cycle_count (~%d)", self._five_cycle_count)
-
-        motifs6 = MOTIF_COUNTER.count_motifsk(g_und, 6)
-        self._six_cycle_count = motifs6.get((2, 2, 2, 2, 2, 2), 0)
-        log.info("Block E: computed six_cycle_count (~%d)", self._six_cycle_count)
-
-        # Induced k-star counts are a core motif feature carrying information beyond
-        # the degree sequence, so they are always measured via the hybrid counter —
-        # independent of the path-template skip below (same treatment as 5/6-cycles).
-        self._star_counts = MOTIF_COUNTER.count_stars(g_und)
         log.info(
-            "Block E: computed star_counts (k=2..10 totals=%s)",
-            [self._star_counts.get(k, 0) for k in range(2, 11)],
+            "Block E: triangles=%d, 4-cyc=%d, diamonds=%d, k4=%d, tailed=%d, "
+            "tree(zipf=%.4f, entropy=%.4f)",
+            self._triangle_count, self._four_cycle_count, self._diamond_count,
+            self._k4_count, self._tailed_triangle_count,
+            self._tree_template_zipf, self._tree_template_entropy,
         )
-
-        if skip_stars_and_paths:
-            log.info("Block E: skipping path templates, tree templates.")
-            self._path_template_zipf = {}
-            self._path_template_entropy = {}
-            self._tree_template_zipf = float("nan")
-            self._tree_template_entropy = float("nan")
-        else:
-            # Path templates: for each k, compute Zipf + entropy of the graphlet-type
-            # distribution at that size.  k=2..6 always run.  k=7..10 are run only when
-            # the DP fits in ~1 GB: n × 2^k × k × 4 bytes ≤ 1 GB → n ≤ 1e9 / (k×2^k×4).
-            motifs2 = MOTIF_COUNTER.count_motifsk(g_und, 2)
-            _cc_by_k = {2: motifs2, 3: motifs3, 4: motifs4, 5: motifs5, 6: motifs6}
-            for _k in range(7, 11):
-                _dp_bytes = n * (1 << _k) * _k * 4
-                if _dp_bytes <= 1_000_000_000:
-                    _cc_by_k[_k] = MOTIF_COUNTER.count_motifsk(g_und, _k)
-                else:
-                    log.info(
-                        "Block E: skipping path template k=%d (DP would need %.1f GB > 1 GB limit)",
-                        _k, _dp_bytes / 1e9,
-                    )
-
-            self._path_template_zipf    = {}
-            self._path_template_entropy = {}
-            for _k in range(2, 11):
-                if _k in _cc_by_k:
-                    _z, _e = BlockE._template_stats(_cc_by_k[_k])
-                else:
-                    _z, _e = float("nan"), float("nan")
-                self._path_template_zipf[_k]    = _z
-                self._path_template_entropy[_k] = _e
-            log.info(
-                "Block E: computed path_template_zipf (k=2..10 alphas=%s)",
-                [round(self._path_template_zipf.get(k, float("nan")), 4) for k in range(2, 11)],
-            )
-            log.info(
-                "Block E: computed path_template_entropy (k=2..10 entropies=%s)",
-                [round(self._path_template_entropy.get(k, float("nan")), 4) for k in range(2, 11)],
-            )
-
-            # Tree templates: Zipf + entropy of how total motif counts scale across k.
-            # Using total-count-per-k (rather than per-type) avoids NaN on small graphs
-            # where CC returns only 1-2 distinct graphlet types.
-            _totals_by_k: dict[int, int] = {
-                _k: sum(_cc_by_k[_k].values())
-                for _k in _cc_by_k
-                if sum(_cc_by_k[_k].values()) > 0
-            }
-            self._tree_template_zipf, self._tree_template_entropy = BlockE._template_stats(_totals_by_k)
-            log.info(
-                "Block E: computed tree_template stats (zipf_alpha=%.4f, entropy=%.4f)",
-                self._tree_template_zipf, self._tree_template_entropy,
-            )
-
         return self
 
     def as_vector(self) -> list[float]:
-        """Flatten to a fixed-length 36-vector for cross-KG comparison."""
+        """Flatten to a fixed-length 36-vector for cross-KG comparison.
+
+        Layout: 7 motif counts; induced star counts (k=2..10); path-template
+        zipf (k=2..10); path-template entropy (k=2..10); tree-template
+        (zipf, entropy).
+
+        Attributes absent from stale serialized data are emitted as NaN so
+        that sweep_viz.py can still analyse whatever features are present.
+        """
+        _nan = float("nan")
+
+        def _dict(v) -> dict:
+            return {} if v is _NOT_CALCULATED else v
+
         vec = [
-            float(self.triangle_count),
-            float(self.four_cycle_count),
-            float(self.five_cycle_count),
-            float(self.six_cycle_count),
-            float(self.diamond_count),
-            float(self.k4_count),
-            float(self.tailed_triangle_count),
+            self._safe_scalar(lambda: self.triangle_count),
+            self._safe_scalar(lambda: self.four_cycle_count),
+            self._safe_scalar(lambda: self.five_cycle_count),
+            self._safe_scalar(lambda: self.six_cycle_count),
+            self._safe_scalar(lambda: self.diamond_count),
+            self._safe_scalar(lambda: self.k4_count),
+            self._safe_scalar(lambda: self.tailed_triangle_count),
         ]
-        for k in range(2, 11):
-            vec.append(float(self.star_counts.get(k, 0)))
-        for k in range(2, 11):
-            vec.append(self.path_template_zipf.get(k, float("nan")))
-        for k in range(2, 11):
-            vec.append(self.path_template_entropy.get(k, float("nan")))
-        vec.extend([self.tree_template_zipf, self.tree_template_entropy])
+        star = _dict(self._star_counts)
+        for k in range(2, _MAX_K + 1):
+            vec.append(float(star.get(k, _nan)))
+        pzipf = _dict(self._path_template_zipf)
+        for k in range(2, _MAX_K + 1):
+            vec.append(pzipf.get(k, _nan))
+        pent = _dict(self._path_template_entropy)
+        for k in range(2, _MAX_K + 1):
+            vec.append(pent.get(k, _nan))
+        vec.extend([
+            self._safe_scalar(lambda: self.tree_template_zipf),
+            self._safe_scalar(lambda: self.tree_template_entropy),
+        ])
         return vec  # length 7 + 9 + 9 + 9 + 2 = 36
 
     @classmethod
@@ -274,11 +202,11 @@ class BlockE(SignatureBlock):
         return [float("nan")] * 36
 
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
-        """Display or save diagnostics for this block's computed features.
+        """Display or save diagnostics for reduced Block E.
 
         Args:
-            mode: "plot" for matplotlib, "text" for CLI summary.
-            path: write to file instead of displaying interactively.
+            mode: "plot" for a matplotlib figure, "text" for a CLI summary.
+            path: write to this file instead of displaying interactively.
         """
         if mode == "text":
             self._visualize_text(path)
@@ -291,7 +219,7 @@ class BlockE(SignatureBlock):
 
     def _visualize_text(self, path: str | None) -> None:
         lines: list[str] = []
-        lines.append("=== Block E: Motif Shape Distribution ===\n")
+        lines.append("=== Reduced Block E: Motif Shape Distribution (G5) ===\n")
 
         lines.append("--- Subgraph counts ---")
         lines.append(f"  triangles:           {self.triangle_count}")
@@ -302,18 +230,18 @@ class BlockE(SignatureBlock):
         lines.append(f"  K4:                  {self.k4_count}")
         lines.append(f"  tailed triangles:    {self.tailed_triangle_count}")
 
-        lines.append("\n--- Star counts ---")
-        star_row = "  " + "  ".join(f"k={k}: {self.star_counts.get(k, 0)}" for k in range(2, 11))
+        lines.append("\n--- Star counts (induced) ---")
+        star_row = "  " + "  ".join(f"k={k}: {self.star_counts.get(k, 0)}" for k in range(2, _MAX_K + 1))
         lines.append(star_row)
 
         lines.append("\n--- Path templates ---")
         lines.append(f"  {'k':>3}  {'zipf_alpha':>10}  {'entropy':>10}")
-        for k in range(2, 11):
+        for k in range(2, _MAX_K + 1):
             z = self.path_template_zipf.get(k, float("nan"))
             e = self.path_template_entropy.get(k, float("nan"))
             lines.append(f"  {k:>3}  {z:>10.4f}  {e:>10.4f}")
 
-        lines.append("\n--- Tree templates (depth-2) ---")
+        lines.append("\n--- Tree templates ---")
         lines.append(f"  zipf_alpha={self.tree_template_zipf:.4f}  entropy={self.tree_template_entropy:.4f}")
 
         text = "\n".join(lines)
@@ -325,7 +253,7 @@ class BlockE(SignatureBlock):
 
     def _visualize_plot(self, path: str | None) -> None:
         try:
-            fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+            fig, axes = plt.subplots(1, 2, figsize=(11, 5))
 
             # Motif / cycle counts
             ax = axes[0]
@@ -341,17 +269,9 @@ class BlockE(SignatureBlock):
             ax.set_title("Subgraph motif counts")
             ax.tick_params(axis="x", labelsize=8)
 
-            # Star counts by k — use float to avoid C-long overflow on bigints
-            ax = axes[1]
-            ks = list(range(2, 11))
-            star_vals = [float(self.star_counts.get(k, 0)) for k in ks]
-            ax.bar([str(k) for k in ks], star_vals, color="darkorange")
-            ax.set_xlabel("k")
-            ax.set_ylabel("count")
-            ax.set_title("k-star counts (CC induced)")
-
             # Path template zipf alpha and entropy vs k
-            ax = axes[2]
+            ax = axes[1]
+            ks = list(range(2, _MAX_K + 1))
             zipf_vals = [self.path_template_zipf.get(k, float("nan")) for k in ks]
             ent_vals = [self.path_template_entropy.get(k, float("nan")) for k in ks]
             ax.plot(ks, zipf_vals, "o-", label="zipf alpha", color="steelblue")
@@ -374,176 +294,3 @@ class BlockE(SignatureBlock):
         except Exception as exc:
             log.warning("Block E: plot failed: %s", exc, exc_info=True)
             plt.close("all")
-
-    @staticmethod
-    def _template_stats(counts: dict[tuple, int]) -> tuple[float, float]:
-        """Return (Zipf exponent, Shannon entropy) from a {template: count} dict.
-
-        Zipf exponent uses the continuous-MLE estimator (Clauset et al. 2009 §B.2):
-          α = 1 + n / Σ ln(xᵢ / xmin)
-        This avoids the powerlaw library's discrete normaliser (mpmath + Nelder-Mead),
-        which is ~2s per call, while producing essentially the same estimate for the
-        frequency counts seen in practice.
-        """
-        if not counts:
-            return float("nan"), float("nan")
-        freqs = np.array(list(counts.values()), dtype=float)
-        pos = freqs[freqs >= 1.0]
-        if pos.size < 2:
-            zipf = float("nan")
-        else:
-            xmin  = float(np.min(pos))
-            tail  = pos[pos >= xmin]
-            denom = float(np.sum(np.log(tail / xmin)))
-            zipf  = float(np.clip(1.0 + tail.size / denom, 1.01, 50.0)) if denom > 0 else float("nan")
-        p = freqs / freqs.sum()
-        p = p[p > 0]
-        entropy = -float(np.sum(p * np.log(p)))
-        return zipf, entropy
-
-    @staticmethod
-    def _build_out_adj(
-        g: igraph.Graph,
-    ) -> tuple[dict[int, list[tuple[int, str]]], list[int]]:
-        """Build adjacency list for directed walks, skipping literal targets."""
-        out_edges: defaultdict[int, list[tuple[int, str]]] = defaultdict(list)
-        for e in g.es:
-            if not g.vs[e.target]["is_literal"]:
-                out_edges[e.source].append((e.target, e["predicate"]))
-        start_verts: list[int] = [v for v, adj in out_edges.items() if not g.vs[v]["is_literal"]]
-        return dict(out_edges), start_verts
-
-    @staticmethod
-    def _sample_all_path_templates(
-        out_edges: dict[int, list[tuple[int, str]]],
-        start_verts: np.ndarray,
-        sample_budget: int,
-        rng: np.random.Generator,
-    ) -> tuple[dict[int, float], dict[int, float]]:
-        """Sample walks up to length _MAX_K; record every prefix length in one pass.
-
-        A single walk of length L contributes to the template counts for
-        k=2,3,...,L, eliminating the need for 9 separate sampling rounds and
-        reducing the total number of rng calls by ~_MAX_K/mean_length.
-        """
-        # Pre-sample all starting vertices at once — one bulk rng call.
-        n_walks = max(1, sample_budget // _MAX_K)
-        starts  = rng.choice(start_verts, size=n_walks)
-
-        raw: dict[int, defaultdict[tuple[str, ...], int]] = {
-            k: defaultdict(int) for k in range(2, _MAX_K + 1)
-        }
-
-        for start in starts:
-            v    = int(start)
-            rels: list[str] = []
-            for _ in range(_MAX_K):
-                adj = out_edges.get(v)
-                if not adj:
-                    break
-                nb, rel = adj[int(rng.integers(len(adj)))]
-                rels.append(rel)
-                v = nb
-                if len(rels) >= 2:
-                    raw[len(rels)][tuple(rels)] += 1
-
-        path_zipf:    dict[int, float] = {}
-        path_entropy: dict[int, float] = {}
-        for k in range(2, _MAX_K + 1):
-            path_zipf[k], path_entropy[k] = BlockE._template_stats(dict(raw[k]))
-        return path_zipf, path_entropy
-
-    @staticmethod
-    def _sample_tree_depth2_templates(
-        out_edges: dict[int, list[tuple[int, Any]]],
-        start_verts: np.ndarray,
-        n_samples: int,
-        rng: np.random.Generator,
-    ) -> dict[tuple[tuple[Any, Any], ...], int]:
-        """Sample depth-2 rooted trees; template = sorted tuple of (r1, r2) pairs.
-
-        Caps at 10k samples and at most 10 children / 5 grandchildren per root
-        so hub nodes (degree 900+) don't dominate runtime.
-        """
-        n_samples = min(n_samples, 10_000)
-        roots = start_verts[rng.integers(len(start_verts), size=n_samples)]
-        counts: defaultdict[tuple, int] = defaultdict(int)
-        for root in roots:
-            adj1 = out_edges.get(int(root))
-            if not adj1:
-                continue
-            pairs: list[tuple] = []
-            for child, r1 in adj1[:10]:  # at most 10 children
-                adj2 = out_edges.get(child)
-                if adj2:
-                    for _, r2 in adj2[:5]:  # at most 5 grandchildren per child
-                        pairs.append((r1, r2))
-            if pairs:
-                counts[tuple(sorted(pairs))] += 1
-        return dict(counts)
-
-    @staticmethod
-    def _estimate_k_cycle(
-        g_und: igraph.Graph,
-        k: int,
-        n_samples: int,
-        rng: np.random.Generator,
-    ) -> int:
-        """Estimate k-cycle count via random walk closure sampling.
-
-        Hub nodes (degree > _HUB_THRESH) are handled with rejection sampling
-        and pre-built sets, avoiding O(d) scans for d = 225k-degree nodes.
-        """
-        _HUB_THRESH  = 200   # degree above which full scan would be too slow
-        _MAX_REJECT  = 50    # rejection attempts at hubs (prob failure < 1e-40)
-
-        n = g_und.vcount()
-        if n < k:
-            return 0
-
-        adj     = [g_und.neighbors(v) for v in range(n)]
-        avg_deg = float(sum(len(a) for a in adj)) / n if n > 0 else 0.0
-        # Pre-build sets only for the rare high-degree hubs (O(m) total)
-        hub_sets = {v: set(nb) for v, nb in enumerate(adj) if len(nb) > _HUB_THRESH}
-
-        n_closed = 0
-        n_valid  = 0
-        for _ in range(n_samples):
-            start = int(rng.integers(n))
-            if not adj[start]:
-                continue
-            v       = start
-            visited = {start}
-            ok      = True
-            for _ in range(k - 1):
-                nb_v = adj[v]
-                dv   = len(nb_v)
-                if dv <= _HUB_THRESH:
-                    cands = [u for u in nb_v if u not in visited]
-                    if not cands:
-                        ok = False
-                        break
-                    v = cands[int(rng.integers(len(cands)))]
-                else:
-                    # Rejection sampling: pick random neighbor, retry if visited
-                    found = False
-                    for _ in range(_MAX_REJECT):
-                        u = nb_v[int(rng.integers(dv))]
-                        if u not in visited:
-                            v = u
-                            found = True
-                            break
-                    if not found:
-                        ok = False
-                        break
-                visited.add(v)
-            n_valid += 1
-            if ok and len(visited) == k:
-                nb_v = adj[v]
-                closed = (start in hub_sets[v]) if v in hub_sets else (start in nb_v)
-                if closed:
-                    n_closed += 1
-
-        if n_valid == 0 or n_closed == 0:
-            return 0
-        return int((n_closed / n_valid) * n * (avg_deg ** (k - 1)) / (2 * k))

@@ -31,7 +31,7 @@ sys.path.insert(0, str(_REPO / "src"))
 sys.path.insert(0, str(_SCRIPTS))
 
 from generator import Generator, Signature  # noqa: E402
-from signature_reduced import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF  # noqa: E402
+from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF  # noqa: E402
 from signature_roundtrip import _DEFAULT_SEARCH_DIRS, _load_target_from_corpus  # noqa: E402
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")

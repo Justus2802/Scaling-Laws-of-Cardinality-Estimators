@@ -1,6 +1,6 @@
 # Size dependence of the reduced signature features
 
-Which of the 99 reduced-signature features (`src/signature_reduced/`, blocks A/B/C/D/E/F)
+Which of the 99 reduced-signature features (`src/signature/`, blocks A/B/C/D/E/F)
 **scale with graph size** and which are **size-free**. This is the distinction the
 Stage-1 *conditional-on-size* model needs: extensive features must be conditioned on `V`;
 intensive ones form the size-free shape. See [signature.md](../signature.md) for the
@@ -136,7 +136,7 @@ density and is not a usable constant across graphs.
 ### How `*_cooc_scale` was made size-free (`M/V`, implemented)
 
 **Resolved.** The co-occurrence spectrum is now V-normalised in
-`signature_reduced/block_c.py` (`BlockC.calculate`): the singular values are divided by the
+`signature/block_c.py` (`BlockC.calculate`): the singular values are divided by the
 entity count `V` before the exp-decay fit, so `subj_cooc_scale` / `obj_cooc_scale` are
 size-free. This section keeps the comparison that motivated the choice.
 
@@ -148,7 +148,7 @@ vs 197 488 for codex_l (V=78k) — and the exp-decay `scale` (≈ that top value
 The `rate` is decay-per-rank and was always size-free.
 
 By contrast the `P(r|t)` spectrum runs the SVD on a **row-normalised** matrix
-(`signature_reduced/block_c.py:280-287`), so its `scale` is already bounded.
+(`signature/block_c.py:280-287`), so its `scale` is already bounded.
 
 **What needed fixing.** Only the `scale` is extensive. The `rate` is the
 slope of `ln v_k = ln A − λk`, and a *scalar* normalisation only shifts the intercept

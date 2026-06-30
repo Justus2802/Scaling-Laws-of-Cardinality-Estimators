@@ -9,7 +9,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from kg_io import load_kg
-from signature import BlockC
+from signature._orig_block_c import BlockC
 
 _VECTOR_LEN = 29   # 10 subj_SVs + 3 subj_stats + 10 obj_SVs + 3 obj_stats + 3 type_stats
 _RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"

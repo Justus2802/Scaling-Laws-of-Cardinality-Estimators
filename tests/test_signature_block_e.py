@@ -11,7 +11,7 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from kg_io import load_kg
 from motif_counter import ExactMotifCounter
-from signature import BlockE
+from signature._orig_block_e import BlockE
 
 _VECTOR_LEN = 36   # 7 motifs + 9 stars + 9 path_zipf + 9 path_entropy + 2 tree
 

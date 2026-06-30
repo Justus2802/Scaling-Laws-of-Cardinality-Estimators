@@ -30,7 +30,14 @@ sys.path.insert(0, str(_REPO / "src"))
 
 from generator import Generator, Signature
 from kg_io import load_kg, save_kg
-from signature_reduced import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
+from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
+import signature._orig_block_e as _block_e
+from motif_counter import HybridMotifCounter
+
+# Sample budget for the synthetic graph's final re-measurement (Block E motif CC
+# sampling + path/tree walks). Lower than the 100k Block-E default to keep the
+# roundtrip fast; targets are read from cache, so only the synthetic side uses it.
+_FINAL_SAMPLE_BUDGET = 20_000
 
 # Surface generator + signature-measurement progress and errors in the console.
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -43,6 +50,26 @@ _DEFAULT_SEARCH_DIRS: list[Path] = [
     _REPO / "data" / "graphs",
     _REPO / "data" / "test_graphs",
 ]
+
+# Where auto-named Stage 3 convergence CSVs are written.
+_CONVERGENCE_LOG_DIR = _REPO / "experiments" / "convergence_logs"
+
+
+def _auto_convergence_log_path(graph_label: str, args) -> Path:
+    """Build a convergence-log path under ``experiments/convergence_logs/``.
+
+    The filename encodes the graph name and the run options (seed, rewire
+    budget, and the skip-templates flag) so distinct runs don't overwrite each
+    other.
+
+    :param graph_label: Name of the source graph (corpus name or file stem).
+    :param args: Parsed CLI namespace supplying the run options.
+    :returns: Destination path for the convergence CSV.
+    """
+    parts = [graph_label, f"seed{args.seed}", f"rb{args.rewire_budget}"]
+    if args.skip_templates:
+        parts.append("skiptmpl")
+    return _CONVERGENCE_LOG_DIR / ("conv_" + "_".join(parts) + ".csv")
 
 
 def _load_block(cls, path: Path):
@@ -182,8 +209,11 @@ def main():
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--rewire-budget", type=int, default=5_000)
-    parser.add_argument("--convergence-log", default=None,
-                        help="Write Stage 3 convergence CSV to this path.")
+    parser.add_argument("--convergence-log", nargs="?", const="AUTO", default=None,
+                        help="Write Stage 3 convergence CSV. With no value, the file "
+                             "is auto-named from the graph name and run options and "
+                             "written to experiments/convergence_logs/. Pass an "
+                             "explicit path to override.")
     parser.add_argument("--skip-templates", action="store_true",
                         help="Skip path/tree template and star measurement on both "
                              "target and synthetic (saves ~8 min on medium graphs).")
@@ -194,13 +224,25 @@ def main():
         kg_path = Path(args.kg_file)
         target_sig, tblocks = _measure_target_from_file(kg_path, skip_templates=args.skip_templates)
         default_out = kg_path.with_name(kg_path.stem + "_synth.ttl")
+        graph_label = kg_path.stem
     elif args.graph:
         search_dirs = [Path(args.graphs_dir)] if args.graphs_dir else _DEFAULT_SEARCH_DIRS
         print(f"Loading   : cached target signature for '{args.graph}' from {[str(d) for d in search_dirs]}")
         target_sig, tblocks, found_graph_dir = _load_target_from_corpus(args.graph, search_dirs)
         default_out = found_graph_dir / f"{args.graph}_synth.ttl"
+        graph_label = args.graph
     else:
         parser.error("provide a corpus graph name or --kg-file")
+
+    # Resolve the convergence-log destination: AUTO → generated path under the
+    # experiments dir; an explicit value → that path; absent → no log.
+    if args.convergence_log == "AUTO":
+        conv_log_path = _auto_convergence_log_path(graph_label, args)
+        conv_log_path.parent.mkdir(parents=True, exist_ok=True)
+    elif args.convergence_log:
+        conv_log_path = Path(args.convergence_log)
+    else:
+        conv_log_path = None
 
     ta, tb, tc, td, te, tf = (
         tblocks["a"], tblocks["b"], tblocks["c"], tblocks["d"], tblocks["e"], tblocks["f"],
@@ -212,9 +254,11 @@ def main():
     g_synth = Generator(target_sig).sample(
         seed=args.seed,
         rewire_budget=args.rewire_budget,
-        convergence_log=args.convergence_log,
+        convergence_log=conv_log_path,
     )
     print(f"  {g_synth.vcount():,} nodes  {g_synth.ecount():,} edges")
+    if conv_log_path is not None:
+        print(f"  convergence log → {conv_log_path}")
     print(f"  best loss {g_synth['stage3_best_loss']:.6f} reached at accepted swap {g_synth['stage3_best_accepted']}")
 
     # ── Step 3: save synthetic graph ─────────────────────────────────────────
@@ -223,11 +267,15 @@ def main():
 
     # ── Step 4: measure all six blocks for the synthetic graph ───────────────
     print("Measuring : blocks A–F on synthetic graph …")
+    # Use the lighter sample budget for Block E's CC motif/star counting (the
+    # module-level counter is rebound) and its path/tree walks (sample_budget).
+    _block_e.MOTIF_COUNTER = HybridMotifCounter(n_samples=_FINAL_SAMPLE_BUDGET, seed=1)
     sa = BlockA().calculate(g_synth)
     sb = BlockB().calculate(g_synth)
     sc = BlockC().calculate(g_synth)
     sd = BlockD().calculate(g_synth)
-    se = BlockE().calculate(g_synth, skip_stars_and_paths=args.skip_templates)
+    se = BlockE().calculate(g_synth, sample_budget=_FINAL_SAMPLE_BUDGET,
+                            skip_stars_and_paths=args.skip_templates)
     sf = BlockF().calculate(g_synth, skip_shortest_paths=True)
 
     # ── Step 5: full reduced-signature comparison ────────────────────────────

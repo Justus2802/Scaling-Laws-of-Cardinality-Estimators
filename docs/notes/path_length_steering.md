@@ -180,4 +180,4 @@ distribution itself (inverse problem).
 | `src/generator/stage1.py` | Reads `f.shortest_path_mean` and `f.shortest_path_max` directly |
 | `src/generator/stage2.py` | `_steer_path_lengths` (current implementation; one-sided) |
 | `src/generator/stage3.py` | `refine()` — target site for Option B |
-| `src/signature_reduced/block_f.py` | `shortest_path_max`, `shortest_path_mean`, `shortest_path_var` properties |
+| `src/signature/block_f.py` | `shortest_path_max`, `shortest_path_mean`, `shortest_path_var` properties |

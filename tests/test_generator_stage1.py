@@ -6,8 +6,8 @@ import unittest
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from signature_reduced import BlockA, BlockC, BlockF
-from signature_reduced._fits import ExpDecayFit, nan_exp_decay
+from signature import BlockA, BlockC, BlockF
+from signature._fits import ExpDecayFit, nan_exp_decay
 from signature._utils import PowerLawStats
 from generator import Schema, sample_schema
 from generator.stage1 import COOC_NUM_GROUPS

@@ -8,7 +8,8 @@ import igraph
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from kg_io import load_kg
-from signature import BlockB, PowerLawStats
+from signature._orig_block_b import BlockB
+from signature._utils import PowerLawStats
 
 
 def _isnan_stats(stats: PowerLawStats) -> bool:

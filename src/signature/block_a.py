@@ -1,4 +1,12 @@
-"""Block A — Size and density features."""
+"""Reduced Block A — Size and vocabulary (G0).
+
+The over-determined original stored ``num_triples``, ``density`` and
+``relation_reuse``, all exact functions of ``num_entities``, mean degree and
+``num_relations``. The reduced block keeps only the independent root parameters:
+``num_entities``, ``num_relations`` and **mean degree** ``E/V`` (the size-stable
+edge-budget handle). ``num_classes`` is reported by Block C, which already scans
+``rdf:type``.
+"""
 
 import igraph
 
@@ -9,124 +17,95 @@ log = get_logger(__name__)
 
 
 class BlockA(SignatureBlock):
-    """Block A — Size and density features of a KG.
+    """Reduced Block A — size and vocabulary root parameters.
 
     Usage::
 
         b = BlockA().calculate(g)
         b.as_vector()                # fixed-length comparison vector
         b.as_dict()                  # named key-value pairs
-        b.visualize()                # interactive matplotlib figure
         b.visualize(mode="text")     # CLI summary
-        b.visualize(path="out.png")  # save plot to file
     """
 
     def __init__(self) -> None:
         self._num_entities = _NOT_CALCULATED
-        self._num_triples = _NOT_CALCULATED
         self._num_relations = _NOT_CALCULATED
-        self._density = _NOT_CALCULATED
-        self._triples_per_entity = _NOT_CALCULATED
-        self._relation_reuse = _NOT_CALCULATED
+        self._mean_degree = _NOT_CALCULATED
 
     @property
     def num_entities(self) -> int:
         return self._require("num_entities", self._num_entities)
 
     @property
-    def num_triples(self) -> int:
-        return self._require("num_triples", self._num_triples)
-
-    @property
     def num_relations(self) -> int:
         return self._require("num_relations", self._num_relations)
 
     @property
-    def density(self) -> float:
-        return self._require("density", self._density)
-
-    @property
-    def triples_per_entity(self) -> float:
-        return self._require("triples_per_entity", self._triples_per_entity)
-
-    @property
-    def relation_reuse(self) -> float:
-        return self._require("relation_reuse", self._relation_reuse)
+    def mean_degree(self) -> float:
+        """Edge-budget handle ``E/V`` (old ``triples_per_entity``)."""
+        return self._require("mean_degree", self._mean_degree)
 
     def calculate(self, g: igraph.Graph) -> "BlockA":
-        """Compute Block A (size and density) of the graph signature.
+        """Compute reduced Block A (size & vocabulary).
 
-        Literals are excluded from the entity count, matching the definition
-        |V| = distinct subjects ∪ objects excluding RDF literals.
+        Literals are excluded from the entity count, matching the original
+        |V| = distinct subjects ∪ objects excluding RDF literals. Mean degree is
+        ``E / V`` and, with V, fixes the edge budget E; ``density`` and
+        ``relation_reuse`` are intentionally not stored (derivable).
         """
-        self._num_entities = len(g.vs.select(is_literal_eq=False))
-        log.info("Block A: computed num_entities (%d)", self._num_entities)
-        self._num_triples = g.ecount()
-        log.info("Block A: computed num_triples (%d)", self._num_triples)
-        self._num_relations = len(set(g.es["predicate"])) if self._num_triples > 0 else 0
-        log.info("Block A: computed num_relations (%d)", self._num_relations)
-
-        self._density = self._num_triples / (self._num_entities ** 2) if self._num_entities > 0 else 0.0
-        log.info("Block A: computed density (%.6g)", self._density)
-        self._triples_per_entity = self._num_triples / self._num_entities if self._num_entities > 0 else 0.0
-        log.info("Block A: computed triples_per_entity (%.4f)", self._triples_per_entity)
-        self._relation_reuse = self._num_triples / self._num_relations if self._num_relations > 0 else 0.0
-        log.info("Block A: computed relation_reuse (%.4f)", self._relation_reuse)
-
+        num_entities = len(g.vs.select(is_literal_eq=False))
+        num_triples = g.ecount()
+        self._num_entities = num_entities
+        self._num_relations = len(set(g.es["predicate"])) if num_triples > 0 else 0
+        self._mean_degree = num_triples / num_entities if num_entities > 0 else 0.0
+        log.info(
+            "Block A: V=%d, R=%d, mean_degree=%.4f",
+            self._num_entities, self._num_relations, self._mean_degree,
+        )
         return self
 
     @classmethod
     def feature_names(cls) -> list[str]:
         """Return feature names in the same order as :meth:`as_vector`."""
-        return [
-            "num_entities",
-            "num_triples",
-            "num_relations",
-            "density",
-            "triples_per_entity",
-            "relation_reuse",
-        ]
+        return ["num_entities", "num_relations", "mean_degree"]
 
     @classmethod
     def get_na_vec(cls) -> list[float]:
-        """Return a 6-element NaN vector (same length as as_vector())."""
-        return [float("nan")] * 6
+        """Return a 3-element NaN vector (same length as as_vector())."""
+        return [float("nan")] * 3
 
     def as_vector(self) -> list[float]:
-        """Flatten to a fixed-length 6-vector for cross-KG comparison."""
+        """Flatten to a fixed-length 3-vector for cross-KG comparison.
+
+        Attributes absent from stale serialized data are emitted as NaN.
+        """
         return [
-            float(self.num_entities),
-            float(self.num_triples),
-            float(self.num_relations),
-            self.density,
-            self.triples_per_entity,
-            self.relation_reuse,
+            self._safe_scalar(lambda: self.num_entities),
+            self._safe_scalar(lambda: self.num_relations),
+            self._safe_scalar(lambda: self.mean_degree),
         ]
 
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
-        """Display or save diagnostics for Block A.
+        """Display or save diagnostics for reduced Block A.
 
         Args:
-            mode: "plot" for a matplotlib bar chart, "text" for a CLI summary.
-            path: if given, write output to this file path instead of
-                  displaying interactively.
+            mode: "text" for a CLI summary; "plot" is a no-op (all scalars).
+            path: write to this file instead of stdout (text mode only).
         """
         if mode == "text":
             self._visualize_text(path)
         elif mode == "plot":
-            self._visualize_plot(path)
+            # All features are unrelated scalars — nothing to plot.
+            return
         else:
             raise ValueError(f"Unknown mode {mode!r}. Use 'plot' or 'text'.")
 
     def _visualize_text(self, path: str | None) -> None:
-        lines: list[str] = [
-            "=== Block A: Size and Density ===",
-            f"  num_entities      : {self.num_entities}",
-            f"  num_triples       : {self.num_triples}",
-            f"  num_relations     : {self.num_relations}",
-            f"  density           : {self.density:.6g}",
-            f"  triples_per_entity: {self.triples_per_entity:.4f}",
-            f"  relation_reuse    : {self.relation_reuse:.4f}",
+        lines = [
+            "=== Reduced Block A: Size & Vocabulary (G0) ===",
+            f"  num_entities : {self.num_entities}",
+            f"  num_relations: {self.num_relations}",
+            f"  mean_degree  : {self.mean_degree:.4f}",
         ]
         text = "\n".join(lines)
         if path is None:
@@ -134,8 +113,3 @@ class BlockA(SignatureBlock):
         else:
             with open(path, "w") as f:
                 f.write(text + "\n")
-
-    def _visualize_plot(self, path: str | None) -> None:
-        # All Block A features are unrelated scalars — no meaningful distribution to plot.
-        # Use visualize(mode="text") for a summary.
-        return

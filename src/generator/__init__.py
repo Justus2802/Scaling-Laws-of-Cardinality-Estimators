@@ -1,6 +1,6 @@
 """kgsynth generator — three-stage synthetic KG generation.
 
-Consumes the **reduced** signature (``signature_reduced``): Stage 1 samples an
+Consumes the **reduced** signature (``signature``): Stage 1 samples an
 abstract :class:`Schema` from a measured BlockA/BlockC (optionally BlockB/BlockD),
 Stage 2 instantiates it into an ``igraph.Graph``, and Stage 3 rewires that graph
 toward the Block E / Block F targets.

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import igraph
 
-from signature_reduced import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
+from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
 
 from ._logging import get_logger
 from .stage1 import sample_schema

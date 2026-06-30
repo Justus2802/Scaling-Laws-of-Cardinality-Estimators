@@ -19,7 +19,7 @@ import math
 
 import numpy as np
 
-from signature_reduced import BlockA, BlockB, BlockC, BlockD, BlockF
+from signature import BlockA, BlockB, BlockC, BlockD, BlockF
 
 from ._adapters import (
     _functionality_from_alpha,

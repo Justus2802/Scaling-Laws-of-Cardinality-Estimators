@@ -9,7 +9,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from kg_io import load_kg
-from signature import BlockD, PowerLawStats, _TOP_K_PAIRS
+from signature._orig_block_d import BlockD, _TOP_K_PAIRS
+from signature._utils import PowerLawStats
 
 _VECTOR_LEN = 6 + 6 + _TOP_K_PAIRS + 2  # 34 with default _TOP_K_PAIRS=20
 

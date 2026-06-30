@@ -6,7 +6,7 @@ import unittest
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from signature_reduced._fits import (  # noqa: E402
+from signature._fits import (  # noqa: E402
     fit_skewnorm,
     fit_exp_decay_rank,
     fit_truncated_powerlaw,

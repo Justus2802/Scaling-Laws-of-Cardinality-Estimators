@@ -5,8 +5,8 @@ import unittest
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from signature_reduced import BlockA, BlockB, BlockC, BlockD  # noqa: E402
-from signature_reduced._fits import ExpDecayFit, SkewNormFit, ZipfFit, nan_exp_decay  # noqa: E402
+from signature import BlockA, BlockB, BlockC, BlockD  # noqa: E402
+from signature._fits import ExpDecayFit, SkewNormFit, ZipfFit, nan_exp_decay  # noqa: E402
 from signature._utils import PowerLawStats  # noqa: E402
 from generator import sample_schema, instantiate  # noqa: E402
 
