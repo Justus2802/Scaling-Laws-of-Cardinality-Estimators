@@ -7,30 +7,61 @@
   out-degree fit : alpha=2.1822  xmin=4.0
   in-degree fit  : alpha=2.1881  xmin=20.0
   relation Zipf  : exponent=2.1003  xmin=2701.0
-  obj  mult-alpha skew-normal: loc=3.000 scale=0.555 shape=-17865499.776 cutoffs=[1.40,3.00]
-  subj mult-alpha skew-normal: loc=2.097 scale=0.468 shape=0.625 cutoffs=[1.40,3.00]
+  obj  mult-alpha quantiles: median=2.644 IQR=[2.306,2.898] cutoffs=[1.40,3.00]
+  subj mult-alpha quantiles: median=2.230 IQR=[1.959,2.648] cutoffs=[1.40,3.00]
   CS-size offset : a_obj=0.0873  a_subj=0.1223
 
 === Reduced Block C: Schema & Co-occurrence (G3) ===
   num_classes        : 0
   class size power-law: alpha=nan  xmin=nan
-  subj co-occurrence : exp(rate=0.247, scale=45286.968)  density=0.0408
-  obj  co-occurrence : exp(rate=0.201, scale=12999.462)  density=0.0828
-  subj row entropy   : skew-normal(loc=2.943, scale=1.087, shape=-3.383)
-  obj  row entropy   : skew-normal(loc=3.285, scale=1.543, shape=-2.277)
+  subj co-occurrence : exp(rate=0.247, scale=0.455)  density=0.0408
+  obj  co-occurrence : exp(rate=0.201, scale=0.131)  density=0.0828
+  subj row entropy   : quantiles(median=2.179, IQR=[1.644,2.638])
+  obj  row entropy   : quantiles(median=2.210, IQR=[1.386,2.966])
   P(r|t) spectrum    : exp(rate=nan, scale=nan)
   per-type entropy   : exp(rate=nan, scale=nan)
 
 === Reduced Block D: Characteristic Sets & Two-step (G3) ===
   num_distinct_cs    : 13275
   CS frequency       : power-law(alpha=1.8130, xmin=3.0)
-  CS size            : skew-normal(loc=1.000, scale=3.544, shape=56373344.026, cutoffs=[1.0,18.0])
-  inverse-CS size    : skew-normal(loc=1.000, scale=2.130, shape=12024193.289, cutoffs=[1.0,43.0])
+  CS size            : quantiles(median=4.0, IQR=[2.0,5.0], range=[1.0,18.0])
+  inv_num_distinct_cs: 8614
+  inverse-CS freq    : power-law(alpha=1.7681, xmin=3.0)
+  inverse-CS size    : quantiles(median=2.0, IQR=[1.0,2.0], range=[1.0,43.0])
   two-step path count: trunc. power-law(alpha=1.2946, range=[1,286158])
+
+=== Reduced Block E: Motif Shape Distribution (G5) ===
+
+--- Subgraph counts ---
+  triangles:           383579
+  4-cycles:            26765215
+  5-cycles (est):      117978638
+  6-cycles (est):      10770796485
+  diamonds:            16366492
+  K4:                  159749
+  tailed triangles:    628680757
+
+--- Star counts (induced) ---
+  k=2: 195821833  k=3: 422324824106  k=4: 1206443453345240  k=5: 3019087642981996544  k=6: 6577941279790678933504  k=7: 12078859777139652274683904  k=8: 19693746003841198414310146048  k=9: 28167418555153224838360044929024  k=10: 36554027236079598719023927724605440
+
+--- Path templates ---
+    k  zipf_alpha     entropy
+    2         nan     -0.0000
+    3      1.3208      0.0142
+    4      1.1786      0.4953
+    5      1.1752      1.4086
+    6      1.1658      1.9702
+    7      1.1892      2.4852
+    8      1.2648      2.9512
+    9         nan         nan
+   10         nan         nan
+
+--- Tree templates ---
+  zipf_alpha=1.0709  entropy=0.0988
 
 === Reduced Block F: Connectivity (G4) ===
   num_components            : 66
   largest_component_fraction: 0.9977
   clustering_coefficient    : 0.2212
   degree_assortativity      : -0.0518
-  shortest path             : skew-normal(loc=3.330, scale=1.434, shape=1.613)
+  shortest path             : max=10.0, mean=4.325, var=1.203
