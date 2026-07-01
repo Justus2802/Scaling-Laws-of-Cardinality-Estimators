@@ -21,6 +21,25 @@ Covers (1) the exact-vs-colour-coding (CC) counter comparison per motif size and
 - The CC sampler functions (`cc_run`, `cc_run_stars`, `cc_run_stars_loop`) live in
   `cc_motif_counter.py` next to `CCMotifCounter`.
 
+### Fuzz-test coverage
+
+Brute-force oracles shared by the counter tests live in
+[`tests/_brute_motifs.py`](../../tests/_brute_motifs.py) (`brute_tri_counts`,
+`brute_induced_cycles`, `brute_motifsk` — connected induced graphlets by sorted
+degree sequence — and `brute_stars`). They enumerate subgraphs directly, so they
+are independent ground truth. `brute_motifsk`/`brute_stars` are verified to match
+`ExactMotifCounter` exactly.
+
+[`tests/test_hybrid_motif_counter.py`](../../tests/test_hybrid_motif_counter.py)
+fuzzes `HybridMotifCounter` across **every** family it reports:
+
+- **Exact paths** (triangles, k=2 edges, k=3 wedge/triangle) — asserted for exact
+  equality against the oracle over 200 random graphs.
+- **CC paths** (k=4 graphlets, C5, C6, stars) — the estimate is averaged over
+  independent hybrid seeds and compared to the oracle only where the true count is
+  abundant, with a relative tolerance (the same statistical strategy the CC star
+  tests in `test_generator_motif_counter.py` use).
+
 ## Adaptive sampling (CC counter)
 
 `CCMotifCounter(n_samples=…, n_colorings=…, adaptive=False)`. The `adaptive`
@@ -90,6 +109,20 @@ which CC overtakes exact on stars / 4-node motifs.
   for all motifs; truth counts and exact per-family runtimes are recorded as
   `None`, leaving only the CC sweep. Use it when exact enumeration is intractable
   or only the CC variance/runtime matters.
+
+### Known CC accuracy limits (surfaced by the hybrid fuzz test)
+
+- **Diamond over-count (k=4).** The CC estimator systematically over-counts the
+  diamond graphlet — degree sequence `(2,2,3,3)`, K4 minus an edge. On a verified
+  fixture (true = 84) it estimates ~135 even at 500 k samples × 32 colourings, so
+  the bias does **not** vanish with budget; P4, paw, C4, and K4 all converge
+  correctly. The older `TestExactVsCC` never caught this because its Petersen
+  fixture is diamond-free. `test_fuzz_motifs4` therefore excludes the diamond from
+  its tight assertion and only bounds it loosely. **TODO: fix the CC diamond
+  estimator (likely a σ / spanning-path normalisation issue for `(2,2,3,3)`).**
+- **6-cycle variance.** A 6-motif is colourful in only ~1.5 % of colourings, so C6
+  estimates are high-variance and can drift ~40–50 % even averaged over seeds;
+  `test_fuzz_cycles_c5_c6` asserts C5 tightly but bounds C6 only loosely.
 
 ### Reproduce
 
