@@ -195,7 +195,7 @@ class UniformRangeSampler(SignatureSampler):
 
     For a feature with finite corpus values ``[lo, hi]`` and range ``r = hi - lo``,
     draws from ``Uniform(lo - 0.1·r, hi + 0.1·r)``. Constant features (``r = 0``)
-    are reproduced exactly, so fixed cutoffs (e.g. ``obj_mult_alpha_lo = 1.4``)
+    are reproduced exactly, so fixed cutoffs (e.g. ``obj_mult_alpha_q00 = 1.4``)
     need no special-casing.
     """
 

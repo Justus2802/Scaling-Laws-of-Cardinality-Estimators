@@ -1,11 +1,11 @@
-"""Sweep Stage 3 configs (rewire_budget × remeasure_interval × seed) and save
-per-run synthetic signatures to disk for later error analysis.
+"""Sweep Stage 3 configs (rewire_budget × seed) and save per-run synthetic
+signatures to disk for later error analysis.
 
 Output layout
 -------------
   experiments/<graph>_target.json   — target signature (written once)
   experiments/<graph>.jsonl         — one JSON record per run:
-      {"graph": ..., "budget": ..., "remeasure_interval": ..., "seed": ...,
+      {"graph": ..., "budget": ..., "seed": ...,
        "synth": {"a": ..., "b": ..., "c": ..., "d": ..., "e": ..., "f": ...}}
 
 Blocks that are None are stored as null.
@@ -14,7 +14,7 @@ Usage
 -----
     python scripts/sweep_collect.py fb237_v4_ind
     python scripts/sweep_collect.py fb237_v4_ind \\
-        --budgets 500 2000 5000 --intervals 200 2000 --seeds 0 1 2 3 4
+        --budgets 500 2000 5000 --seeds 0 1 2 3 4
     python scripts/sweep_collect.py fb237_v4_ind --append
 """
 
@@ -34,7 +34,7 @@ from generator import Generator, Signature  # noqa: E402
 from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF  # noqa: E402
 from signature_roundtrip import _DEFAULT_SEARCH_DIRS, _load_target_from_corpus  # noqa: E402
 
-logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
+logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 _LETTERS = ("a", "b", "c", "d", "e", "f")
 _BLOCK_CLS = {"a": BlockA, "b": BlockB, "c": BlockC, "d": BlockD, "e": BlockE, "f": BlockF}
@@ -66,8 +66,6 @@ def main() -> None:
     parser.add_argument("graph", help="Graph name in the corpus (e.g. fb237_v4_ind)")
     parser.add_argument("--budgets", nargs="+", type=int, default=[500, 2000, 5000, 10_000],
                         metavar="N", help="rewire_budget values to sweep")
-    parser.add_argument("--intervals", nargs="+", type=int, default=[200, 2000],
-                        metavar="N", help="remeasure_interval values to sweep")
     parser.add_argument("--seeds", nargs="+", type=int, default=list(range(5)),
                         metavar="N", help="random seeds to sweep")
     parser.add_argument("--out", type=Path, default=None,
@@ -89,16 +87,16 @@ def main() -> None:
     target_path.write_text(json.dumps(_sig_to_dict(target_sig), indent=2))
     print(f"Target saved → {target_path}")
 
-    configs = list(product(args.budgets, args.intervals, args.seeds))
+    configs = list(product(args.budgets, args.seeds))
     total = len(configs)
     mode = "a" if args.append else "w"
 
     gen = Generator(target_sig)
 
     with out_path.open(mode) as fh:
-        for i, (budget, interval, seed) in enumerate(configs, 1):
-            print(f"[{i}/{total}] budget={budget} interval={interval} seed={seed} … ", end="", flush=True)
-            g_synth = gen.sample(seed=seed, rewire_budget=budget, remeasure_interval=interval)
+        for i, (budget, seed) in enumerate(configs, 1):
+            print(f"[{i}/{total}] budget={budget} seed={seed} … ", end="", flush=True)
+            g_synth = gen.sample(seed=seed, rewire_budget=budget)
             synth_sig = Signature.from_graph(
                 g_synth,
                 skip_stars_and_paths=True,
@@ -107,7 +105,6 @@ def main() -> None:
             record = {
                 "graph": args.graph,
                 "budget": budget,
-                "remeasure_interval": interval,
                 "seed": seed,
                 "synth": _sig_to_dict(synth_sig),
             }

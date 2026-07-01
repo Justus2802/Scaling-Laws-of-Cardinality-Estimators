@@ -9,20 +9,28 @@ needs from those parameters, so the Stage-1/2/3 logic stays unchanged.
 import math
 
 import numpy as np
-import scipy.stats
 from scipy.special import zeta
 
+from signature import QUANTILE_LEVELS
 
-def _skewnorm_mean(fit) -> float:
-    """Mean of a reduced-signature skew-normal fit (NaN when the fit is absent).
+# Index of the median (0.5) level within QUANTILE_LEVELS, for scalar summaries.
+_MEDIAN_IDX = QUANTILE_LEVELS.index(0.5)
 
-    ``fit`` is a ``SkewNormFit`` ``(loc, scale, shape, lo, hi)``; the mean uses
-    the scipy parameterisation and ignores the truncation cutoffs (close enough
-    for sizing the CS budget).
+
+def _quantile_mean(fit) -> float:
+    """Mean of a reduced-signature quantile fit (NaN when the fit is absent).
+
+    ``fit`` is a ``QuantileFit``-shaped tuple of sample quantiles at
+    :data:`QUANTILE_LEVELS`; the mean is the trapezoid integral of the quantile
+    function over the levels (``∫₀¹ Q(u) du``), close enough for sizing the CS
+    budget.
     """
-    if fit is None or math.isnan(fit.loc) or math.isnan(fit.scale) or math.isnan(fit.shape):
+    if fit is None:
         return float("nan")
-    return float(scipy.stats.skewnorm.mean(fit.shape, loc=fit.loc, scale=fit.scale))
+    qs = np.asarray(fit, dtype=float)
+    if not np.isfinite(qs).all():
+        return float("nan")
+    return float(np.trapezoid(qs, QUANTILE_LEVELS))
 
 
 def _functionality_from_alpha(fit, floor: float = 0.1) -> float:
@@ -30,37 +38,33 @@ def _functionality_from_alpha(fit, floor: float = 0.1) -> float:
 
     Reduced Block B drops the per-relation ``functionality`` dict and instead
     stores the spread of per-relation multiplicity power-law exponents as a
-    skew-normal. For a discrete power-law ``p(m) ∝ m^(−α)`` on ``m ≥ 1`` the
-    fraction of single-object slots is ``P(m=1) = 1/ζ(α)``; the skew-normal
-    ``loc`` is the typical per-relation α. Falls back to 1.0 (fully functional)
-    when α is unavailable or ≤ 1 (where ζ diverges). Clamped to ``[floor, 1.0]``
-    to match the old clip bounds.
+    quantile function. For a discrete power-law ``p(m) ∝ m^(−α)`` on ``m ≥ 1`` the
+    fraction of single-object slots is ``P(m=1) = 1/ζ(α)``; the median quantile is
+    the typical per-relation α. Falls back to 1.0 (fully functional) when α is
+    unavailable or ≤ 1 (where ζ diverges). Clamped to ``[floor, 1.0]`` to match
+    the old clip bounds.
     """
-    alpha = fit.loc if fit is not None else float("nan")
+    alpha = float(fit[_MEDIAN_IDX]) if fit is not None else float("nan")
     if math.isnan(alpha) or alpha <= 1.0:
         return 1.0
     return float(np.clip(1.0 / zeta(alpha), floor, 1.0))
 
 
-def sample_skewnorm_trunc(fit, n: int, rng: np.random.Generator):
-    """Sample ``n`` values from a (truncated) skew-normal fit, or ``None``.
+def sample_quantiles_trunc(fit, n: int, rng: np.random.Generator):
+    """Sample ``n`` values from a quantile-function fit, or ``None``.
 
-    ``fit`` is a ``SkewNormFit``-shaped 5-tuple ``(loc, scale, shape, lo, hi)``
-    (works for both the NamedTuple and a plain decoded tuple). Draws via
-    ``scipy.stats.skewnorm.rvs`` and clips to ``[lo, hi]`` when those cutoffs are
-    finite. Returns ``None`` when the fit is unavailable (NaN params), so callers
-    fall back to a budget-derived / neutral default.
+    ``fit`` is a ``QuantileFit``-shaped tuple of sample quantiles at
+    :data:`QUANTILE_LEVELS` (works for both the NamedTuple and a plain decoded
+    tuple). Draws by inverse-transform sampling — interpolating the stored
+    quantile function at uniform deviates via ``np.interp`` — which naturally
+    truncates to the stored ``[q@0, q@1]`` range. Returns ``None`` when the fit
+    is unavailable (NaN params), so callers fall back to a budget-derived /
+    neutral default.
     """
-    loc, scale, shape, lo, hi = fit
-    if math.isnan(loc) or math.isnan(scale) or math.isnan(shape):
+    qs = np.asarray(fit, dtype=float)
+    if not np.isfinite(qs).all():
         return None
-    vals = scipy.stats.skewnorm.rvs(shape, loc=loc, scale=scale, size=n, random_state=rng)
-    vals = np.atleast_1d(vals)
-    if not math.isnan(lo):
-        vals = np.maximum(vals, lo)
-    if not math.isnan(hi):
-        vals = np.minimum(vals, hi)
-    return vals
+    return np.interp(rng.random(n), QUANTILE_LEVELS, qs)
 
 
 def sample_powerlaw(alpha: float, n: int, rng: np.random.Generator) -> np.ndarray:

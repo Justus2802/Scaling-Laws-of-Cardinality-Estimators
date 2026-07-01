@@ -2,7 +2,7 @@
 
 Replaces the raw 10 singular values with the **exponential-decay** parameters of
 each spectrum (rate λ, scale A), and the moment summaries of row entropy with a
-**skew-normal**. Adds the ``P(r|t)`` type-relation spectrum as its own exp-decay
+**quantile function**. Adds the ``P(r|t)`` type-relation spectrum as its own exp-decay
 curve (the original conflated it with ``M``). Co-occurrence density and per-type
 relation entropy are kept as targets — functionals the lossy spectrum does not
 pin. The matrix/SVD/row-entropy machinery is reused from the original Block C.
@@ -32,13 +32,16 @@ from ._utils import RDF_TYPE, PowerLawStats, _fit_powerlaw, _nan_power_law_stats
 from ._orig_block_c import BlockC as _OrigBlockC, _TOP_K_SV
 from ._fits import (
     ExpDecayFit,
-    SkewNormFit,
+    QuantileFit,
+    QUANTILE_LEVELS,
+    QUANTILE_SUFFIXES,
     fit_exp_decay_rank,
-    fit_skewnorm,
+    fit_quantiles,
     nan_exp_decay,
-    nan_skewnorm,
+    nan_quantiles,
 )
-from ._plot_helpers import overlay_exp_decay_rank, overlay_skewnorm
+from ._plot_helpers import overlay_exp_decay_rank, overlay_quantiles
+from . import _distance
 
 log = get_logger(__name__)
 
@@ -60,10 +63,10 @@ class BlockC(SignatureBlock):
         self._num_classes = _NOT_CALCULATED
         self._subj_cooc_exp = _NOT_CALCULATED
         self._subj_cooc_density = _NOT_CALCULATED
-        self._subj_row_entropy_skew = _NOT_CALCULATED
+        self._subj_row_entropy_q = _NOT_CALCULATED
         self._obj_cooc_exp = _NOT_CALCULATED
         self._obj_cooc_density = _NOT_CALCULATED
-        self._obj_row_entropy_skew = _NOT_CALCULATED
+        self._obj_row_entropy_q = _NOT_CALCULATED
         self._type_rel_spectrum_exp = _NOT_CALCULATED
         self._per_type_entropy_exp = _NOT_CALCULATED
         # unsummarised data kept for visualization
@@ -75,7 +78,7 @@ class BlockC(SignatureBlock):
         self._per_type_entropies = _NOT_CALCULATED
 
     # ── properties ────────────────────────────────────────────────────────────
-    # Exp-decay / skew-normal fits are NamedTuples re-wrapped on access so they
+    # Exp-decay / quantile fits are NamedTuples re-wrapped on access so they
     # survive the JSON round-trip (which restores plain tuples).
 
     @property
@@ -95,8 +98,8 @@ class BlockC(SignatureBlock):
         return self._require("subj_cooc_density", self._subj_cooc_density)
 
     @property
-    def subj_row_entropy_skew(self) -> SkewNormFit:
-        return SkewNormFit(*self._require("subj_row_entropy_skew", self._subj_row_entropy_skew))
+    def subj_row_entropy_q(self) -> QuantileFit:
+        return QuantileFit(*self._require("subj_row_entropy_q", self._subj_row_entropy_q))
 
     @property
     def obj_cooc_exp(self) -> ExpDecayFit:
@@ -107,8 +110,8 @@ class BlockC(SignatureBlock):
         return self._require("obj_cooc_density", self._obj_cooc_density)
 
     @property
-    def obj_row_entropy_skew(self) -> SkewNormFit:
-        return SkewNormFit(*self._require("obj_row_entropy_skew", self._obj_row_entropy_skew))
+    def obj_row_entropy_q(self) -> QuantileFit:
+        return QuantileFit(*self._require("obj_row_entropy_q", self._obj_row_entropy_q))
 
     @property
     def type_rel_spectrum_exp(self) -> ExpDecayFit:
@@ -124,7 +127,7 @@ class BlockC(SignatureBlock):
         """Compute reduced Block C (schema & co-occurrence).
 
         Builds subject/object relation co-occurrence matrices and summarises each
-        by an exp-decay spectrum + density + skew-normal row entropy; fits the
+        by an exp-decay spectrum + density + quantile-function row entropy; fits the
         class-size power-law; and builds the type→relation matrix to summarise
         ``P(r|t)`` by its own spectrum plus a per-type entropy rank curve.
         """
@@ -163,8 +166,8 @@ class BlockC(SignatureBlock):
         self._obj_row_entropies = obj_ent
         self._subj_cooc_exp = fit_exp_decay_rank(self._subj_singular_values)
         self._obj_cooc_exp = fit_exp_decay_rank(self._obj_singular_values)
-        self._subj_row_entropy_skew = fit_skewnorm(subj_ent) if subj_ent.size else nan_skewnorm()
-        self._obj_row_entropy_skew = fit_skewnorm(obj_ent) if obj_ent.size else nan_skewnorm()
+        self._subj_row_entropy_q = fit_quantiles(subj_ent) if subj_ent.size else nan_quantiles()
+        self._obj_row_entropy_q = fit_quantiles(obj_ent) if obj_ent.size else nan_quantiles()
 
         # --- Types ---
         subj_types: defaultdict[int, set[str]] = defaultdict(set)
@@ -198,15 +201,16 @@ class BlockC(SignatureBlock):
         return self
 
     def as_vector(self) -> list[float]:
-        """Flatten to a fixed-length 23-vector for cross-KG comparison.
+        """Flatten to a fixed-length 27-vector for cross-KG comparison.
 
         Layout: class power-law (alpha, xmin); num_classes; subj co-occurrence
         (rate, scale, density); obj co-occurrence (rate, scale, density); subj
-        row-entropy skew-normal (5); obj row-entropy skew-normal (5); P(r|t)
-        spectrum (rate, scale); per-type entropy curve (rate, scale).
+        row-entropy quantile function (7); obj row-entropy quantile function (7);
+        P(r|t) spectrum (rate, scale); per-type entropy curve (rate, scale).
 
         Attributes absent from stale serialized data are emitted as NaN.
         """
+        n_q = len(QUANTILE_LEVELS)
         return [
             self._safe_scalar(lambda: self.class_size_fit.alpha),
             self._safe_scalar(lambda: self.class_size_fit.xmin),
@@ -217,8 +221,8 @@ class BlockC(SignatureBlock):
             self._safe_scalar(lambda: self.obj_cooc_exp.rate),
             self._safe_scalar(lambda: self.obj_cooc_exp.scale),
             self._safe_scalar(lambda: self.obj_cooc_density),
-            *self._safe_iter(lambda: self.subj_row_entropy_skew, 5),
-            *self._safe_iter(lambda: self.obj_row_entropy_skew, 5),
+            *self._safe_iter(lambda: self.subj_row_entropy_q, n_q),
+            *self._safe_iter(lambda: self.obj_row_entropy_q, n_q),
             self._safe_scalar(lambda: self.type_rel_spectrum_exp.rate),
             self._safe_scalar(lambda: self.type_rel_spectrum_exp.scale),
             self._safe_scalar(lambda: self.per_type_entropy_exp.rate),
@@ -235,11 +239,7 @@ class BlockC(SignatureBlock):
             "obj_cooc_rate", "obj_cooc_scale", "obj_cooc_density",
         ]
         for side in ("subj", "obj"):
-            names += [
-                f"{side}_row_entropy_loc", f"{side}_row_entropy_scale",
-                f"{side}_row_entropy_shape", f"{side}_row_entropy_lo",
-                f"{side}_row_entropy_hi",
-            ]
+            names += [f"{side}_row_entropy_{suffix}" for suffix in QUANTILE_SUFFIXES]
         names += [
             "type_rel_spectrum_rate", "type_rel_spectrum_scale",
             "per_type_entropy_rate", "per_type_entropy_scale",
@@ -248,8 +248,24 @@ class BlockC(SignatureBlock):
 
     @classmethod
     def get_na_vec(cls) -> list[float]:
-        """Return a 23-element NaN vector (same length as as_vector())."""
-        return [float("nan")] * 23
+        """Return a NaN vector the same length as as_vector()."""
+        return [float("nan")] * (9 + 2 * len(QUANTILE_LEVELS) + 4)
+
+    def distribution_fits(self) -> list[tuple[str, object, str]]:
+        """Return ``(name, fit, kind)`` for each reportable distribution.
+
+        Used by the roundtrip to compute a Wasserstein-1 distance per
+        distribution between this block and a re-measured one.
+        """
+        return [
+            ("class_size", self.class_size_fit, _distance.POWERLAW),
+            ("subj_cooc_spectrum", self.subj_cooc_exp, _distance.EXP_DECAY),
+            ("obj_cooc_spectrum", self.obj_cooc_exp, _distance.EXP_DECAY),
+            ("subj_row_entropy", self.subj_row_entropy_q, _distance.QUANTILE),
+            ("obj_row_entropy", self.obj_row_entropy_q, _distance.QUANTILE),
+            ("type_rel_spectrum", self.type_rel_spectrum_exp, _distance.EXP_DECAY),
+            ("per_type_entropy", self.per_type_entropy_exp, _distance.EXP_DECAY),
+        ]
 
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
         """Display or save diagnostics for reduced Block C.
@@ -329,15 +345,15 @@ class BlockC(SignatureBlock):
         return svs, spectrum, per_type_exp, per_type_entropies
 
     def _visualize_text(self, path: str | None) -> None:
-        s, o = self.subj_row_entropy_skew, self.obj_row_entropy_skew
+        s, o = self.subj_row_entropy_q, self.obj_row_entropy_q
         lines = [
             "=== Reduced Block C: Schema & Co-occurrence (G3) ===",
             f"  num_classes        : {self.num_classes}",
             f"  class size power-law: alpha={self.class_size_fit.alpha:.4f}  xmin={self.class_size_fit.xmin}",
             f"  subj co-occurrence : exp(rate={self.subj_cooc_exp.rate:.3f}, scale={self.subj_cooc_exp.scale:.3f})  density={self.subj_cooc_density:.4f}",
             f"  obj  co-occurrence : exp(rate={self.obj_cooc_exp.rate:.3f}, scale={self.obj_cooc_exp.scale:.3f})  density={self.obj_cooc_density:.4f}",
-            f"  subj row entropy   : skew-normal(loc={s.loc:.3f}, scale={s.scale:.3f}, shape={s.shape:.3f})",
-            f"  obj  row entropy   : skew-normal(loc={o.loc:.3f}, scale={o.scale:.3f}, shape={o.shape:.3f})",
+            f"  subj row entropy   : quantiles(median={s.q50:.3f}, IQR=[{s.q25:.3f},{s.q75:.3f}])",
+            f"  obj  row entropy   : quantiles(median={o.q50:.3f}, IQR=[{o.q25:.3f},{o.q75:.3f}])",
             f"  P(r|t) spectrum    : exp(rate={self.type_rel_spectrum_exp.rate:.3f}, scale={self.type_rel_spectrum_exp.scale:.3f})",
             f"  per-type entropy   : exp(rate={self.per_type_entropy_exp.rate:.3f}, scale={self.per_type_entropy_exp.scale:.3f})",
         ]
@@ -365,12 +381,12 @@ class BlockC(SignatureBlock):
                 ax.set_ylabel("singular value")
                 ax.set_title(title)
 
-            # Row 1: row entropies (skew-normal) and per-type entropy (exp-decay).
+            # Row 1: row entropies (quantiles) and per-type entropy (exp-decay).
             for ax, ent, fit, title, color in [
-                (axes[1, 0], self._subj_row_entropies, self.subj_row_entropy_skew, "Subject row entropy", "steelblue"),
-                (axes[1, 1], self._obj_row_entropies, self.obj_row_entropy_skew, "Object row entropy", "darkorange"),
+                (axes[1, 0], self._subj_row_entropies, self.subj_row_entropy_q, "Subject row entropy", "steelblue"),
+                (axes[1, 1], self._obj_row_entropies, self.obj_row_entropy_q, "Object row entropy", "darkorange"),
             ]:
-                drew = overlay_skewnorm(ax, self._require("ent", ent), fit, color=color)
+                drew = overlay_quantiles(ax, self._require("ent", ent), fit, color=color)
                 if not drew:
                     ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
                 ax.set_xlabel("row entropy (nats)")

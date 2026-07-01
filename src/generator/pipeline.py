@@ -90,7 +90,6 @@ class Generator:
         seed: int = 0,
         relation_zipf_exponent: float = 2.0,
         rewire_budget: int = 50_000,
-        remeasure_interval: int = 2000,
         initial_temp: float = 1.0,
         cooling_rate: float = 0.9999,
         convergence_log: "Path | str | None" = None,
@@ -106,8 +105,6 @@ class Generator:
             Passed to Stage 1; controls skewness of relation frequency.
         rewire_budget : int
             Number of rewiring attempts in Stage 3.
-        remeasure_interval : int
-            Accepted-swap interval between full 4-node motif remeasurements in Stage 3.
         initial_temp, cooling_rate : float
             Simulated-annealing parameters for Stage 3.
         convergence_log : Path or str, optional
@@ -136,7 +133,6 @@ class Generator:
             self.target.e,
             target_f=self.target.f,
             budget=rewire_budget,
-            remeasure_interval=remeasure_interval,
             initial_temp=initial_temp,
             cooling_rate=cooling_rate,
             seed=seed + 2,

@@ -1,7 +1,7 @@
 """Reduced Block B — Relation frequency & per-relation multiplicity (G1/G2/G2b).
 
 Stores the *shape* of each relation's fan-out/fan-in rather than redundant
-moments: the spread of per-relation power-law exponents as a skew-normal, the
+moments: the spread of per-relation power-law exponents as a quantile function, the
 relation-usage frequency as a Zipf exponent, and the CS-size→multiplicity offset
 ``a`` (G2b) that injects the out-degree-shaping correlation the marginals
 discard. Aggregate out/in-degree power-laws are kept as *targets* (a compound
@@ -24,19 +24,22 @@ from ._block_base import SignatureBlock, _NOT_CALCULATED
 from ._utils import MIN_SAMPLES_FOR_FIT, PowerLawStats, _fit_powerlaw
 from ._orig_block_b import BlockB as _OrigBlockB
 from ._fits import (
-    SkewNormFit,
+    QuantileFit,
+    QUANTILE_LEVELS,
+    QUANTILE_SUFFIXES,
     ZipfFit,
-    fit_skewnorm,
+    fit_quantiles,
     fit_zipf,
     fit_cs_size_offset,
     nan_zipf,
 )
-from ._plot_helpers import overlay_skewnorm
+from ._plot_helpers import overlay_quantiles
+from . import _distance
 
 log = get_logger(__name__)
 
 # Per-relation multiplicity exponents are confined to this range for generation;
-# stored as the skew-normal truncation cutoffs (docs/signature_redesign.md G2).
+# stored as the quantile-function cutoffs (q@0 / q@1; docs/signature_redesign.md G2).
 _ALPHA_LO = 1.4
 _ALPHA_HI = 3.0
 
@@ -57,8 +60,8 @@ class BlockB(SignatureBlock):
         self._out_degree_fit = _NOT_CALCULATED          # target
         self._in_degree_fit = _NOT_CALCULATED           # target
         self._relation_zipf = _NOT_CALCULATED           # G1
-        self._obj_alpha_skew = _NOT_CALCULATED          # G2 object side
-        self._subj_alpha_skew = _NOT_CALCULATED         # G2 subject side
+        self._obj_alpha_q = _NOT_CALCULATED             # G2 object side
+        self._subj_alpha_q = _NOT_CALCULATED            # G2 subject side
         self._a_obj = _NOT_CALCULATED                   # G2b object-side offset
         self._a_subj = _NOT_CALCULATED                  # G2b subject-side offset
         # unsummarised data kept for visualization
@@ -68,7 +71,7 @@ class BlockB(SignatureBlock):
         self._in_degrees = _NOT_CALCULATED
 
     # ── properties ────────────────────────────────────────────────────────────
-    # The skew-normal / Zipf fits are NamedTuples; the JSON round-trip restores
+    # The quantile / Zipf fits are NamedTuples; the JSON round-trip restores
     # them as plain tuples, so each accessor re-wraps to recover attribute access.
 
     @property
@@ -84,12 +87,12 @@ class BlockB(SignatureBlock):
         return ZipfFit(*self._require("relation_zipf", self._relation_zipf))
 
     @property
-    def obj_alpha_skew(self) -> SkewNormFit:
-        return SkewNormFit(*self._require("obj_alpha_skew", self._obj_alpha_skew))
+    def obj_alpha_q(self) -> QuantileFit:
+        return QuantileFit(*self._require("obj_alpha_q", self._obj_alpha_q))
 
     @property
-    def subj_alpha_skew(self) -> SkewNormFit:
-        return SkewNormFit(*self._require("subj_alpha_skew", self._subj_alpha_skew))
+    def subj_alpha_q(self) -> QuantileFit:
+        return QuantileFit(*self._require("subj_alpha_q", self._subj_alpha_q))
 
     @property
     def a_obj(self) -> float:
@@ -108,8 +111,8 @@ class BlockB(SignatureBlock):
         ``m_obj(s,r)`` (distinct objects per subject) and subject-multiplicity
         ``m_subj(o,r)`` (distinct subjects per object), plus each entity's
         characteristic-set size on both sides. From those it derives the
-        per-relation power-law exponents, the across-relation skew-normal of
-        those exponents, the relation-usage Zipf exponent, and the
+        per-relation power-law exponents, the across-relation quantile function
+        of those exponents, the relation-usage Zipf exponent, and the
         CS-size→multiplicity OLS offsets.
         """
         non_lit_vs = g.vs.select(is_literal_eq=False)
@@ -148,7 +151,7 @@ class BlockB(SignatureBlock):
             if rel_edge_counts else nan_zipf()
         )
 
-        # --- G2: per-relation exponents, then skew-normal across relations ---
+        # --- G2: per-relation exponents, then quantile function across relations ---
         obj_alphas: list[float] = []
         for subj_map in subj_obj_count.values():
             counts = np.fromiter(subj_map.values(), dtype=int, count=len(subj_map))
@@ -160,19 +163,19 @@ class BlockB(SignatureBlock):
 
         self._obj_alphas = np.array([a for a in obj_alphas if np.isfinite(a)], dtype=float)
         self._subj_alphas = np.array([a for a in subj_alphas if np.isfinite(a)], dtype=float)
-        self._obj_alpha_skew = fit_skewnorm(self._obj_alphas, lo=_ALPHA_LO, hi=_ALPHA_HI)
-        if np.isnan(self._obj_alpha_skew.loc):
+        self._obj_alpha_q = fit_quantiles(self._obj_alphas, lo=_ALPHA_LO, hi=_ALPHA_HI)
+        if np.isnan(self._obj_alpha_q.q50):
             log.warning(
-                "Block B: obj_alpha skew-normal fit skipped — only %d finite per-relation "
+                "Block B: obj_alpha quantile fit skipped — only %d finite per-relation "
                 "alphas (need ≥ %d); obj_mult_alpha metrics will be NaN. "
                 "Most likely cause: most relations have constant object-multiplicity (all 1s), "
                 "so per-relation power-law fits are degenerate.",
                 self._obj_alphas.size, MIN_SAMPLES_FOR_FIT,
             )
-        self._subj_alpha_skew = fit_skewnorm(self._subj_alphas, lo=_ALPHA_LO, hi=_ALPHA_HI)
-        if np.isnan(self._subj_alpha_skew.loc):
+        self._subj_alpha_q = fit_quantiles(self._subj_alphas, lo=_ALPHA_LO, hi=_ALPHA_HI)
+        if np.isnan(self._subj_alpha_q.q50):
             log.warning(
-                "Block B: subj_alpha skew-normal fit skipped — only %d finite per-relation "
+                "Block B: subj_alpha quantile fit skipped — only %d finite per-relation "
                 "alphas (need ≥ %d); subj_mult_alpha metrics will be NaN.",
                 self._subj_alphas.size, MIN_SAMPLES_FOR_FIT,
             )
@@ -195,21 +198,22 @@ class BlockB(SignatureBlock):
         self._a_subj = fit_cs_size_offset(subj_cs_sizes, subj_mults)
 
         log.info(
-            "Block B: rel_zipf=%.3f, obj_alpha(loc=%.3f), a_obj=%.3f, a_subj=%.3f",
-            self._relation_zipf.exponent, self._obj_alpha_skew.loc,
+            "Block B: rel_zipf=%.3f, obj_alpha(median=%.3f), a_obj=%.3f, a_subj=%.3f",
+            self._relation_zipf.exponent, self._obj_alpha_q.q50,
             self._a_obj, self._a_subj,
         )
         return self
 
     def as_vector(self) -> list[float]:
-        """Flatten to a fixed-length 18-vector for cross-KG comparison.
+        """Flatten to a fixed-length 22-vector for cross-KG comparison.
 
         Layout: out-degree (alpha, xmin); in-degree (alpha, xmin); relation Zipf
-        (exponent, x_min); object-α skew-normal (loc, scale, shape, lo, hi);
-        subject-α skew-normal (loc, scale, shape, lo, hi); offsets a_obj, a_subj.
+        (exponent, x_min); object-α quantile function (7 levels); subject-α
+        quantile function (7 levels); offsets a_obj, a_subj.
 
         Attributes absent from stale serialized data are emitted as NaN.
         """
+        n_q = len(QUANTILE_LEVELS)
         return [
             self._safe_scalar(lambda: self.out_degree_fit.alpha),
             self._safe_scalar(lambda: self.out_degree_fit.xmin),
@@ -217,8 +221,8 @@ class BlockB(SignatureBlock):
             self._safe_scalar(lambda: self.in_degree_fit.xmin),
             self._safe_scalar(lambda: self.relation_zipf.exponent),
             self._safe_scalar(lambda: self.relation_zipf.x_min),
-            *self._safe_iter(lambda: self.obj_alpha_skew, 5),
-            *self._safe_iter(lambda: self.subj_alpha_skew, 5),
+            *self._safe_iter(lambda: self.obj_alpha_q, n_q),
+            *self._safe_iter(lambda: self.subj_alpha_q, n_q),
             self._safe_scalar(lambda: self.a_obj),
             self._safe_scalar(lambda: self.a_subj),
         ]
@@ -232,18 +236,28 @@ class BlockB(SignatureBlock):
             "relation_zipf_exponent", "relation_zipf_xmin",
         ]
         for side in ("obj", "subj"):
-            names += [
-                f"{side}_mult_alpha_loc", f"{side}_mult_alpha_scale",
-                f"{side}_mult_alpha_shape", f"{side}_mult_alpha_lo",
-                f"{side}_mult_alpha_hi",
-            ]
+            names += [f"{side}_mult_alpha_{suffix}" for suffix in QUANTILE_SUFFIXES]
         names += ["a_obj", "a_subj"]
         return names
 
     @classmethod
     def get_na_vec(cls) -> list[float]:
-        """Return an 18-element NaN vector (same length as as_vector())."""
-        return [float("nan")] * 18
+        """Return a NaN vector the same length as as_vector()."""
+        return [float("nan")] * (6 + 2 * len(QUANTILE_LEVELS) + 2)
+
+    def distribution_fits(self) -> list[tuple[str, object, str]]:
+        """Return ``(name, fit, kind)`` for each reportable distribution.
+
+        Used by the roundtrip to compute a Wasserstein-1 distance per
+        distribution between this block and a re-measured one.
+        """
+        return [
+            ("out_degree", self.out_degree_fit, _distance.POWERLAW),
+            ("in_degree", self.in_degree_fit, _distance.POWERLAW),
+            ("relation_freq", self.relation_zipf, _distance.ZIPF),
+            ("obj_mult_alpha", self.obj_alpha_q, _distance.QUANTILE),
+            ("subj_mult_alpha", self.subj_alpha_q, _distance.QUANTILE),
+        ]
 
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
         """Display or save diagnostics for reduced Block B.
@@ -262,15 +276,15 @@ class BlockB(SignatureBlock):
     # ── private helpers ───────────────────────────────────────────────────────
 
     def _visualize_text(self, path: str | None) -> None:
-        s = self.obj_alpha_skew
-        ss = self.subj_alpha_skew
+        s = self.obj_alpha_q
+        ss = self.subj_alpha_q
         lines = [
             "=== Reduced Block B: Relation Frequency & Multiplicity (G1/G2/G2b) ===",
             f"  out-degree fit : alpha={self.out_degree_fit.alpha:.4f}  xmin={self.out_degree_fit.xmin}",
             f"  in-degree fit  : alpha={self.in_degree_fit.alpha:.4f}  xmin={self.in_degree_fit.xmin}",
             f"  relation Zipf  : exponent={self.relation_zipf.exponent:.4f}  xmin={self.relation_zipf.x_min}",
-            f"  obj  mult-alpha skew-normal: loc={s.loc:.3f} scale={s.scale:.3f} shape={s.shape:.3f} cutoffs=[{s.lo:.2f},{s.hi:.2f}]",
-            f"  subj mult-alpha skew-normal: loc={ss.loc:.3f} scale={ss.scale:.3f} shape={ss.shape:.3f} cutoffs=[{ss.lo:.2f},{ss.hi:.2f}]",
+            f"  obj  mult-alpha quantiles: median={s.q50:.3f} IQR=[{s.q25:.3f},{s.q75:.3f}] cutoffs=[{s.q0:.2f},{s.q100:.2f}]",
+            f"  subj mult-alpha quantiles: median={ss.q50:.3f} IQR=[{ss.q25:.3f},{ss.q75:.3f}] cutoffs=[{ss.q0:.2f},{ss.q100:.2f}]",
             f"  CS-size offset : a_obj={self.a_obj:.4f}  a_subj={self.a_subj:.4f}",
         ]
         text = "\n".join(lines)
@@ -294,22 +308,22 @@ class BlockB(SignatureBlock):
             _OrigBlockB._plot_degree_hist(axes[0, 1], in_degrees, self.in_degree_fit,
                                           "In-degree distribution (target)", False)
 
-            # Per-relation exponents: raw histogram + fitted skew-normal.
+            # Per-relation exponents: raw histogram + stored quantile markers.
             ax = axes[1, 0]
-            if not overlay_skewnorm(ax, obj_alphas, self.obj_alpha_skew,
-                                    label="per-relation α", color="steelblue"):
+            if not overlay_quantiles(ax, obj_alphas, self.obj_alpha_q,
+                                     label="per-relation α", color="steelblue"):
                 ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
             ax.set_xlabel("object-multiplicity exponent α")
             ax.set_ylabel("count (relations)")
-            ax.set_title("Object-multiplicity α (fit: skew-normal)")
+            ax.set_title("Object-multiplicity α (fit: quantiles)")
 
             ax = axes[1, 1]
-            if not overlay_skewnorm(ax, subj_alphas, self.subj_alpha_skew,
-                                    label="per-relation α", color="darkorange"):
+            if not overlay_quantiles(ax, subj_alphas, self.subj_alpha_q,
+                                     label="per-relation α", color="darkorange"):
                 ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
             ax.set_xlabel("subject-multiplicity exponent α")
             ax.set_ylabel("count (relations)")
-            ax.set_title("Subject-multiplicity α (fit: skew-normal)")
+            ax.set_title("Subject-multiplicity α (fit: quantiles)")
 
             plt.tight_layout()
             if path is None:

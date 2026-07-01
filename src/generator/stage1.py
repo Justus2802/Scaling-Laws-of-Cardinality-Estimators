@@ -24,10 +24,10 @@ from signature import BlockA, BlockB, BlockC, BlockD, BlockF
 from ._adapters import (
     _functionality_from_alpha,
     _reconstruct_singular_values,
-    _skewnorm_mean,
+    _quantile_mean,
 )
 from ._logging import get_logger
-from .schema import Schema, _NAN_SKEW
+from .schema import Schema, _NAN_Q
 
 log = get_logger(__name__)
 
@@ -198,12 +198,12 @@ def sample_schema(
         and the low-rank P(r|t) reconstruction.
     d : BlockD, optional
         Characteristic-set statistics.  When provided, Stage 2 will use the mean
-        of ``cs_size_skew`` and ``num_distinct_cs`` to build a realistic pool of
+        of ``cs_size_q`` and ``num_distinct_cs`` to build a realistic pool of
         reusable CS templates instead of sampling every entity independently.
         This fixes the co-occurrence density and num_distinct_cs deviations.
     b : BlockB, optional
         Degree-structure statistics.  When provided, the mean relation
-        functionality is derived from the object-multiplicity α skew-normal to
+        functionality is derived from the object-multiplicity α quantiles to
         sample more than one object per (s,p) pair, matching the target's edge
         multiplicity.
     f : BlockF, optional
@@ -303,7 +303,7 @@ def sample_schema(
     )
 
     # --- CS structure from Block D ---
-    cs_size_mean_val = _skewnorm_mean(d.cs_size_skew) if d is not None else float("nan")
+    cs_size_mean_val = _quantile_mean(d.cs_size_q) if d is not None else float("nan")
     if d is not None and not math.isnan(cs_size_mean_val) and cs_size_mean_val > 0:
         cs_size_mean = float(cs_size_mean_val)
         cs_num_templates = max(1, int(d.num_distinct_cs))
@@ -318,7 +318,7 @@ def sample_schema(
 
     # --- Edge multiplicity, PA exponent, inverse functionality from Block B ---
     if b is not None:
-        mean_functionality = _functionality_from_alpha(b.obj_alpha_skew, floor=FUNCTIONALITY_FLOOR)
+        mean_functionality = _functionality_from_alpha(b.obj_alpha_q, floor=FUNCTIONALITY_FLOOR)
     else:
         mean_functionality = 1.0
 
@@ -353,15 +353,15 @@ def sample_schema(
         max_out_degree = 0
 
     # --- Per-relation multiplicity shape (G2) + CS-size offset (G2b) + CS-size shape ---
-    # Stored as plain tuples; Stage 2 samples a per-relation α from obj_alpha_skew and
-    # applies the cs_size^a_obj offset. NaN fits → neutral fallback in Stage 2.
-    obj_alpha_skew = tuple(b.obj_alpha_skew) if b is not None else _NAN_SKEW
-    subj_alpha_skew = tuple(b.subj_alpha_skew) if b is not None else _NAN_SKEW
+    # Stored as plain quantile tuples; Stage 2 samples a per-relation α from obj_alpha_q
+    # and applies the cs_size^a_obj offset. NaN fits → neutral fallback in Stage 2.
+    obj_alpha_q = tuple(b.obj_alpha_q) if b is not None else _NAN_Q
+    subj_alpha_q = tuple(b.subj_alpha_q) if b is not None else _NAN_Q
     a_obj = float(b.a_obj) if (b is not None and not math.isnan(b.a_obj)) else 0.0
     a_subj = float(b.a_subj) if (b is not None and not math.isnan(b.a_subj)) else 0.0
-    cs_size_skew = tuple(d.cs_size_skew) if d is not None else _NAN_SKEW
+    cs_size_q = tuple(d.cs_size_q) if d is not None else _NAN_Q
     # Inverse CS (object side), symmetric to forward CS structure (Block D).
-    inv_cs_size_skew = tuple(d.inv_cs_size_skew) if d is not None else _NAN_SKEW
+    inv_cs_size_q = tuple(d.inv_cs_size_q) if d is not None else _NAN_Q
     inv_cs_num_templates = (
         max(1, int(d.inv_num_distinct_cs)) if (d is not None and d.inv_num_distinct_cs > 0) else 0
     )
@@ -372,9 +372,9 @@ def sample_schema(
 
     log.info(
         "Stage 1: schema ready — mean_functionality=%.3f, in_pa_exponent=%.3f, "
-        "max_in_degree=%d, max_out_degree=%d, cs_num_templates=%d, a_obj=%.3f, obj_alpha_loc=%.3f",
+        "max_in_degree=%d, max_out_degree=%d, cs_num_templates=%d, a_obj=%.3f, obj_alpha_qmin=%.3f",
         mean_functionality, in_pa_exponent, max_in_degree, max_out_degree, cs_num_templates,
-        a_obj, obj_alpha_skew[0],
+        a_obj, obj_alpha_q[0],
     )
     target_num_components = int(f.num_components) if f is not None else DEFAULT_NUM_COMPONENTS
     target_lcc = float(f.largest_component_fraction) if f is not None else DEFAULT_LCC
@@ -403,12 +403,12 @@ def sample_schema(
         in_pa_exponent=in_pa_exponent,
         max_in_degree=max_in_degree,
         max_out_degree=max_out_degree,
-        obj_alpha_skew=obj_alpha_skew,
+        obj_alpha_q=obj_alpha_q,
         a_obj=a_obj,
-        subj_alpha_skew=subj_alpha_skew,
+        subj_alpha_q=subj_alpha_q,
         a_subj=a_subj,
-        cs_size_skew=cs_size_skew,
-        inv_cs_size_skew=inv_cs_size_skew,
+        cs_size_q=cs_size_q,
+        inv_cs_size_q=inv_cs_size_q,
         inv_cs_num_templates=inv_cs_num_templates,
         inv_cs_template_zipf=inv_cs_template_zipf,
         subj_group_probs=subj_group_probs,

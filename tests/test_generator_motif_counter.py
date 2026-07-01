@@ -8,6 +8,7 @@ import igraph
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.dirname(__file__))  # for the sibling brute-oracle module
 
 from motif_counter import (
     CCMotifCounter,
@@ -15,7 +16,6 @@ from motif_counter import (
     cc_run_stars,
     cc_run_stars_loop,
 )
-from itertools import combinations
 
 from motif_counter._common import _count_motifs4_through_edge
 from generator.local_updates import (
@@ -25,21 +25,14 @@ from generator.local_updates import (
     _cycle_delta,
 )
 
-
-def _und(n: int, edges: list[tuple[int, int]]) -> igraph.Graph:
-    """Simple undirected graph."""
-    g = igraph.Graph(n=n, directed=False)
-    g.add_edges(edges)
-    return g
-
-
-def _adj(n: int, edges: list[tuple[int, int]]) -> list[dict]:
-    """Adjacency dict list matching the format used in stage3."""
-    a: list[dict] = [{} for _ in range(n)]
-    for u, v in edges:
-        a[u][v] = a[u].get(v, 0) + 1
-        a[v][u] = a[v].get(u, 0) + 1
-    return a
+# Shared brute-force oracles (see tests/_brute_motifs.py). Aliased to the
+# underscore-prefixed names this module has always used.
+from _brute_motifs import (
+    und as _und,
+    adj as _adj,
+    brute_tri_counts as _brute_tri_counts,
+    brute_induced_cycles as _brute_induced_cycles,
+)
 
 
 _EXACT = ExactMotifCounter()
@@ -314,23 +307,6 @@ class TestMotif4Delta(unittest.TestCase):
 
 # ── triangle delta ────────────────────────────────────────────────────────────
 
-def _brute_tri_counts(a: list[dict], n: int) -> tuple[int, dict[int, int]]:
-    """Brute-force (total triangles, per-node triangle counts) on adj membership."""
-    per_node: dict[int, int] = {v: 0 for v in range(n)}
-    total = 0
-    for u in range(n):
-        nbrs = [w for w in a[u] if w > u]
-        for ai in range(len(nbrs)):
-            for bi in range(ai + 1, len(nbrs)):
-                w, x = nbrs[ai], nbrs[bi]
-                if x in a[w]:           # u<w<x triangle
-                    total += 1
-                    per_node[u] += 1
-                    per_node[w] += 1
-                    per_node[x] += 1
-    return total, per_node
-
-
 class TestTriangleDelta(unittest.TestCase):
     """_triangle_node_delta must match brute-force triangle recount (aggregate + per node)."""
 
@@ -391,35 +367,6 @@ class TestTriangleDelta(unittest.TestCase):
 
 
 # ── induced-cycle delta ───────────────────────────────────────────────────────
-
-def _brute_induced_cycles(a: list[dict], k: int) -> int:
-    """Count induced (chordless) k-cycles by brute force over all k-subsets.
-
-    A k-subset induces a k-cycle iff every vertex has exactly 2 neighbours
-    inside the subset (2-regular) and the subset is connected (a single cycle,
-    not e.g. two disjoint triangles for k=6).
-    """
-    n = len(a)
-    count = 0
-    for verts in combinations(range(n), k):
-        vs = set(verts)
-        degs = {v: sum(1 for u in vs if u != v and u in a[v]) for v in vs}
-        if any(d != 2 for d in degs.values()):
-            continue
-        # connectivity check via BFS within the subset
-        start = verts[0]
-        seen = {start}
-        stack = [start]
-        while stack:
-            cur = stack.pop()
-            for nb in a[cur]:
-                if nb in vs and nb not in seen:
-                    seen.add(nb)
-                    stack.append(nb)
-        if len(seen) == k:
-            count += 1
-    return count
-
 
 class TestInducedCyclesThroughPair(unittest.TestCase):
 

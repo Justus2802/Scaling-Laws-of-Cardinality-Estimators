@@ -9,7 +9,8 @@ Consumers configure verbosity via standard :mod:`logging`::
 
     import logging
     logging.getLogger("signature").setLevel(logging.DEBUG)
-    logging.basicConfig()               # or attach any handler you like
+    # Prefix every line with a timestamp; or attach any handler you like
+    logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 Log levels used across the package:
 

@@ -1,7 +1,7 @@
 """Reduced Block D — Characteristic sets, inverse CS & two-step targets (G3).
 
-Replaces the original mean/median/p90 CS-size summaries with a **skew-normal**
-fit, keeps CS-frequency as a power-law, and stores the two-step pair
+Replaces the original mean/median/p90 CS-size summaries with a **quantile
+function** fit, keeps CS-frequency as a power-law, and stores the two-step pair
 **path-count** distribution as a **truncated power-law** (free α on a bounded
 range). Inverse-CS size is kept as a target (object-side wiring aggregation, not
 given by subject multiplicity). The CS / inverse-CS / path-count computations
@@ -22,14 +22,17 @@ from ._block_base import SignatureBlock, _NOT_CALCULATED
 from ._utils import PowerLawStats, _fit_powerlaw, _nan_power_law_stats
 from ._orig_block_d import BlockD as _OrigBlockD
 from ._fits import (
-    SkewNormFit,
+    QuantileFit,
+    QUANTILE_LEVELS,
+    QUANTILE_SUFFIXES,
     TruncPowerLawFit,
-    fit_skewnorm,
+    fit_quantiles,
     fit_truncated_powerlaw,
-    nan_skewnorm,
+    nan_quantiles,
     nan_trunc_powerlaw,
 )
-from ._plot_helpers import overlay_skewnorm, overlay_truncated_powerlaw
+from ._plot_helpers import overlay_quantiles, overlay_truncated_powerlaw
+from . import _distance
 
 log = get_logger(__name__)
 
@@ -51,10 +54,10 @@ class BlockD(SignatureBlock):
     def __init__(self) -> None:
         self._num_distinct_cs = _NOT_CALCULATED
         self._cs_freq_fit = _NOT_CALCULATED
-        self._cs_size_skew = _NOT_CALCULATED
+        self._cs_size_q = _NOT_CALCULATED
         self._inv_num_distinct_cs = _NOT_CALCULATED
         self._inv_cs_freq_fit = _NOT_CALCULATED
-        self._inv_cs_size_skew = _NOT_CALCULATED
+        self._inv_cs_size_q = _NOT_CALCULATED
         self._two_step_fit = _NOT_CALCULATED
         # unsummarised data kept for visualization
         self._cs_sizes = _NOT_CALCULATED
@@ -73,8 +76,8 @@ class BlockD(SignatureBlock):
         return self._require("cs_freq_fit", self._cs_freq_fit)
 
     @property
-    def cs_size_skew(self) -> SkewNormFit:
-        return SkewNormFit(*self._require("cs_size_skew", self._cs_size_skew))
+    def cs_size_q(self) -> QuantileFit:
+        return QuantileFit(*self._require("cs_size_q", self._cs_size_q))
 
     @property
     def inv_num_distinct_cs(self) -> int:
@@ -85,8 +88,8 @@ class BlockD(SignatureBlock):
         return self._require("inv_cs_freq_fit", self._inv_cs_freq_fit)
 
     @property
-    def inv_cs_size_skew(self) -> SkewNormFit:
-        return SkewNormFit(*self._require("inv_cs_size_skew", self._inv_cs_size_skew))
+    def inv_cs_size_q(self) -> QuantileFit:
+        return QuantileFit(*self._require("inv_cs_size_q", self._inv_cs_size_q))
 
     @property
     def two_step_fit(self) -> TruncPowerLawFit:
@@ -108,8 +111,8 @@ class BlockD(SignatureBlock):
 
         self._num_distinct_cs = len(set(cs_of.values())) if cs_of else 0
         self._inv_num_distinct_cs = len(set(inv_cs_of.values())) if inv_cs_of else 0
-        self._cs_size_skew = fit_skewnorm(cs_sizes) if cs_sizes.size else nan_skewnorm()
-        self._inv_cs_size_skew = fit_skewnorm(inv_cs_sizes) if inv_cs_sizes.size else nan_skewnorm()
+        self._cs_size_q = fit_quantiles(cs_sizes) if cs_sizes.size else nan_quantiles()
+        self._inv_cs_size_q = fit_quantiles(inv_cs_sizes) if inv_cs_sizes.size else nan_quantiles()
 
         # CS frequency: how often each distinct (inverse-)CS recurs → power-law.
         if cs_of:
@@ -144,24 +147,25 @@ class BlockD(SignatureBlock):
         return self
 
     def as_vector(self) -> list[float]:
-        """Flatten to a fixed-length 19-vector for cross-KG comparison.
+        """Flatten to a fixed-length 23-vector for cross-KG comparison.
 
         Layout (forward then inverse, symmetric): num_distinct_cs; CS-frequency
-        power-law (alpha, xmin); CS-size skew-normal (5); inv_num_distinct_cs;
-        inverse-CS-frequency power-law (alpha, xmin); inverse-CS-size skew-normal
-        (5); two-step truncated power-law (alpha, v_min, v_max).
+        power-law (alpha, xmin); CS-size quantile function (7); inv_num_distinct_cs;
+        inverse-CS-frequency power-law (alpha, xmin); inverse-CS-size quantile
+        function (7); two-step truncated power-law (alpha, v_min, v_max).
 
         Attributes absent from stale serialized data are emitted as NaN.
         """
+        n_q = len(QUANTILE_LEVELS)
         return [
             self._safe_scalar(lambda: self.num_distinct_cs),
             self._safe_scalar(lambda: self.cs_freq_fit.alpha),
             self._safe_scalar(lambda: self.cs_freq_fit.xmin),
-            *self._safe_iter(lambda: self.cs_size_skew, 5),
+            *self._safe_iter(lambda: self.cs_size_q, n_q),
             self._safe_scalar(lambda: self.inv_num_distinct_cs),
             self._safe_scalar(lambda: self.inv_cs_freq_fit.alpha),
             self._safe_scalar(lambda: self.inv_cs_freq_fit.xmin),
-            *self._safe_iter(lambda: self.inv_cs_size_skew, 5),
+            *self._safe_iter(lambda: self.inv_cs_size_q, n_q),
             *self._safe_iter(lambda: self.two_step_fit, 3),
         ]
 
@@ -169,16 +173,30 @@ class BlockD(SignatureBlock):
     def feature_names(cls) -> list[str]:
         """Return feature names in the same order as :meth:`as_vector`."""
         names = ["num_distinct_cs", "cs_freq_alpha", "cs_freq_xmin"]
-        names += [f"cs_size_{s}" for s in ("loc", "scale", "shape", "lo", "hi")]
+        names += [f"cs_size_{s}" for s in QUANTILE_SUFFIXES]
         names += ["inv_num_distinct_cs", "inv_cs_freq_alpha", "inv_cs_freq_xmin"]
-        names += [f"inv_cs_size_{s}" for s in ("loc", "scale", "shape", "lo", "hi")]
+        names += [f"inv_cs_size_{s}" for s in QUANTILE_SUFFIXES]
         names += ["two_step_alpha", "two_step_vmin", "two_step_vmax"]
         return names
 
     @classmethod
     def get_na_vec(cls) -> list[float]:
-        """Return a 19-element NaN vector (same length as as_vector())."""
-        return [float("nan")] * 19
+        """Return a NaN vector the same length as as_vector()."""
+        return [float("nan")] * (3 + len(QUANTILE_LEVELS) + 3 + len(QUANTILE_LEVELS) + 3)
+
+    def distribution_fits(self) -> list[tuple[str, object, str]]:
+        """Return ``(name, fit, kind)`` for each reportable distribution.
+
+        Used by the roundtrip to compute a Wasserstein-1 distance per
+        distribution between this block and a re-measured one.
+        """
+        return [
+            ("cs_freq", self.cs_freq_fit, _distance.POWERLAW),
+            ("cs_size", self.cs_size_q, _distance.QUANTILE),
+            ("inv_cs_freq", self.inv_cs_freq_fit, _distance.POWERLAW),
+            ("inv_cs_size", self.inv_cs_size_q, _distance.QUANTILE),
+            ("two_step", self.two_step_fit, _distance.TRUNC_POWERLAW),
+        ]
 
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
         """Display or save diagnostics for reduced Block D.
@@ -228,16 +246,16 @@ class BlockD(SignatureBlock):
         return counts, top_pairs
 
     def _visualize_text(self, path: str | None) -> None:
-        cs, inv = self.cs_size_skew, self.inv_cs_size_skew
+        cs, inv = self.cs_size_q, self.inv_cs_size_q
         ts = self.two_step_fit
         lines = [
             "=== Reduced Block D: Characteristic Sets & Two-step (G3) ===",
             f"  num_distinct_cs    : {self.num_distinct_cs}",
             f"  CS frequency       : power-law(alpha={self.cs_freq_fit.alpha:.4f}, xmin={self.cs_freq_fit.xmin})",
-            f"  CS size            : skew-normal(loc={cs.loc:.3f}, scale={cs.scale:.3f}, shape={cs.shape:.3f}, cutoffs=[{cs.lo:.1f},{cs.hi:.1f}])",
+            f"  CS size            : quantiles(median={cs.q50:.1f}, IQR=[{cs.q25:.1f},{cs.q75:.1f}], range=[{cs.q0:.1f},{cs.q100:.1f}])",
             f"  inv_num_distinct_cs: {self.inv_num_distinct_cs}",
             f"  inverse-CS freq    : power-law(alpha={self.inv_cs_freq_fit.alpha:.4f}, xmin={self.inv_cs_freq_fit.xmin})",
-            f"  inverse-CS size    : skew-normal(loc={inv.loc:.3f}, scale={inv.scale:.3f}, shape={inv.shape:.3f}, cutoffs=[{inv.lo:.1f},{inv.hi:.1f}])",
+            f"  inverse-CS size    : quantiles(median={inv.q50:.1f}, IQR=[{inv.q25:.1f},{inv.q75:.1f}], range=[{inv.q0:.1f},{inv.q100:.1f}])",
             f"  two-step path count: trunc. power-law(alpha={ts.alpha:.4f}, range=[{ts.v_min:.0f},{ts.v_max:.0f}])",
         ]
         text = "\n".join(lines)
@@ -255,19 +273,19 @@ class BlockD(SignatureBlock):
             fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
 
             ax = axes[0]
-            if not overlay_skewnorm(ax, cs_sizes, self.cs_size_skew, label="|CS|", color="steelblue"):
+            if not overlay_quantiles(ax, cs_sizes, self.cs_size_q, label="|CS|", color="steelblue"):
                 ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
             ax.set_xlabel("|CS| (predicate count)")
             ax.set_ylabel("entity count")
-            ax.set_title("Forward CS size (fit: skew-normal)")
+            ax.set_title("Forward CS size (fit: quantiles)")
 
             ax = axes[1]
-            if not overlay_skewnorm(ax, inv_cs_sizes, self.inv_cs_size_skew,
-                                    label="inverse |CS|", color="darkorange"):
+            if not overlay_quantiles(ax, inv_cs_sizes, self.inv_cs_size_q,
+                                     label="inverse |CS|", color="darkorange"):
                 ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
             ax.set_xlabel("inverse |CS| (in-predicate count)")
             ax.set_ylabel("entity count")
-            ax.set_title("Inverse CS size (fit: skew-normal)")
+            ax.set_title("Inverse CS size (fit: quantiles)")
 
             ax = axes[2]
             if not overlay_truncated_powerlaw(ax, pair_counts, self.two_step_fit, label="path counts"):

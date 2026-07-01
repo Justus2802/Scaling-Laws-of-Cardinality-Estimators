@@ -4,13 +4,14 @@ Each fitter returns a small fixed-length ``NamedTuple`` so the blocks'
 ``as_vector`` stays fixed-length, and short-circuits to all-NaN when there are
 too few samples to fit — matching the existing ``_fit_powerlaw`` contract in
 ``signature._utils``. The implementations delegate to library code wherever
-possible: ``scipy.stats.skewnorm`` for the skew-normal fits,
+possible: ``np.quantile`` for the non-parametric quantile-function fits,
 ``scipy.stats.linregress`` for the log-linear (exponential-decay / offset) fits,
 and the ``powerlaw`` package (via the shared ``_fit_powerlaw``) for the
 power-law fits.
 
-The reduced signature stores the *parameters of the distribution family* each
-quantity follows (see ``docs/signature_redesign.md``), not raw moments, so the
+The reduced signature stores a compact distribution summary for each quantity
+(see ``docs/signature_redesign.md``) — a quantile function for sample
+distributions, or the parameters of a parametric family — not raw moments, so the
 shape can be regenerated at sampling time.
 """
 
@@ -39,6 +40,10 @@ _NAN = float("nan")
 # vector folds in the old truncation. Kept as a module constant — not stored per
 # fit — so the feature-vector / JSON length stays fixed at ``len(QUANTILE_LEVELS)``.
 QUANTILE_LEVELS = (0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0)
+
+# Feature-name suffix for each level (e.g. 0.1 → "q10"), used by the blocks'
+# ``feature_names`` so the quantile entries are self-describing.
+QUANTILE_SUFFIXES = tuple(f"q{int(round(level * 100)):02d}" for level in QUANTILE_LEVELS)
 
 
 # ── return types ───────────────────────────────────────────────────────────────
@@ -111,39 +116,40 @@ def nan_zipf() -> ZipfFit:
 # ── fitters ────────────────────────────────────────────────────────────────────
 
 
-def fit_skewnorm(
+def fit_quantiles(
     values,
     lo: Optional[float] = None,
     hi: Optional[float] = None,
-) -> SkewNormFit:
-    """Fit a (truncated) skew-normal to a 1-D sample.
+) -> QuantileFit:
+    """Summarise a 1-D sample by its quantiles at :data:`QUANTILE_LEVELS`.
 
-    Uses ``scipy.stats.skewnorm.fit`` (method-of-moments-seeded MLE). The
-    cutoffs default to the observed min/max; pass ``lo``/``hi`` to pin them to
-    fixed bounds (e.g. the ≈[1.4, 3.0] range for per-relation multiplicity α).
-    Returns all-NaN when fewer than ``MIN_SAMPLES_FOR_FIT`` finite samples are
-    available or the fit raises.
+    Non-parametric replacement for the old skew-normal fit: stores the empirical
+    quantile function (via ``np.quantile``) instead of a fitted family, which is
+    far more stable to estimate and directly invertible for sampling. The min/max
+    levels are the truncation cutoffs; pass ``lo``/``hi`` to pin them to fixed
+    bounds (e.g. the ≈[1.4, 3.0] range for per-relation multiplicity α). Returns
+    all-NaN below ``MIN_SAMPLES_FOR_FIT`` finite samples.
 
     Args:
         values: iterable of real-valued samples.
-        lo: lower truncation cutoff (default: observed minimum).
-        hi: upper truncation cutoff (default: observed maximum).
+        lo: lower cutoff override (default: observed minimum, the 0.0 quantile).
+        hi: upper cutoff override (default: observed maximum, the 1.0 quantile).
     """
     arr = np.asarray(list(values), dtype=float)
     arr = arr[np.isfinite(arr)]
     if arr.size < MIN_SAMPLES_FOR_FIT:
-        return nan_skewnorm()
+        return nan_quantiles()
     try:
-        with warnings.catch_warnings(), \
-             np.errstate(divide="ignore", invalid="ignore"), \
-             contextlib.redirect_stdout(io.StringIO()):
-            warnings.simplefilter("ignore")
-            shape, loc, scale = scipy.stats.skewnorm.fit(arr)
-        obs_lo = float(arr.min()) if lo is None else float(lo)
-        obs_hi = float(arr.max()) if hi is None else float(hi)
-        return SkewNormFit(float(loc), float(scale), float(shape), obs_lo, obs_hi)
+        qs = np.quantile(arr, QUANTILE_LEVELS)
+        if lo is not None:
+            qs[0] = float(lo)
+        if hi is not None:
+            qs[-1] = float(hi)
+        # Pinning the cutoffs can break monotonicity at the ends; restore it.
+        np.maximum.accumulate(qs, out=qs)
+        return QuantileFit(*(float(q) for q in qs))
     except Exception:
-        return nan_skewnorm()
+        return nan_quantiles()
 
 
 def fit_exp_decay_rank(values) -> ExpDecayFit:

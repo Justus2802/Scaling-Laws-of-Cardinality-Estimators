@@ -7,37 +7,41 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from signature._fits import (  # noqa: E402
-    fit_skewnorm,
+    QUANTILE_LEVELS,
+    fit_quantiles,
     fit_exp_decay_rank,
     fit_truncated_powerlaw,
     fit_zipf,
     fit_cs_size_offset,
-    nan_skewnorm,
+    nan_quantiles,
 )
 
 
-class TestFitSkewNorm(unittest.TestCase):
-    def test_recovers_bounds_and_finite_params(self):
+class TestFitQuantiles(unittest.TestCase):
+    def test_recovers_quantiles_and_is_monotone(self):
         rng = np.random.default_rng(0)
-        # Right-skewed sample (shape > 0).
         data = np.abs(rng.standard_normal(500)) + 1.0
-        fit = fit_skewnorm(data)
+        fit = fit_quantiles(data)
+        self.assertEqual(len(fit), len(QUANTILE_LEVELS))
         self.assertTrue(all(math.isfinite(v) for v in fit))
-        # Cutoffs default to the observed range.
-        self.assertAlmostEqual(fit.lo, float(data.min()))
-        self.assertAlmostEqual(fit.hi, float(data.max()))
+        # Non-decreasing quantile function; ends are the observed min/max.
+        self.assertTrue(all(b >= a for a, b in zip(fit, fit[1:])))
+        self.assertAlmostEqual(fit.q0, float(data.min()))
+        self.assertAlmostEqual(fit.q100, float(data.max()))
+        # Median quantile ≈ empirical median.
+        self.assertAlmostEqual(fit.q50, float(np.median(data)), places=6)
 
     def test_explicit_cutoffs_override(self):
         rng = np.random.default_rng(1)
         data = rng.normal(2.0, 0.3, size=200)
-        fit = fit_skewnorm(data, lo=1.4, hi=3.0)
-        self.assertEqual(fit.lo, 1.4)
-        self.assertEqual(fit.hi, 3.0)
+        fit = fit_quantiles(data, lo=1.4, hi=3.0)
+        self.assertEqual(fit.q0, 1.4)
+        self.assertEqual(fit.q100, 3.0)
 
     def test_small_sample_is_nan(self):
-        fit = fit_skewnorm([1.0, 2.0, 3.0])
+        fit = fit_quantiles([1.0, 2.0, 3.0])
         self.assertTrue(all(math.isnan(v) for v in fit))
-        self.assertEqual(fit, nan_skewnorm())
+        self.assertEqual(fit, nan_quantiles())
 
 
 class TestFitExpDecayRank(unittest.TestCase):

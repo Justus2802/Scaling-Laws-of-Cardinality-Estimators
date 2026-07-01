@@ -289,17 +289,26 @@ def _inner_edge_count(adj: list, v: int) -> int:
     return count
 
 
-def _star_contributions(adj: list, v: int, max_k: int) -> list[int]:
+def _star_contributions(
+    adj: list, v: int, max_k: int, max_center_degree: "float | None" = None
+) -> list[int]:
     """Induced k-star counts contributed by node v as center, for k=2..max_k.
 
     Uses inclusion-exclusion over inner edges (edges between neighbors of v).
     Triangle-free centers contribute C(d, k) exactly; others are corrected.
     Returns list of length max_k+1 indexed by k (indices 0,1 unused).
+
+    The inclusion-exclusion is O(2^(inner edges)), which explodes on clustered
+    hubs.  When ``max_center_degree`` is set, a center whose simple degree exceeds
+    it contributes zeros (is skipped).  Degree is invariant under degree-preserving
+    swaps, so a node's skip status is identical before and after any swap — the
+    same centers are excluded from the baseline and from every incremental delta,
+    keeping the tracked total self-consistent.
     """
     nbrs_v = set(adj[v])
     d = len(nbrs_v)
     totals = [0] * (max_k + 1)
-    if d < 2:
+    if d < 2 or (max_center_degree is not None and d > max_center_degree):
         return totals
 
     inner_edges = [
@@ -342,6 +351,7 @@ def _star_count_delta(
     adj: list,
     s1: int, o1: int, s2: int, o2: int,
     max_k: int = 10,
+    max_center_degree: "float | None" = None,
 ) -> dict[int, int]:
     """Compute Δ(induced k-star counts) for k=2..max_k for swapping (s1,o1)↔(s2,o2).
 
@@ -349,6 +359,12 @@ def _star_count_delta(
     contributions: the four endpoint nodes s1, o1, s2, o2, and any node that
     has both of a changed pair among its neighbors (because its inner-edge set
     changes).  This is O(Δ²) total, matching the exactness of the counter.
+
+    ``max_center_degree`` is forwarded to ``_star_contributions``: centers above
+    it are skipped (the O(2^(inner edges)) inclusion-exclusion is intractable on
+    clustered hubs).  Degree is swap-invariant, so a skipped center is excluded
+    from both the before and after sums and contributes 0 to the delta — matching
+    the same threshold applied to the baseline count.
 
     Returns a dict {k: delta} with only nonzero entries.
     """
@@ -367,7 +383,7 @@ def _star_count_delta(
 
     before: dict[int, int] = {}
     for v in affected:
-        for k, cnt in enumerate(_star_contributions(adj, v, max_k)):
+        for k, cnt in enumerate(_star_contributions(adj, v, max_k, max_center_degree)):
             if cnt:
                 before[k] = before.get(k, 0) + cnt
 
@@ -378,7 +394,7 @@ def _star_count_delta(
 
     after: dict[int, int] = {}
     for v in affected:
-        for k, cnt in enumerate(_star_contributions(adj, v, max_k)):
+        for k, cnt in enumerate(_star_contributions(adj, v, max_k, max_center_degree)):
             if cnt:
                 after[k] = after.get(k, 0) + cnt
 

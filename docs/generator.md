@@ -35,8 +35,8 @@ from one integer: Stage 1 `seed`, Stage 2 `seed+1`, Stage 3 `seed+2`.
 |---|---|---|
 | A | `num_entities`, `num_relations`, `mean_degree` | `V`, `R`, edge budget `E = round(mean_degree·V)` |
 | B | `relation_zipf` | relation-frequency weights (Zipf exponent) |
-| B | `obj_alpha_skew` | per-relation **object**-multiplicity tail α (out-degree shape) |
-| B | `subj_alpha_skew` | per-relation **subject**-multiplicity tail α (in-side shape) |
+| B | `obj_alpha_q` | per-relation **object**-multiplicity tail α (out-degree shape), as a quantile function |
+| B | `subj_alpha_q` | per-relation **subject**-multiplicity tail α (in-side shape), as a quantile function |
 | B | `a_obj` | G2b forward CS-size→multiplicity offset (`cs_size^a_obj`) |
 | B | `a_subj` | G2b inverse CS-size→multiplicity offset (`inv_cs_size^a_subj`) |
 | B | `in_degree_fit.alpha` | PA exponent + expected max in-degree |
@@ -44,8 +44,8 @@ from one integer: Stage 1 `seed`, Stage 2 `seed+1`, Stage 3 `seed+2`.
 | C | `type_rel_spectrum_exp` | `P(r\|t)` low-rank reconstruction (used for post-hoc type scoring) |
 | C | `subj_cooc_exp` | forward co-occurrence group prototypes (CS source) |
 | C | `obj_cooc_exp` | inverse co-occurrence group prototypes (inverse-CS source) |
-| D | `cs_size_skew`, `num_distinct_cs`, `cs_freq_fit.alpha` | forward CS templates: size, count, reuse skew |
-| D | `inv_cs_size_skew`, `inv_num_distinct_cs`, `inv_cs_freq_fit.alpha` | inverse CS templates (object side): size, count, reuse skew |
+| D | `cs_size_q`, `num_distinct_cs`, `cs_freq_fit.alpha` | forward CS templates: size (quantile function), count, reuse skew |
+| D | `inv_cs_size_q`, `inv_num_distinct_cs`, `inv_cs_freq_fit.alpha` | inverse CS templates (object side): size (quantile function), count, reuse skew |
 | E | motif counts | Stage-3 targets (triangles, 4-cycle, diamond, k4, tailed) |
 | F | `degree_assortativity` | Stage-3 target |
 | F | `num_components`, `largest_component_fraction` | Stage-2 connectivity target (nc, LCC fraction) |
@@ -53,7 +53,7 @@ from one integer: Stage 1 `seed`, Stage 2 `seed+1`, Stage 3 `seed+2`.
 | F | `shortest_path_mean` | Stage-2 mean path-length target (passed through directly) |
 
 **Validation-only (measured, deliberately *not* used constructively):** C `subj/obj_cooc_density`,
-`subj/obj_row_entropy_skew`, `per_type_entropy_exp`; D `two_step_fit`; F
+`subj/obj_row_entropy_q`, `per_type_entropy_exp`; D `two_step_fit`; F
 `clustering_coefficient`, `shortest_path_var` (emergent — not steered). These are diagnostics
 the brief marks "get near," not directly steered. Tuning constants for each stage
 are module-level at the top of `stage1.py`/`stage2.py`/`stage3.py`.
@@ -75,8 +75,8 @@ needs. All randomness from one seeded `np.random.Generator`.
    (`_sample_type_relation_probs`). This uses `P(r|t)`'s **own** T×R spectrum — *not* the `M`
    co-occurrence spectrum it used to be conflated with. No types (`T=0`) → empty `(0,R)` table.
 5. **CS structure (Block D).** `cs_num_templates = num_distinct_cs`;
-   `cs_template_zipf = cs_freq_fit.alpha` (CS reuse skew); `cs_size_skew` passed through; the
-   CS-size-skew mean gates whether template mode is enabled.
+   `cs_template_zipf = cs_freq_fit.alpha` (CS reuse skew); `cs_size_q` passed through; the
+   CS-size quantile-function mean (trapezoid integral) gates whether template mode is enabled.
 6. **Path-length targets (Block F).** Read `path_mean_target = f.shortest_path_mean`
    (NaN when Block F absent or paths not sampled) and `path_hi_target = int(f.shortest_path_max)`
    (0 when absent or NaN). Both are stored in `Schema` and consumed by Stage 2 step 7b.
@@ -86,7 +86,7 @@ needs. All randomness from one seeded `np.random.Generator`.
    normalized weight vector from the singular values. Stage 2 draws entity CSes from these
    prototypes (replacing the `P(r|t)` path) and assigns types post-hoc. See
    [§ Co-occurrence groups](#co-occurrence-groups) below.
-7. **Multiplicity / degree (Block B).** `obj_alpha_skew`, `subj_alpha_skew`, `a_obj` passed
+7. **Multiplicity / degree (Block B).** `obj_alpha_q`, `subj_alpha_q`, `a_obj` passed
    through; `in_pa_exponent = clip(1/(α_in−2), 0.1, 2)` (Dorogovtsev–Mendes); expected
    `max_in_degree = n^(1/(α_in−1))`.  `max_out_degree` is derived via the alpha ratio:
    `max_out_degree = round(max_in_degree / (α_in / α_out))`.  Both caps default to 0 (uncapped)
@@ -100,8 +100,9 @@ Builds the graph by sampling characteristic sets first, then wiring edges per re
 where most of the fidelity fixes live.
 
 1. **Budget split.** `content_E = E − n_type_edges` (one `rdf:type` edge per entity when `T>0`).
-2. **CS size source.** Each CS's *size* is drawn from `cs_size_skew` (`sample_skewnorm_trunc`),
-   falling back to a budget-derived Poisson mean when Block D is absent. CS size sets **relation
+2. **CS size source.** Each CS's *size* is drawn from `cs_size_q` (`sample_quantiles_trunc`,
+   inverse-transform of the stored quantile function), falling back to a budget-derived Poisson
+   mean when Block D is absent. CS size sets **relation
    membership only** — the per-relation allocation (step 5) owns the edge budget.
 3. **Type assignment (initial).** Each entity gets a provisional type via `type_weights`
    (all untyped when `T=0`). If co-occurrence groups are active, this is overwritten post-hoc (step 5b).
@@ -178,17 +179,19 @@ live adjacency dict (not an `igraph.Graph`) so each swap is cheap.
   swaps preferentially close open wedges when below target.
 - **CC_avg** (avg local clustering) — exact, incremental; the `C(k_v,2)` denominators are invariant
   under degree-preserving swaps, so only per-node `Δt_v` (from the triangle delta) drives it.
-- **4-node motifs** (C4, diamond, K4, paw) — exact, incremental `_motif4_delta` when
-  `USE_INCREMENTAL_MOTIF4` (the default): enumerates the motif 4-sets touching the four swap
-  endpoints before and after, and diffs per-type counts (O(Δ³) per swap). Otherwise re-measured
-  every `remeasure_interval` accepted swaps via the CC sampler.
+- **4-node motifs** (C4, diamond, K4, paw) — exact, incremental `_motif4_delta`: enumerates the
+  motif 4-sets touching the four swap endpoints before and after, and diffs per-type counts
+  (O(Δ³) per swap).
 - **5-/6-cycles** — these are **induced (chordless)** cycles (degree sequences `(2,2,2,2,2)` /
-  `(2,2,2,2,2,2)`), matching the motif counters. Exact, incremental `_cycle_delta` when
-  `USE_INCREMENTAL_CYCLES`: counts induced cycles through the swap endpoints before and after and
-  diffs them (O(Δ⁴)/O(Δ⁵) per swap — best left off for hub-heavy graphs). A swap changes the count
-  both by adding/removing a cycle edge **and** by adding a chord (destroys an induced cycle) or
-  removing one (can create an induced cycle). Otherwise re-measured every `remeasure_interval`
-  accepted swaps via CC sampling. Only active when a Block-E cycle target is > 0.
+  `(2,2,2,2,2,2)`), matching the motif counters. Exact, incremental `_cycle_delta`: counts induced
+  cycles through the swap endpoints before and after and diffs them (O(Δ⁴)/O(Δ⁵) per swap — best
+  left off for hub-heavy graphs). A swap changes the count both by adding/removing a cycle edge
+  **and** by adding a chord (destroys an induced cycle) or removing one (can create an induced
+  cycle). Only active when a Block-E cycle target is > 0.
+  Swaps that touch a node with simple degree > `CYCLE_DELTA_MAX_DEGREE` (default 50) **skip** the
+  delta — on such hubs the O(Δ⁴)/O(Δ⁵) enumeration can stall the walk for minutes — and carry the
+  cycle counts over unchanged, so the cycle loss terms cancel in the accept test and neither favour
+  nor penalise the hub swap.
 - **Degree assortativity** — exact, incremental (only the cross-product sum `Q` changes).
 - **Depth-2 tree template entropy** — exact, incremental `_tree_entropy_delta` (O(Δ) per swap).
   Maintains a live `(r1, r2)` pair-frequency dict across the SA walk; on each candidate swap the
@@ -201,8 +204,15 @@ live adjacency dict (not an `igraph.Graph`) so each swap is cheap.
   so `out_edges` is updated in-place per accepted swap.  Only steered when
   `BlockE.path_template_entropy[3] > 0` and `LOSS_WEIGHT_PATH_ENTROPY > 0`; inactive when Block E
   was measured with `skip_stars_and_paths=True`.
-- **Induced k-star counts** (`k ∈ STAR_K_TRACKED = (2,3,4,5)`) — exact, incremental
-  `_star_count_delta` (O(Δ²) per swap). Unlike non-induced stars (`C(k_v,2)`, fixed by degree),
+- **Induced k-star counts** (`k ∈ STAR_K_TRACKED = (2,3,4,5)`) — baseline measured via the CC
+  star sampler (`initial_motif_counter.count_stars`); the exact inclusion-exclusion baseline is
+  O(2^(inner edges)) per centre and stalls on clustered hubs, whereas the CC estimator is bounded.
+  Per-swap updates use the exact, incremental `_star_count_delta` (O(Δ²) per swap), with a
+  `STAR_CENTER_MAX_DEGREE` guard: centres above that simple degree are skipped (their
+  inclusion-exclusion would explode). Degree is swap-invariant, so a skipped hub is excluded from
+  both sides of the delta and contributes 0 — hub star changes neither favour nor penalise a swap.
+  (The CC baseline still *includes* those hubs, so their contribution is a constant offset that
+  cancels in the accept test rather than being tracked.) Unlike non-induced stars (`C(k_v,2)`, fixed by degree),
   these are **chordless** stars whose leaves must be mutually non-adjacent, so a degree-preserving
   swap that removes an inner edge among a hub's neighbours *raises* that hub's induced star count —
   the lever Stage 3 uses. Steered only when `LOSS_WEIGHT_STARS > 0` (and the Block-E target is > 0);
@@ -211,15 +221,20 @@ live adjacency dict (not an `igraph.Graph`) so each swap is cheap.
   breaking triangles among high-degree hubs to close a star deficit faster; it antagonises the
   clustering terms (triangles/CC/diamond/K4/paw), so keep the probability modest.
 
-The SA loss is a weighted sum of relative errors; the best graph seen is returned, then components
-are re-bridged. When a `convergence_log` is given, each active term writes a relative-error column
-every `CONVERGENCE_LOG_INTERVAL` accepted swaps (`tri_err`, motif4 `*_err`, `c5/c6_err`, `cc_err`,
-`assort_err`, `tree_entropy_err`, `path_entropy_k3_err`, and `star_k{k}_err` per tracked k).
+The SA loss is a weighted sum of relative errors. Both the loss and the convergence log derive
+from a single `_error_terms(state)` helper (returning one relative error per active target), so each
+term is defined once: the loss is the weighted sum, the log is the unweighted dump. The best graph
+seen is returned, then components are re-bridged. When a `convergence_log` is given, each active
+term writes a relative-error column every `CONVERGENCE_LOG_INTERVAL` accepted swaps (`tri_err`,
+motif4 `*_err`, `c5/c6_err`, `cc_err`, `assort_err`, `tree_entropy_err`, `path_entropy_k3_err`, and
+`star_k{k}_err` per tracked k). Setting `CONVERGENCE_LOG_GLOBAL_REMEASURE = True` additionally
+re-measures the full graph each logged row and appends ground-truth `sig_*_err` columns (validates
+the incremental deltas; expensive).
 
 > **Runtime note.** The incremental deltas are O(Δᵏ⁻¹) per *attempted* swap, so they dominate
-> Stage-3 cost on hub-heavy graphs. Lower `--rewire-budget`, disable a steering term (set its
-> `LOSS_WEIGHT_*` to 0), or switch the relevant `USE_INCREMENTAL_*` flag off to fall back to
-> periodic CC remeasurement.
+> Stage-3 cost on hub-heavy graphs. Lower `--rewire-budget` or disable a steering term (set its
+> `LOSS_WEIGHT_*` to 0). The costliest cycle/star deltas also honour the `CYCLE_DELTA_MAX_DEGREE`
+> and `STAR_CENTER_MAX_DEGREE` hub guards.
 
 ---
 
@@ -228,11 +243,12 @@ every `CONVERGENCE_LOG_INTERVAL` accepted swaps (`tri_err`, motif4 `*_err`, `c5/
 The reduced blocks store distribution *parameters*, not the raw moments the generator originally
 read. These helpers reconstruct what Stage 1/2 need (NaN-safe; NaN → neutral fallback):
 
-- `_skewnorm_mean(fit)` — mean of a skew-normal fit (e.g. `cs_size_mean`).
-- `_functionality_from_alpha(fit)` — `1/ζ(α)` = fraction of single-valued slots, from a
-  multiplicity-α skew-normal (out-side `mean_functionality` fallback).
+- `_quantile_mean(fit)` — mean of a quantile-function fit via `np.trapezoid` (e.g. `cs_size_mean`).
+- `_functionality_from_alpha(fit)` — `1/ζ(α)` = fraction of single-valued slots, from the
+  median of a multiplicity-α quantile function (out-side `mean_functionality` fallback).
 - `_reconstruct_singular_values(exp_fit, k)` — `scale·exp(−rate·k)` spectrum for `P(r|t)`.
-- `sample_skewnorm_trunc(fit, n, rng)` — draws clipped to `[lo,hi]`; `None` when the fit is NaN.
+- `sample_quantiles_trunc(fit, n, rng)` — inverse-transform draws (`np.interp`) naturally clipped
+  to `[q@0, q@1]`; `None` when the fit is NaN.
 - `sample_powerlaw(alpha, n, rng)` — `power-law(α>1)` draws via inverse-CDF; uniform ones when α
   is NaN/≤1 (the neutral fallback).
 
@@ -319,7 +335,7 @@ uses the full available signal without over-extrapolating.
 | `subj_cooc_exp.rate/scale` | Group weight spectrum → M_subj singular value shape |
 | `obj_cooc_exp.rate/scale` | Inverse group weight spectrum → M_obj shape |
 | `subj/obj_cooc_density` | Indirectly: group prototype spread × CS size |
-| `subj/obj_row_entropy_skew` | Indirectly: group prototype concentration |
+| `subj/obj_row_entropy_q` | Indirectly: group prototype concentration |
 
 `per_type_entropy_exp` and class sizes now emerge from post-hoc type assignment (no longer
 directly controlled).
@@ -405,6 +421,14 @@ comparison (median relative error is the meaningful aggregate; mean/max are infl
 near-zero-target features). The synthetic re-measurement runs Block E at a reduced
 `_FINAL_SAMPLE_BUDGET = 20_000` (CC motif/star sampling + path/tree walks) instead of the 100k
 Block-E default, to keep the round-trip fast — the cached target side is unaffected.
+
+The re-measured synthetic signature is also dumped to a `signature_synth/` directory next to the
+source graph (`data/graphs/<name>/signature_synth/`, `data/test_graphs/<name>/signature_synth/`),
+using the same layout as the measured `signature/` dir — per-block `block_<x>.png` plots and
+`block_<x>.json` state, plus `summary.txt` and combined `signature.json`. This mirrors what
+`measure_signature.py` writes for real graphs (both now share
+`signature.write_signature_outputs`), so a measured and a generated signature are structurally
+identical and directly comparable for validation.
 
 Pass `--convergence-log` with no value to record the Stage 3 convergence CSV; the file is
 auto-named from the graph name and run options (e.g. `conv_<graph>_seed42_rb5000.csv`) and written

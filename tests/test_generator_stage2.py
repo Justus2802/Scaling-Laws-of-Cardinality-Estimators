@@ -6,7 +6,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from signature import BlockA, BlockB, BlockC, BlockD  # noqa: E402
-from signature._fits import ExpDecayFit, SkewNormFit, ZipfFit, nan_exp_decay  # noqa: E402
+from signature._fits import ExpDecayFit, ZipfFit, fit_quantiles, nan_exp_decay  # noqa: E402
 from signature._utils import PowerLawStats  # noqa: E402
 from generator import sample_schema, instantiate  # noqa: E402
 
@@ -15,6 +15,12 @@ _RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 
 def _pls(alpha: float) -> PowerLawStats:
     return PowerLawStats(alpha, 1.0, float("nan"), float("nan"), float("nan"), float("nan"))
+
+
+def _q(center: float, spread: float, lo: float, hi: float):
+    """Quantile fit of a normal sample centred at ``center`` (truncated to [lo, hi])."""
+    rng = np.random.default_rng(0)
+    return fit_quantiles(rng.normal(center, spread, 500), lo=lo, hi=hi)
 
 
 def _make_block_a(num_entities=300, num_triples=1200, num_relations=4) -> BlockA:
@@ -43,8 +49,8 @@ def _make_block_b(
     b._relation_zipf = ZipfFit(exponent=relation_zipf, x_min=1.0)
     b._in_degree_fit = _pls(in_alpha)
     b._out_degree_fit = _pls(2.5)
-    b._obj_alpha_skew = SkewNormFit(loc=obj_alpha, scale=0.3, shape=0.0, lo=1.4, hi=3.0)
-    b._subj_alpha_skew = SkewNormFit(loc=subj_alpha, scale=0.3, shape=0.0, lo=1.4, hi=3.0)
+    b._obj_alpha_q = _q(obj_alpha, 0.3, 1.4, 3.0)
+    b._subj_alpha_q = _q(subj_alpha, 0.3, 1.4, 3.0)
     b._a_obj = a_obj
     b._a_subj = 0.2
     return b
@@ -56,8 +62,8 @@ def _make_block_d(
 ) -> BlockD:
     """Reduced BlockD with the fields sample_schema reads (forward + inverse CS)."""
     d = BlockD()
-    d._cs_size_skew = SkewNormFit(loc=cs_size_loc, scale=1.0, shape=0.0, lo=1.0, hi=8.0)
-    d._inv_cs_size_skew = SkewNormFit(loc=inv_cs_size_loc, scale=1.0, shape=0.0, lo=1.0, hi=8.0)
+    d._cs_size_q = _q(cs_size_loc, 1.0, 1.0, 8.0)
+    d._inv_cs_size_q = _q(inv_cs_size_loc, 1.0, 1.0, 8.0)
     d._num_distinct_cs = num_distinct_cs
     d._cs_freq_fit = _pls(cs_freq_alpha)
     d._inv_num_distinct_cs = inv_num_distinct_cs

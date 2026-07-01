@@ -4,9 +4,12 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-# Canonical "fit unavailable" skew-normal (loc, scale, shape, lo, hi); the
-# generator treats it as "no usable shape" and falls back to neutral behavior.
-_NAN_SKEW = (float("nan"),) * 5
+from signature import QUANTILE_LEVELS
+
+# Canonical "fit unavailable" quantile function (one NaN per QUANTILE_LEVELS
+# level); the generator treats it as "no usable shape" and falls back to neutral
+# behavior.
+_NAN_Q = (float("nan"),) * len(QUANTILE_LEVELS)
 
 
 @dataclass
@@ -56,14 +59,14 @@ class Schema:
     # Per-relation multiplicity shape + G2b offset (Block B); CS-size shape (Block D).
     # Defaults are NEUTRAL (no tail shape / no offset / budget-derived CS size), not the
     # old wiring — Stage 2 falls back to uniform per-subject weights when these are NaN.
-    obj_alpha_skew: tuple = field(default_factory=lambda: _NAN_SKEW)   # per-relation obj-mult α
+    obj_alpha_q: tuple = field(default_factory=lambda: _NAN_Q)   # per-relation obj-mult α quantiles
     a_obj: float = 0.0                   # G2b cs_size^a out-degree offset (0 → no effect)
-    subj_alpha_skew: tuple = field(default_factory=lambda: _NAN_SKEW)  # per-relation subj-mult α
+    subj_alpha_q: tuple = field(default_factory=lambda: _NAN_Q)  # per-relation subj-mult α quantiles
     a_subj: float = 0.0                  # G2b inv_cs_size^a in-degree offset (0 → no effect)
-    cs_size_skew: tuple = field(default_factory=lambda: _NAN_SKEW)     # forward CS-size distribution
+    cs_size_q: tuple = field(default_factory=lambda: _NAN_Q)     # forward CS-size quantiles
     # Inverse CS (object side), symmetric to forward CS. 0 templates → every object
     # eligible for every relation (today's behaviour) and the a_subj factor is inert.
-    inv_cs_size_skew: tuple = field(default_factory=lambda: _NAN_SKEW)
+    inv_cs_size_q: tuple = field(default_factory=lambda: _NAN_Q)
     inv_cs_num_templates: int = 0        # 0 → no inverse-CS restriction
     inv_cs_template_zipf: float = 2.0    # inverse-CS reuse skew (inv_cs_freq α)
     # Block F-derived connectivity targets.  Defaults reproduce current fully-connected behaviour.

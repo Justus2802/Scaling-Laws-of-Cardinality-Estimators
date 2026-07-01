@@ -1,9 +1,10 @@
 """Reduced (non-over-determined) graph signature.
 
 A coexisting alternative to the ``signature`` package: it measures the same KGs
-but stores the **parameters of the distribution family** each quantity follows
-(skew-normal, exponential-decay, truncated power-law, …) instead of redundant
-moments, dropping every value guaranteed by the stored parameters. See
+but stores a **compact distribution summary** for each quantity — a quantile
+function for sample distributions, or the parameters of a parametric family
+(exponential-decay, truncated power-law, …) — instead of redundant moments,
+dropping every value guaranteed by the stored summary. See
 ``docs/signature_redesign.md`` for the design and ``docs/signature_measurement_plan.md``
 for the mapping onto blocks.
 
@@ -12,6 +13,9 @@ Scope: Blocks A, B, C, D, E, F (G0–G5). The shared block infrastructure — th
 ``signature`` package.
 """
 
+import contextlib
+import io
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -24,11 +28,12 @@ from .block_d import BlockD
 from .block_e import BlockE
 from .block_f import BlockF
 from ._fits import (
-    SkewNormFit,
+    QuantileFit,
+    QUANTILE_LEVELS,
     ExpDecayFit,
     TruncPowerLawFit,
     ZipfFit,
-    fit_skewnorm,
+    fit_quantiles,
     fit_exp_decay_rank,
     fit_truncated_powerlaw,
     fit_zipf,
@@ -140,11 +145,70 @@ def compute_reduced_signature(
     )
 
 
+def write_signature_outputs(
+    sig: ReducedGraphSignature,
+    out_dir: Path | str,
+    source: str,
+    fmt: str = "png",
+    show: bool = False,
+) -> list[Path]:
+    """Write a signature's plots, per-block JSON, summary and combined JSON to a directory.
+
+    Mirrors the on-disk layout produced for measured graphs (``block_<x>.<fmt>``,
+    ``block_<x>.json``, ``summary.txt``, ``signature.json``) so a measured
+    ``signature/`` and a generated ``signature_synth/`` directory are structurally
+    identical. Blocks that are ``None`` are skipped.
+
+    :param sig: The computed reduced signature to persist.
+    :param out_dir: Destination directory (created if missing).
+    :param source: Value stored under ``"source"`` in ``signature.json``.
+    :param fmt: Image format for the per-block plots (``png``/``pdf``/``svg``).
+    :param show: If true, also display each block's plot interactively.
+    :returns: The list of written file paths.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    computed = [(c, b) for c, b in zip(_ALL_BLOCKS, sig._blocks()) if b is not None]
+    written: list[Path] = []
+
+    # One plot per computed block.
+    for label, block in computed:
+        plot_path = out_dir / f"block_{label}.{fmt}"
+        block.visualize(mode="plot", path=str(plot_path))
+        written.append(plot_path)
+        if show:
+            block.visualize(mode="plot")
+
+    # Combined text summary (each block's text visualization).
+    sections: list[str] = []
+    for _label, block in computed:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            block.visualize(mode="text", path=None)
+        sections.append(buf.getvalue().rstrip())
+    summary_path = out_dir / "summary.txt"
+    summary_path.write_text("\n\n".join(sections) + "\n")
+    written.append(summary_path)
+
+    # Combined named-feature JSON (key:value, NaN-filled for absent blocks).
+    json_path = out_dir / "signature.json"
+    json_path.write_text(json.dumps({"source": str(source), "features": sig.as_dict()}, indent=2))
+    written.append(json_path)
+
+    # Each block's full internal state for later reconstruction.
+    for label, block in computed:
+        block_path = out_dir / f"block_{label}.json"
+        block_path.write_text(json.dumps(block.to_serializable(), indent=2))
+        written.append(block_path)
+
+    return written
+
+
 __all__ = [
     "BlockA", "BlockB", "BlockC", "BlockD", "BlockE", "BlockF",
-    "ReducedGraphSignature", "compute_reduced_signature",
+    "ReducedGraphSignature", "compute_reduced_signature", "write_signature_outputs",
     "_ALL_BLOCKS",
-    "SkewNormFit", "ExpDecayFit", "TruncPowerLawFit", "ZipfFit",
-    "fit_skewnorm", "fit_exp_decay_rank", "fit_truncated_powerlaw",
+    "QuantileFit", "QUANTILE_LEVELS", "ExpDecayFit", "TruncPowerLawFit", "ZipfFit",
+    "fit_quantiles", "fit_exp_decay_rank", "fit_truncated_powerlaw",
     "fit_zipf", "fit_cs_size_offset",
 ]

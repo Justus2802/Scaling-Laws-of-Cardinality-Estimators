@@ -25,7 +25,8 @@ retained internally as `_orig_block_*` modules (the reduced blocks delegate to t
 `test_signature_block_*` tests exercise them directly). Both `scripts/measure_signature.py`
 and `scripts/measure_signature_reduced.py` now produce the reduced signature and write a
 `signature/` directory next to each graph file (`data/graphs/<name>/signature/`).
-`scripts/measure_all_raw.py` runs it over all raw KGs.
+`scripts/measure_all_raw.py` runs it over all raw KGs in `data/graphs/` and the test
+corpus `data/test_graphs/` (use `--graphs <name>...` to restrict to specific graphs).
 
 ## Plans (future)
 

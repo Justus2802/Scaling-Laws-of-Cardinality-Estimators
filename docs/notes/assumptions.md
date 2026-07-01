@@ -199,9 +199,9 @@ After throttling to the edge budget, `_connect_components` adds one bridging edg
 ### Multi-motif SA objective in Stage 3 (`refine`)
 The simulated-annealing loss is a weighted sum of relative errors:
 - **Triangle count** — exact, incremental via `_triangle_delta`
-- **4-node motifs** (C4, diamond, K4, tailed triangle) — remeasured every `remeasure_interval` accepted swaps using `igraph.motifs_randesu(size=4)` on a rebuilt undirected graph
-- **5-cycle count** — remeasured every `remeasure_interval` accepted swaps via `ESCAPEFiveNodeCounter` (exact, same as Block E), with CC fallback for dense graphs where the degree guard fires. CC sampling (`cc_run`) is **not** used for C5 in the SA loop: the colorfulness probability p₅ = 5!/5⁵ ≈ 3.8% means many coloring draws produce t=0 and the estimator silently returns `{}`, giving a zero signal even when cycles exist.
-- **6-cycle count** — remeasured every `remeasure_interval` accepted swaps via CC sampling (`cc_run` with `CC_CYCLE_SAMPLES=5000`). Active only when `target_e.six_cycle_count > 0`. CC is acceptable for C6 because the estimator's variance averages out better with the larger graph size typical at k=6. Not updated incrementally per swap (exact incremental delta for 5/6-cycles is intractable); the loss uses the last measured value between remeasure intervals.
+- **4-node motifs** (C4, diamond, K4, tailed triangle) — exact, incremental `_motif4_delta` per swap
+- **5-cycle count** — exact, incremental `_cycle_delta` per swap (induced/chordless). Swaps touching a node above `CYCLE_DELTA_MAX_DEGREE` skip the delta and carry the count over unchanged (the O(Δ⁴) enumeration would stall the walk). The initial baseline is measured once via `HybridMotifCounter` (`ESCAPEFiveNodeCounter`, exact).
+- **6-cycle count** — exact, incremental `_cycle_delta` per swap (induced/chordless), same hub guard. Active only when `target_e.six_cycle_count > 0`. Initial baseline via the measure counter (`cc_run` with `CC_CYCLE_SAMPLES=5000`).
 - **Degree assortativity** — exact and incremental: double-edge swaps preserve degree sequences, so only the cross-product sum Q = Σ_e d_u·d_v changes. ΔQ = (d_s1−d_s2)(d_o2−d_o1). The formula r = (4MQ − S²) / (2MT − S²) gives assortativity from Q alone since S and T are constant under swaps.
 
 Block F's `degree_assortativity` is targeted when `target_f` is provided to `refine` (set automatically by `Generator.sample` when `Signature.f` is not None).

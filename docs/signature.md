@@ -19,7 +19,8 @@ from lives alongside as an internal `_orig_block_*` module (e.g. `_orig_block_e.
 public reduced block delegates to. The package reuses a shared block infrastructure (the
 `SignatureBlock` ABC with `as_dict` / `to_serializable`, JSON
 serialization, logging, and the `powerlaw` fitter). Library-backed distribution fits live
-in `_fits.py` (`scipy.stats.skewnorm`, `scipy.stats.linregress`, the `powerlaw` package);
+in `_fits.py` (`np.quantile` for the non-parametric quantile-function fits,
+`scipy.stats.linregress`, the `powerlaw` package);
 `_plot_helpers.py` overlays each fit on the raw data it was computed from — every block
 keeps that pre-fit data (singular values, row entropies, per-relation exponents, path
 counts, path lengths) on the object for `visualize`.
@@ -27,19 +28,19 @@ counts, path lengths) on the object for `visualize`.
 | Block | Vec | Stored representation (rationale in the sections below) |
 |---|---|---|
 | **A** — G0 | 3 | `num_entities`, `num_relations`, **mean degree** `E/V` |
-| **B** — G1/G2/G2b | 18 | out/in-degree power-law (target); relation-usage **Zipf**; obj/subj multiplicity-α **skew-normal** (cutoffs [1.4,3.0]); CS-size offsets `a_obj`, `a_subj` |
-| **C** — G3 | 23 | class-size **power-law**; subj/obj co-occurrence **exp-decay** + density; row entropy **skew-normal**; `P(r\|t)` spectrum **exp-decay**; per-type entropy **exp-decay** |
-| **D** — G3 | 19 | `num_distinct_cs`; CS-freq **power-law**; CS-size **skew-normal**; symmetric inverse side (`inv_num_distinct_cs`, inverse-CS-freq **power-law**, inverse-CS-size **skew-normal**); two-step path-count **truncated power-law** |
+| **B** — G1/G2/G2b | 22 | out/in-degree power-law (target); relation-usage **Zipf**; obj/subj multiplicity-α **quantile function** (7 levels, cutoffs [1.4,3.0]); CS-size offsets `a_obj`, `a_subj` |
+| **C** — G3 | 27 | class-size **power-law**; subj/obj co-occurrence **exp-decay** + density; row entropy **quantile function** (7 levels); `P(r\|t)` spectrum **exp-decay**; per-type entropy **exp-decay** |
+| **D** — G3 | 23 | `num_distinct_cs`; CS-freq **power-law**; CS-size **quantile function** (7 levels); symmetric inverse side (`inv_num_distinct_cs`, inverse-CS-freq **power-law**, inverse-CS-size **quantile function**); two-step path-count **truncated power-law** |
 | **E** — G5 | 36 | raw motif counts (triangle, 4-/5-/6-cycle, diamond, k4, tailed triangle); **induced** `star_count_k*` (k=2..10); path-template **Zipf** + entropy (k=2..10); tree-template Zipf + entropy. Stars are *induced* (centre + k mutually non-adjacent leaves, as measured by the color-coding counter), **not** the non-induced `Σ C(deg,k)`, so they are not fixed by the degree distribution and carry independent structure |
 | **F** — G4 | 9 | components, LCC fraction, avg-local clustering, assortativity; shortest-path **skew-normal** |
 
-Total **108** features (A3 + B18 + C23 + D19 + E36 + F9).
+Total **120** features (A3 + B22 + C27 + D23 + E36 + F9).
 The fits are stored as NamedTuples that restore as plain tuples through the JSON
 round-trip, so each block property re-wraps them to preserve attribute access.
 
 Run it: `python scripts/measure_signature_reduced.py <graph> [--blocks a,b,c,d,e,f]` →
 `<graph-dir>/signature/` (override with `--output-dir`); the curated corpus lives in
-`data/graphs/<name>/signature/`. Or `scripts/measure_all_raw.py --reduced` for every raw KG. Tests: `tests/test_signature_reduced_fits.py`,
+`data/graphs/<name>/signature/`. Or `scripts/measure_all_raw.py` for every raw KG in `data/graphs/` and the test corpus `data/test_graphs/`. The on-disk layout (per-block `block_<x>.png`/`.json`, `summary.txt`, combined `signature.json`) is produced by the shared `signature.write_signature_outputs` helper, which `scripts/signature_roundtrip.py` also uses to dump re-measured **generated** graphs to a parallel `signature_synth/` directory. Tests: `tests/test_signature_reduced_fits.py`,
 `tests/test_signature_reduced_blocks.py`. The original full signature (`signature/`,
 `scripts/measure_signature.py`) is unchanged and still runs.
 
@@ -94,13 +95,13 @@ Each retained value carries a **why** (what it controls in generation) and a **n
 
 | Quantity | Family (from notes) | Stored parameters |
 |---|---|---|
-| Per-relation object/subject multiplicity α (spread across relations) | **skew-normal** + cutoffs | loc ξ, scale ω, shape α_skew, lower/upper cutoff (~1.4 / ~3.0) |
+| Per-relation object/subject multiplicity α (spread across relations) | **quantile function** + cutoffs | 7 quantiles at levels (0, .1, .25, .5, .75, .9, 1); q@0/q@1 pinned to ~1.4 / ~3.0 |
 | Class size (entities per class) | **power-law** | α (+ x_min) |
-| Characteristic-set size \|CS\| | **skew-normal** | loc, scale, shape |
+| Characteristic-set size \|CS\| | **quantile function** | 7 quantiles (q@0 … q@1) |
 | `M` co-occurrence singular values (rank curve, **V-normalised** `M/V`) | **exponential decay** | rate, magnitude scale (size-free) |
 | `P(r\|t)` type-relation singular values (rank curve) | **exponential decay** | rate, magnitude scale |
 | Per-type relation entropy (rank curve) | **exponential decay** | rate, magnitude scale |
-| Co-occurrence row entropy | **skew-normal** | loc, scale, shape |
+| Co-occurrence row entropy | **quantile function** | 7 quantiles (q@0 … q@1) |
 | Two-step pair frequencies (value set) | **truncated power-law** (free α) | α, v_min, v_max |
 | Shortest-path length | **skew-normal** | loc, scale, shape |
 | Relation-usage frequency | **Zipf / power-law** (decision) | exponent (+ scale) |
@@ -115,12 +116,14 @@ with class size and the existing `cs_freq_stats` fit).
   heavier tail (strong hubs). `x_min` is where power-law behaviour begins; below it the
   body is not power-law. Used for strictly-heavy-tailed counts (class size, CS
   frequency, relation frequency as a Zipf rank-law).
-- **skew-normal `(loc ξ, scale ω, shape α_skew)` + cutoffs** — a normal distribution
-  bent by a skewness parameter. `ξ` sets the location (near the peak), `ω` the spread,
-  `α_skew` the asymmetry (`0` = symmetric normal, `>0` right-skewed, `<0` left-skewed).
-  The **cutoffs** are hard lower/upper bounds the distribution is truncated to (e.g.
-  per-relation α confined to ≈[1.4, 3.0]). Used for skewed-but-unimodal real-valued
-  quantities (per-relation multiplicity-α spread, CS size, row entropy, shortest path).
+- **quantile function (7 quantiles at levels 0, .1, .25, .5, .75, .9, 1)** — the
+  non-parametric empirical inverse CDF: the stored values are the sample quantiles, so
+  q@0/q@1 are the min/max (hard truncation cutoffs, e.g. per-relation α confined to
+  ≈[1.4, 3.0]) and q@0.5 is the median. Replaces the former skew-normal fit: it is far
+  more stable to estimate (no MLE shape parameter), directly invertible for
+  inverse-transform sampling, and its L1 difference is the Wasserstein-1 distance. Used
+  for skewed-but-unimodal real-valued quantities (per-relation multiplicity-α spread, CS
+  size, row entropy). (Block F's shortest-path length still uses a skew-normal.)
 - **exponential decay `(rate λ, magnitude scale A)`** — value at rank `k` ≈
   `A · exp(−λ k)`. `A` is the magnitude of the top-ranked value; `λ` is **how fast**
   values fall with rank (large λ ⇒ only the first few ranks matter; small λ ⇒ a long
@@ -246,7 +249,7 @@ mean m_subj(·, r) = |edges_r| / n_o(r)
 
 So each relation's multiplicity distribution must hit a **mean fixed by edge
 conservation**. Therefore the signature stores only the multiplicity **shape**
-(the tail exponent α, via the skew-normal across relations); the **scale / x_min** is
+(the tail exponent α, via the quantile function across relations); the **scale / x_min** is
 **derived** from `freq(r)·E / n_s(r)`. Storing a scale too would over-determine.
 
 **4. The two multiplicity sides are coupled per relation (bipartite realisability).**
@@ -268,7 +271,7 @@ observation is just this head probability being large.
 E, freq(r)                → |edges_r|                         (edge budget × frequency)
 schema / CS               → n_s(r), n_o(r), CS(v)             (who uses r; CS sizes)
 |edges_r|, n_s(r), n_o(r) → multiplicity MEAN/scale per r     (derived, guaranteed)
-G2 skew-normal of α       → multiplicity SHAPE per r          (free)
+G2 quantile fn of α       → multiplicity SHAPE per r          (free)
 object-multiplicity head  → functionality                     (derived, guaranteed)
 per-relation multiplicity → out/in-degree distributions       (NOT guaranteed — joint)
 ```
@@ -315,7 +318,7 @@ inverse-CS size) are not pinned by subject-side params.
   joint. *(Drop only if you explicitly assume independence and accept the gap.)*
 - **inverse-CS size** — object-side wiring aggregation; subject-multiplicity gives
   per-relation fan-in magnitude, not the count of distinct in-relations.
-- **row entropy** (skew-normal), **co-occurrence density** (scalar), **`P(r|t)` spectrum**
+- **row entropy** (quantile function), **co-occurrence density** (scalar), **`P(r|t)` spectrum**
   (exp-decay) + **per-type relation entropy** (exp-decay rank curve) — type/co-occurrence
   functionals the lossy `M` spectrum alone does not pin.
 - **two-step pair frequencies** (value-set truncated power-law) — wiring functional.
@@ -376,8 +379,8 @@ Excluded **D**: `num_triples` (= `mean_deg·V`), `density` (= `mean_deg/V`),
 
 | Value | Repr. | Nature | Why included |
 |---|---|---|---|
-| object-multiplicity α spread | **skew-normal** (loc, scale, shape) + cutoffs ≈[1.4, 3.0] over the per-relation tail exponents | C | Stores the **shape** of each relation's fan-out (the scale is derived by edge conservation). Sample an α per relation, then per-(subject,relation) counts. |
-| subject-multiplicity α spread | **skew-normal** (loc, scale, shape) + cutoffs | C | Mirror: shape of each relation's fan-in. Jointly realised with object-multiplicity per relation (bipartite constraint). |
+| object-multiplicity α spread | **quantile function** (7 levels) + cutoffs ≈[1.4, 3.0] over the per-relation tail exponents | C | Stores the **shape** of each relation's fan-out (the scale is derived by edge conservation). Sample an α per relation, then per-(subject,relation) counts. |
+| subject-multiplicity α spread | **quantile function** (7 levels) + cutoffs | C | Mirror: shape of each relation's fan-in. Jointly realised with object-multiplicity per relation (bipartite constraint). |
 
 Derived from G2 (not stored): `functionality`, `inverse_functionality` (distribution
 heads), and the multiplicity **scale/x_min** (edge conservation). **Aggregate
@@ -451,7 +454,7 @@ two-step pairs.
 
 | Value | Repr. | Nature | Why |
 |---|---|---|---|
-| CS-size distribution | **skew-normal** (loc, scale, shape) over `cs_size(s)` | C | Per subject, how many distinct predicates it uses (number of terms in the degree sum). |
+| CS-size distribution | **quantile function** (7 levels) over `cs_size(s)` | C | Per subject, how many distinct predicates it uses (number of terms in the degree sum). |
 | distinct-CS count | `num_distinct_cs` (or fraction of V) | C | Degree of CS reuse / schema regularity. |
 | CS-frequency distribution | **power-law** (α, x_min) over CS occurrence counts | C | How skewed CS reuse is (schema regularity / template reuse). |
 
@@ -470,12 +473,12 @@ derivability criterion):
 
 | Target | Repr. | Why kept |
 |---|---|---|
-| row entropy | **skew-normal** (loc, scale, shape) | a co-occurrence-matrix functional the spectrum doesn't pin |
+| row entropy | **quantile function** (7 levels) | a co-occurrence-matrix functional the spectrum doesn't pin |
 | co-occurrence density | scalar ∈ (0,1] | nnz fraction; not pinned by the spectrum |
 | **type-relation `P(r\|t)` spectrum** | **exp-decay** (rate λ, scale A) of the `T×R` matrix's singular values — *like `M`* | structure: #type-archetypes + concentration; fed directly to the generator's low-rank `P(r\|t)` factorisation. Optional scalar `I(R;T)` = how much type determines relation usage (validity of option b). |
 | per-type relation entropy | **exp-decay rank curve** (rate, scale) | per-row spread of `P(r\|t)`; complementary to its spectrum (like `M` carries both SVs and row entropy). Rank order kept — the top = most diffuse/generalist types. |
 | two-step pair frequencies | **truncated power-law** (α, v_min, v_max) over the **path-count** values `path_count(q,p)=Σ_x deg_in(x,q)·deg_out(x,p)` | multiplicity-weighted 2-hop path count → predicts path-2 selectivity (not a bridge-node count) |
-| inverse-CS size | **skew-normal** (loc, scale, shape) over #distinct in-predicates per object | object-side wiring aggregation; mirror of forward CS-size, **not** given by subject-multiplicity |
+| inverse-CS size | **quantile function** (7 levels) over #distinct in-predicates per object | object-side wiring aggregation; mirror of forward CS-size, **not** given by subject-multiplicity |
 
 Genuinely derived/dropped: nothing extra here beyond the global drop list.
 

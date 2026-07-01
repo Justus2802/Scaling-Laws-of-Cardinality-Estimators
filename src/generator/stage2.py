@@ -16,7 +16,7 @@ import math
 import igraph
 import numpy as np
 
-from ._adapters import sample_powerlaw, sample_skewnorm_trunc
+from ._adapters import sample_powerlaw, sample_quantiles_trunc
 from ._constants import _RDF_TYPE
 from ._logging import get_logger
 from .schema import Schema
@@ -270,7 +270,7 @@ def instantiate(
     content_E_target = max(0, actual_E_target - n_type_edges)
 
     # CS size (number of relation slots per entity) comes from the measured cs_size
-    # skew-normal; when unavailable, fall back to a budget-derived Poisson mean. Edge
+    # quantile fit; when unavailable, fall back to a budget-derived Poisson mean. Edge
     # counts are NOT set here — the per-relation multinomial allocation below owns the
     # |E| budget, so CS size only sets relation *membership*.
     objects_per_slot = 1.0 / schema.mean_functionality if schema.mean_functionality < 1.0 else 1.0
@@ -279,9 +279,9 @@ def instantiate(
         (content_E_target / actual_V if actual_V > 0 else 1.0) / objects_per_slot,
     )
 
-    def _draw_size(size_skew) -> int:
-        """Draw one (forward or inverse) CS size from a skew-normal, else budget Poisson."""
-        vals = sample_skewnorm_trunc(size_skew, 1, rng)
+    def _draw_size(size_q) -> int:
+        """Draw one (forward or inverse) CS size from a quantile fit, else budget Poisson."""
+        vals = sample_quantiles_trunc(size_q, 1, rng)
         size = float(vals[0]) if vals is not None else float(rng.poisson(fallback_cs_mean))
         return max(1, int(round(size)))
 
@@ -317,7 +317,7 @@ def instantiate(
     log.info(
         "Stage 2: instantiating (seed=%d) V=%d, content-edge target=%d (+%d type edges), "
         "cs_size source=%s", seed, actual_V, content_E_target, n_type_edges,
-        "skew-normal" if not math.isnan(schema.cs_size_skew[0]) else "budget-derived",
+        "quantiles" if not math.isnan(schema.cs_size_q[0]) else "budget-derived",
     )
 
     # ------------------------------------------------------------------
@@ -356,19 +356,19 @@ def instantiate(
         return probs, int((probs > 0).sum())
 
     def _sample_cs_for_type(t: int) -> np.ndarray:
-        """Draw one forward CS (relation membership) for type t; size from cs_size_skew."""
+        """Draw one forward CS (relation membership) for type t; size from cs_size_q."""
         if num_relations == 0:
             return np.array([], dtype=int)
         probs, nonzero = _cs_probs(t)
-        k = min(nonzero, _draw_size(schema.cs_size_skew))
+        k = min(nonzero, _draw_size(schema.cs_size_q))
         if k == 0:
             return np.array([], dtype=int)
         return rng.choice(num_relations, size=k, replace=False, p=probs)
 
-    def _build_distinct(probs: np.ndarray, nonzero: int, size_skew, n_target: int) -> list[np.ndarray]:
+    def _build_distinct(probs: np.ndarray, nonzero: int, size_q, n_target: int) -> list[np.ndarray]:
         """Rejection-sample up to ``n_target`` DISTINCT relation-sets from ``probs``.
 
-        Sizes come from ``size_skew``; deduping by relation-set steers the distinct-CS
+        Sizes come from ``size_q``; deduping by relation-set steers the distinct-CS
         count (a plain pool collides heavily), and a size-escape raises the minimum size
         once small combos saturate — bounded by the ``nonzero`` support and an attempt
         cap. Used for both forward CS (per-type P(r|t)) and inverse CS (object side,
@@ -383,7 +383,7 @@ def instantiate(
         max_attempts = max(TEMPLATE_ATTEMPT_FLOOR, n_target * TEMPLATE_ATTEMPT_FACTOR)
         while len(pool) < n_target and attempts < max_attempts:
             attempts += 1
-            k = min(nonzero, max(min_k, _draw_size(size_skew)))
+            k = min(nonzero, max(min_k, _draw_size(size_q)))
             cs = rng.choice(num_relations, size=k, replace=False, p=probs)
             key = frozenset(int(x) for x in cs)
             if key in seen:
@@ -431,7 +431,7 @@ def instantiate(
                 probs_g = schema.subj_group_probs[g].copy()
                 nz_g = int((probs_g > 0).sum())
                 n_t_g = max(1, round(schema.cs_num_templates * float(schema.subj_group_weights[g])))
-                group_fwd_pools.append(_build_distinct(probs_g, nz_g, schema.cs_size_skew, n_t_g))
+                group_fwd_pools.append(_build_distinct(probs_g, nz_g, schema.cs_size_q, n_t_g))
             buckets_sg: dict[int, list[int]] = {}
             for v in range(actual_V):
                 buckets_sg.setdefault(int(entity_subj_group[v]), []).append(v)
@@ -447,7 +447,7 @@ def instantiate(
             for v in range(actual_V):
                 probs_g = schema.subj_group_probs[int(entity_subj_group[v])].copy()
                 nz_g = int((probs_g > 0).sum())
-                k = min(nz_g, _draw_size(schema.cs_size_skew))
+                k = min(nz_g, _draw_size(schema.cs_size_q))
                 entity_cs[v] = (rng.choice(num_relations, size=k, replace=False, p=probs_g)
                                 if k > 0 else np.array([], dtype=int))
             log.info("Stage 2: group forward CS (per-entity mode)")
@@ -471,7 +471,7 @@ def instantiate(
         for t in range(num_types):
             probs, nz = _cs_probs(t)
             n_t = max(1, round(schema.cs_num_templates * float(schema.type_weights[t])))
-            type_templates.append(_build_distinct(probs, nz, schema.cs_size_skew, n_t))
+            type_templates.append(_build_distinct(probs, nz, schema.cs_size_q, n_t))
         if num_types > 0:
             buckets: dict[int, list[int]] = {}
             for v in range(actual_V):
@@ -481,7 +481,7 @@ def instantiate(
                                   schema.cs_template_zipf, entity_cs)
         else:
             probs, nz = _cs_probs(-1)
-            untyped = _build_distinct(probs, nz, schema.cs_size_skew, max(1, schema.cs_num_templates))
+            untyped = _build_distinct(probs, nz, schema.cs_size_q, max(1, schema.cs_num_templates))
             _assign_templates(list(range(actual_V)), untyped, schema.cs_template_zipf, entity_cs)
         used = len({frozenset(int(x) for x in entity_cs[v]) for v in range(actual_V) if len(entity_cs[v])})
         log.info("Stage 2: forward CS (target %d distinct, realised %d)", schema.cs_num_templates, used)
@@ -506,7 +506,7 @@ def instantiate(
                 probs_g = schema.obj_group_probs[g].copy()
                 nz_g = int((probs_g > 0).sum())
                 n_t_g = max(1, round(schema.inv_cs_num_templates * float(schema.obj_group_weights[g])))
-                group_inv_pools.append(_build_distinct(probs_g, nz_g, schema.inv_cs_size_skew, n_t_g))
+                group_inv_pools.append(_build_distinct(probs_g, nz_g, schema.inv_cs_size_q, n_t_g))
             buckets_og: dict[int, list[int]] = {}
             for v in range(actual_V):
                 buckets_og.setdefault(int(entity_obj_group[v]), []).append(v)
@@ -521,7 +521,7 @@ def instantiate(
             for v in range(actual_V):
                 probs_g = schema.obj_group_probs[int(entity_obj_group[v])].copy()
                 nz_g = int((probs_g > 0).sum())
-                k = min(nz_g, _draw_size(schema.inv_cs_size_skew))
+                k = min(nz_g, _draw_size(schema.inv_cs_size_q))
                 entity_inv_cs[v] = (rng.choice(num_relations, size=k, replace=False, p=probs_g)
                                     if k > 0 else np.array([], dtype=int))
             log.info("Stage 2: group inverse CS (per-entity mode)")
@@ -531,7 +531,7 @@ def instantiate(
         s = inv_probs.sum()
         inv_probs = inv_probs / s if s > 0 else np.full(num_relations, 1.0 / num_relations)
         inv_nz = int((inv_probs > 0).sum())
-        inv_templates = _build_distinct(inv_probs, inv_nz, schema.inv_cs_size_skew,
+        inv_templates = _build_distinct(inv_probs, inv_nz, schema.inv_cs_size_q,
                                         max(1, schema.inv_cs_num_templates))
         entity_inv_cs = [None] * actual_V
         _assign_templates(list(range(actual_V)), inv_templates,
@@ -595,9 +595,9 @@ def instantiate(
 
     all_objs = np.arange(actual_V)
 
-    def _relation_alpha(skew) -> float:
-        """One per-relation exponent drawn from a multiplicity-α skew-normal (NaN → flat)."""
-        vals = sample_skewnorm_trunc(skew, 1, rng)
+    def _relation_alpha(alpha_q) -> float:
+        """One per-relation exponent drawn from a multiplicity-α quantile fit (NaN → flat)."""
+        vals = sample_quantiles_trunc(alpha_q, 1, rng)
         return float(vals[0]) if vals is not None else float("nan")
 
     for rel_idx in present:
@@ -615,7 +615,7 @@ def instantiate(
         # subject at ≥1 (object-multiplicity ≥1 when r ∈ CS), distribute the surplus, then cap
         # at |O_r| (a subject reaches ≤ |O_r| distinct objects) + redistribute.
         subj_ids = np.asarray(S_r, dtype=np.int64)
-        w_out = sample_powerlaw(_relation_alpha(schema.obj_alpha_skew), n_sr, rng)
+        w_out = sample_powerlaw(_relation_alpha(schema.obj_alpha_q), n_sr, rng)
         cs_sizes = np.array([len(entity_cs[s]) for s in S_r], dtype=float)
         w_out = w_out * np.power(np.maximum(cs_sizes, 1.0), schema.a_obj)
         if schema.max_out_degree > 0:
@@ -638,7 +638,7 @@ def instantiate(
         # in_degree^pa hub preference × inv_cs_size^a_subj (G2b), masked by max_in_degree, then
         # cap at |S_r| (≤ |S_r| distinct subjects per object) + redistribute. Replaces the old
         # hard inverse-functionality cap: the object-stub multiset *is* the subject-mult law.
-        w_in = sample_powerlaw(_relation_alpha(schema.subj_alpha_skew), n_or, rng)
+        w_in = sample_powerlaw(_relation_alpha(schema.subj_alpha_q), n_or, rng)
         w_in = w_in * (in_degrees[obj_ids] ** schema.in_pa_exponent)
         if O_r is not None and schema.a_subj != 0.0:
             inv_sizes = np.array([len(entity_inv_cs[o]) for o in O_r], dtype=float)

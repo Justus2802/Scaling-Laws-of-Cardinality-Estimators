@@ -34,12 +34,13 @@ python scripts/measure_block_e.py --force
 ```
 
 ### `measure_all_raw.py`
-Batch-measures the full corpus under `data/graphs/` by calling the per-graph measurement scripts as subprocesses. Defaults to the reduced signature; pass `--full` for the original full signature. Either way each graph's `signature/` directory is written next to its graph file. `--blocks` re-measures only a subset of blocks.
+Batch-measures every graph under `data/graphs/` **and** the held-out test corpus `data/test_graphs/` by calling the per-graph measurement scripts as subprocesses. Defaults to the reduced signature; pass `--full` for the original full signature. Either way each graph's `signature/` directory is written next to its graph file. `--blocks` re-measures only a subset of blocks. `--graphs` restricts the run to specific graphs by directory name.
 
 ```
 python scripts/measure_all_raw.py
 python scripts/measure_all_raw.py --full
-python scripts/measure_all_raw.py --blocks e    # re-measure Block E only
+python scripts/measure_all_raw.py --blocks e             # re-measure Block E only
+python scripts/measure_all_raw.py --graphs aids fb237_v4  # only these graphs
 ```
 
 ## Graph Generation & Round-trip
@@ -64,7 +65,7 @@ python scripts/signature_roundtrip.py --kg-file path/to/graph.ttl
 ## Experiment Sweeps
 
 ### `sweep_collect.py`
-Sweeps Stage 3 hyperparameters (`rewire_budget × remeasure_interval × seed`) and saves per-run synthetic signatures to `experiments/<graph>.jsonl` for later analysis. The target signature is written once to `experiments/<graph>_target.json`.
+Sweeps Stage 3 hyperparameters (`rewire_budget × seed`) and saves per-run synthetic signatures to `experiments/<graph>.jsonl` for later analysis. The target signature is written once to `experiments/<graph>_target.json`.
 
 ```
 python scripts/sweep_collect.py fb237_v4_ind

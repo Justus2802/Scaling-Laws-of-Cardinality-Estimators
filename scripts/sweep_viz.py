@@ -126,11 +126,14 @@ def main() -> None:
                 print(f"  {name}")
         sys.exit(1)
 
-    # Collect errors per (budget, remeasure_interval) group
+    # Collect errors per budget group (older records may carry a now-removed
+    # remeasure_interval field; include it in the label only when present).
     # groups: label → feature_name → list[float]
     groups: dict[str, dict[str, list[float]]] = {}
     for rec in records:
-        label = f"B{rec['budget']}/I{rec['remeasure_interval']}"
+        label = f"B{rec['budget']}"
+        if "remeasure_interval" in rec:
+            label += f"/I{rec['remeasure_interval']}"
         if label not in groups:
             groups[label] = {f: [] for f in args.features}
 

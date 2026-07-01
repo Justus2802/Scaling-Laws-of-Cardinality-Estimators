@@ -165,7 +165,7 @@ This produces a child logger named `signature.<block_module>` (e.g. `signature.b
 ```python
 import logging
 logging.getLogger("signature").setLevel(logging.DEBUG)
-logging.basicConfig(format="%(levelname)s %(name)s: %(message)s")
+logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 ```
 
 Log levels used across the package:
@@ -179,9 +179,9 @@ Log levels used across the package:
 The per-signature `INFO` convention means each named feature in a block's signature vector (e.g. `out_degree_fit`, `cs_freq_stats`, `path_template_zipf`) produces a single `log.info(...)` line at the point it is assigned, with the feature's key values formatted into the message. Block B is the orientation reference for this style. Example output:
 
 ```
-INFO signature.block_b: Block B: computed out_degree_fit (alpha=2.3147, xmin=3, ks=0.0421, n=12034)
-INFO signature.block_b: Block B: computed in_degree_fit (alpha=2.1985, xmin=2, ks=0.0387, n=12034)
-INFO signature.block_b: Block B: computed object_multiplicity (n_relations=47)
+2026-07-01 14:23:11,204 INFO signature.block_b: Block B: computed out_degree_fit (alpha=2.3147, xmin=3, ks=0.0421, n=12034)
+2026-07-01 14:23:11,251 INFO signature.block_b: Block B: computed in_degree_fit (alpha=2.1985, xmin=2, ks=0.0387, n=12034)
+2026-07-01 14:23:11,298 INFO signature.block_b: Block B: computed object_multiplicity (n_relations=47)
 ...
 ```
 

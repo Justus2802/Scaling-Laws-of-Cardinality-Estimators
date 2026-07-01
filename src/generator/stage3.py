@@ -1,18 +1,17 @@
 """Stage 3 — Maslov-Sneppen rewiring with simulated annealing.
 
 Rewires content edges (never rdf:type edges) using degree-preserving
-double-edge swaps to steer the graph toward Block E / Block F targets:
+double-edge swaps to steer the graph toward Block E / Block F targets.  Every
+tracked target is updated *incrementally* per swap via an exact O(Δ^k) delta:
 
 * triangle_count               — exact, incremental
-* four_cycle / diamond / K4 / tailed-triangle counts  — remeasured every
-  ``remeasure_interval`` accepted swaps via the colour-coding sampler
+* four_cycle / diamond / K4 / tailed-triangle counts — exact, incremental
 * five_cycle_count / six_cycle_count (induced/chordless) — exact, incremental
-  when ``USE_INCREMENTAL_CYCLES`` is set; otherwise remeasured every
-  ``remeasure_interval`` accepted swaps via CC sampling (k=5, k=6)
 * CC_avg (average local clustering coefficient)       — exact, incremental;
   C(k_v, 2) denominators are invariant under degree-preserving swaps
 * degree_assortativity         — exact, incremental; only the cross-product
   sum Q changes (degree sequence is invariant)
+* tree/path template entropy and induced k-star counts — exact, incremental
 
 After the SA walk, the best-seen snapshot is returned and component
 connectivity is restored to match the Block F targets.
@@ -21,6 +20,7 @@ connectivity is restored to match the Block F targets.
 import csv
 import math
 from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 
 import igraph
@@ -34,7 +34,7 @@ from .stage2 import _connect_components
 
 # ── Tuning constants (Stage-3 refinement) — adjust here ─────────────────────────
 MAX_TARGETED_SWAP_PROB = 0.5   # cap on the probability of attempting a triangle-closing swap
-MAX_STAR_TARGETED_PROB = 0.0   # cap on the probability of attempting a triangle-breaking swap for stars; 0 = disabled
+MAX_STAR_TARGETED_PROB = 0.5   # cap on the probability of attempting a triangle-breaking swap for stars; 0 = disabled
 TEMP_FLOOR = 1e-10             # numerical floor on the SA temperature in the accept test
 # k values tracked for induced star counts in the SA loss.
 # Smaller sets are cheaper (O(Δ²) per swap per k); k=2..4 covers the most sensitive range.
@@ -65,24 +65,35 @@ _MOTIF4_WEIGHTS: dict[tuple, float] = {
     (3, 3, 3, 3): LOSS_WEIGHT_K4,
     (1, 2, 2, 3): LOSS_WEIGHT_PAW,
 }
-# Samples for the colour-coding motif estimator used during SA remeasure.
-# Lower than block_e's measurement budget (which scales up to n*20) — steering
-# only needs a rough signal, not a precise count.
-CC4_SAMPLES = 10_000
-# Samples for the 5/6-cycle CC remeasure (run every remeasure_interval accepted swaps).
-# Fewer samples than 4-node because cycle estimation is higher-variance and the
-# SA signal just needs a direction, not a precise count.
+# Convergence-column stem per 4-node motif degree sequence ("c4" → "c4_err").
+_DS_STEM: dict[tuple, str] = {
+    (2, 2, 2, 2): "c4",
+    (2, 2, 3, 3): "diamond",
+    (3, 3, 3, 3): "k4",
+    (1, 2, 2, 3): "paw",
+}
+# Samples for the 5/6-cycle CC estimator used for the initial cycle baseline and
+# the optional ground-truth convergence remeasure.  Fewer samples than the 4-node
+# budget because cycle estimation is higher-variance and only a direction is needed.
 CC_CYCLE_SAMPLES = 5_000
-# True = O(deg²) incremental delta per swap; False = CC sampler every remeasure_interval swaps.
-USE_INCREMENTAL_MOTIF4 = True
-# True = exact O(Δ^(k-1)) induced 5-/6-cycle delta per swap; False = CC remeasure every
-# remeasure_interval swaps.  Incremental is exact but costs O(Δ⁴)/O(Δ⁵) per attempted swap,
-# so it is best left off for high-degree graphs.  Only active when a cycle target is set.
-USE_INCREMENTAL_CYCLES = True
+# Degree guard for the incremental cycle delta: when a proposed swap touches any
+# node whose simple degree exceeds this, the O(Δ^(k-2)) cycle delta explodes (a
+# single hub swap can stall the SA walk for minutes).  Such swaps skip the delta
+# entirely — the 5/6-cycle counts carry over unchanged, so the cycle loss terms
+# are identical before and after and neither favour nor penalise the swap.
+# Set to float("inf") to disable the guard (always compute the exact delta).
+CYCLE_DELTA_MAX_DEGREE = float("inf")
+# Degree guard for the incremental induced-star delta: the per-centre
+# inclusion-exclusion is O(2^(inner edges)) and stalls on clustered hubs.  Centres
+# with simple degree above this are skipped in the delta (degree is swap-invariant,
+# so they are excluded consistently and contribute 0 — hub star changes neither
+# favour nor penalise a swap).  The CC-sampled baseline still includes them.
+# Set to float("inf") to disable the guard (always compute the exact delta).
+STAR_CENTER_MAX_DEGREE = float("inf")
 # Accepted-swap interval between convergence CSV rows; 0 disables logging entirely.
 CONVERGENCE_LOG_INTERVAL: int = 1000
 # True = also log ground-truth errors (sig_* columns) by remeasuring the full graph
-# via the remeasure counter on every convergence row. False = log only the locally
+# via the measure counter on every convergence row. False = log only the locally
 # updated (incrementally tracked) errors, avoiding the expensive global remeasurement.
 CONVERGENCE_LOG_GLOBAL_REMEASURE: bool = False
 # Stage 3 measurement counters are built per run so they follow refine()'s
@@ -90,23 +101,43 @@ CONVERGENCE_LOG_GLOBAL_REMEASURE: bool = False
 # generation reproducible from the single master seed. Swap the counter type /
 # n_samples here; the seed is always supplied by refine() at generation time.
 
+
 def _make_initial_motif_counter(seed: int) -> MotifCounter:
-    """Counter for the initial measurement at the start of the SA walk."""
-    # return CCMotifCounter(n_samples=CC4_SAMPLES, seed=seed)  # CC-only alternative
+    """Counter for the initial triangle/motif4/star baseline at the start of the walk."""
+    # return CCMotifCounter(n_samples=CC_CYCLE_SAMPLES, seed=seed)  # CC-only alternative
     return HybridMotifCounter(seed=seed)
 
 
-def _make_remeasure_motif_counter(seed: int) -> MotifCounter:
-    """Counter for periodic remeasurement every remeasure_interval accepted swaps.
+def _make_measure_counter(seed: int) -> MotifCounter:
+    """Counter for full-graph measurement — the initial 5/6-cycle baseline and the
+    optional ground-truth convergence remeasure (``CONVERGENCE_LOG_GLOBAL_REMEASURE``).
 
     HybridMotifCounter: exact for k≤4, CC with CC_CYCLE_SAMPLES for k=5/6.
     """
-    # return CCMotifCounter(n_samples=CC4_SAMPLES, seed=seed)  # CC-only alternative
+    # return CCMotifCounter(n_samples=CC_CYCLE_SAMPLES, seed=seed)  # CC-only alternative
     return HybridMotifCounter(n_samples=CC_CYCLE_SAMPLES, seed=seed)
 
 
-
 log = get_logger(__name__)
+
+
+@dataclass
+class _SAState:
+    """Bundle of every loss-tracked metric value at one point in the walk.
+
+    Shared by the SA loss (weighted sum of relative errors) and the convergence
+    logger (unweighted dump) so each error term is defined in exactly one place.
+    """
+
+    tri: int
+    motifs4: dict
+    Q: float
+    cc: float
+    c5: int
+    c6: int
+    tree_h: float
+    path_h: float
+    stars: dict
 
 
 def refine(
@@ -117,7 +148,6 @@ def refine(
     budget: int = 10_000,
     initial_temp: float = 1.0,
     cooling_rate: float = 0.999,
-    remeasure_interval: int = 2000,
     seed: int = 0,
     convergence_log: "Path | str | None" = None,
 ) -> igraph.Graph:
@@ -125,17 +155,16 @@ def refine(
 
     Rewires content edges (never rdf:type edges) using degree-preserving
     double-edge swaps.  The SA objective is a weighted sum of relative errors
-    across multiple targets:
+    across multiple targets, all tracked exactly and incrementally per swap:
 
-    * Triangle count (exact, incremental via _triangle_node_delta)
-    * Average local clustering coefficient CC_avg (exact, incremental —
-      denominator C(k_v,2) is invariant; per-node Δt_v drives Δ(CC_avg))
-    * 4-node motif counts — C4, diamond, K4, paw (remeasured every
-      ``remeasure_interval`` accepted swaps via colour-coding sampler)
-    * 5-cycle and 6-cycle counts (remeasured every ``remeasure_interval``
-      accepted swaps via CC sampling; only when target > 0 in Block E)
-    * Degree assortativity (exact, incremental — degree sequence is invariant
-      under double-edge swaps, so only the cross-product sum Q changes)
+    * Triangle count (via _triangle_node_delta)
+    * Average local clustering coefficient CC_avg (denominator C(k_v,2) is
+      invariant; per-node Δt_v drives Δ(CC_avg))
+    * 4-node motif counts — C4, diamond, K4, paw (via _motif4_delta)
+    * 5-cycle and 6-cycle counts (via _cycle_delta; only when target > 0)
+    * Degree assortativity (degree sequence is invariant under double-edge
+      swaps, so only the cross-product sum Q changes)
+    * Tree/path template entropy and induced k-star counts
 
     Parameters
     ----------
@@ -153,8 +182,6 @@ def refine(
         Starting SA temperature.
     cooling_rate : float
         Geometric decay per accepted swap.
-    remeasure_interval : int
-        Accepted-swap interval between full 4-node motif remeasurements.
     seed : int
         RNG seed.
     convergence_log : Path or str, optional
@@ -170,7 +197,7 @@ def refine(
     rng = np.random.default_rng(seed)
     # Measurement counters follow the same run seed as the rewiring RNG.
     initial_motif_counter = _make_initial_motif_counter(seed)
-    remeasure_motif_counter = _make_remeasure_motif_counter(seed)
+    measure_counter = _make_measure_counter(seed)
 
     # ------------------------------------------------------------------ setup
     type_edge_data: list[tuple[int, int, str]] = []
@@ -200,6 +227,25 @@ def refine(
     for s, o, _ in content_edge_data:
         _adj_inc(adj, s, o)
 
+    def _und_edges() -> list[tuple[int, int]]:
+        """Deduplicated simple undirected edge list from current content edges."""
+        edge_set: set[tuple[int, int]] = set()
+        und_edges: list[tuple[int, int]] = []
+        for s, o, _ in content_edge_data:
+            key = (min(s, o), max(s, o))
+            if key not in edge_set:
+                edge_set.add(key)
+                und_edges.append(key)
+        return und_edges
+
+    def _build_und_graph() -> igraph.Graph:
+        """Build a simple undirected igraph.Graph from current content edges."""
+        g_tmp = igraph.Graph(n=n)
+        und_edges = _und_edges()
+        if und_edges:
+            g_tmp.add_edges(und_edges)
+        return g_tmp
+
     # -------------------------------------- CC_avg state (invariant denominators)
     # sim_deg[v] = number of *distinct* neighbours (simple undirected graph degree).
     # This differs from und_deg which counts directed/multi edges; CC_avg uses sim_deg.
@@ -209,14 +255,8 @@ def refine(
 
     # Initialise per-node triangle counts t_node from igraph's local CC:
     #   t_v = CC_local_v * C(k_v, 2)   (exact for k_v >= 2, 0 for k_v < 2)
-    _und_edges_init: list[tuple[int, int]] = []
-    _seen_und: set[tuple[int, int]] = set()
-    for s, o, _ in content_edge_data:
-        key = (min(s, o), max(s, o))
-        if key not in _seen_und:
-            _seen_und.add(key)
-            _und_edges_init.append(key)
     _g_init = igraph.Graph(n=n)
+    _und_edges_init = _und_edges()
     if _und_edges_init:
         _g_init.add_edges(_und_edges_init)
     _cc_local_init = np.array(_g_init.transitivity_local_undirected(mode="zero"), dtype=np.float64)
@@ -225,20 +265,6 @@ def refine(
     target_cc = float(target_f.clustering_coefficient) if target_f is not None else float("nan")
     use_cc = not math.isnan(target_cc)
     cc_current = float(np.sum(t_node / denom) / n)
-
-    def _build_und_graph() -> igraph.Graph:
-        """Build a simple undirected igraph.Graph from current content edges."""
-        edge_set: set[tuple[int, int]] = set()
-        und_edges: list[tuple[int, int]] = []
-        for s, o, _ in content_edge_data:
-            key = (min(s, o), max(s, o))
-            if key not in edge_set:
-                edge_set.add(key)
-                und_edges.append(key)
-        g_tmp = igraph.Graph(n=n)
-        if und_edges:
-            g_tmp.add_edges(und_edges)
-        return g_tmp
 
     target_tri = int(target_e.triangle_count)
     current_tri = initial_motif_counter.count_triangles(_build_und_graph())
@@ -273,8 +299,8 @@ def refine(
     use_c6 = _target_c6 > 0 and LOSS_WEIGHT_C6 > 0
 
     def _measure_cycles(g_und: igraph.Graph) -> tuple[int, int]:
-        """Estimate 5- and 6-cycle counts via the remeasure counter."""
-        return remeasure_motif_counter.count_cycles(g_und, k5=use_c5, k6=use_c6)
+        """Estimate 5- and 6-cycle counts via the full-graph measure counter."""
+        return measure_counter.count_cycles(g_und, k5=use_c5, k6=use_c6)
 
     _g_init_und = _build_und_graph() if (use_c5 or use_c6) else None
     current_c5, current_c6 = _measure_cycles(_g_init_und) if _g_init_und is not None else (0, 0)
@@ -383,48 +409,77 @@ def refine(
     use_stars = bool(_star_targets)
     _star_max_k = max(STAR_K_TRACKED) if _star_targets else 2
 
-    # Initial star counts: compute from the undirected adjacency (adj tracks undirected neighbors).
-    # Use the same inclusion-exclusion used by the exact counter.
-    from .local_updates import _star_contributions as _sc  # noqa: PLC0415 (local import avoids cycle)
+    # Initial star counts via the CC sampler (initial_motif_counter.count_stars).
+    # The exact inclusion-exclusion baseline is O(2^(inner edges)) per centre and
+    # stalls on clustered hubs; the CC star estimator is bounded regardless of
+    # degree, so it is used for the baseline measurement instead.
+    current_stars: dict[int, int] = (
+        initial_motif_counter.count_stars(_build_und_graph()) if use_stars else {}
+    )
 
-    def _compute_star_counts(max_k: int) -> dict[int, int]:
-        totals: dict[int, int] = {}
-        for v in range(n):
-            for k, cnt in enumerate(_sc(adj, v, max_k)):
-                if cnt and k >= 2:
-                    totals[k] = totals.get(k, 0) + cnt
-        return totals
+    # ------------------------------------------------------- error terms & loss
+    def _error_terms(st: _SAState) -> dict[str, float]:
+        """Per-target relative error |current − target| / |target| for every active
+        target, keyed by convergence-column stem (``tri`` → ``tri_err``).
 
-    current_stars: dict[int, int] = _compute_star_counts(_star_max_k) if use_stars else {}
-
-    # ------------------------------------------------------- loss function
-    def _loss(tri: int, motifs: dict, Q: float, cc: float, c5: int, c6: int, tree_h: float, path_h: float, stars: dict) -> float:
-        """SA objective: weighted sum of relative errors across all active targets.
-
-        All terms use |current − target| / |target|.  A floor of 1e-9 guards
-        against division by zero when a target is exactly 0.
+        Single source of truth: the SA loss is the weighted sum over this dict and
+        the convergence CSV is its rounded, unweighted dump.  A floor of 1e-9 guards
+        divisions where the absolute target can approach 0.  Insertion order matches
+        the loss summation order.
         """
-        loss = LOSS_WEIGHT_TRIANGLES * abs(tri - target_tri) / max(1, target_tri)
+        terms: dict[str, float] = {
+            "tri": abs(st.tri - target_tri) / max(1, target_tri),
+        }
         for ds, tgt in _motif4_targets.items():
-            loss += _MOTIF4_WEIGHTS.get(ds, 1.0) * abs(motifs.get(ds, 0) - tgt) / tgt
+            terms[_DS_STEM[ds]] = abs(st.motifs4.get(ds, 0) - tgt) / tgt
         if use_c5:
-            loss += LOSS_WEIGHT_C5 * abs(c5 - _target_c5) / _target_c5
+            terms["c5"] = abs(st.c5 - _target_c5) / _target_c5
         if use_c6:
-            loss += LOSS_WEIGHT_C6 * abs(c6 - _target_c6) / _target_c6
+            terms["c6"] = abs(st.c6 - _target_c6) / _target_c6
         if use_assort:
-            loss += LOSS_WEIGHT_ASSORTATIVITY * abs(_assort_from_Q(Q) - target_r) / max(1e-9, abs(target_r))
+            terms["assort"] = abs(_assort_from_Q(st.Q) - target_r) / max(1e-9, abs(target_r))
         if use_cc:
-            loss += LOSS_WEIGHT_CC_AVG * abs(cc - target_cc) / max(1e-9, target_cc)
+            terms["cc"] = abs(st.cc - target_cc) / max(1e-9, target_cc)
         if use_tree_entropy:
-            loss += LOSS_WEIGHT_TREE_ENTROPY * abs(tree_h - _target_tree_entropy) / max(1e-9, _target_tree_entropy)
+            terms["tree_entropy"] = abs(st.tree_h - _target_tree_entropy) / max(1e-9, _target_tree_entropy)
         if use_path_entropy:
-            loss += LOSS_WEIGHT_PATH_ENTROPY * abs(path_h - _target_path_entropy_k3) / max(1e-9, _target_path_entropy_k3)
+            terms["path_entropy_k3"] = abs(st.path_h - _target_path_entropy_k3) / max(1e-9, _target_path_entropy_k3)
         if use_stars:
             for k, tgt in _star_targets.items():
-                loss += LOSS_WEIGHT_STARS * abs(stars.get(k, 0) - tgt) / tgt
-        return loss
+                terms[f"star_k{k}"] = abs(st.stars.get(k, 0) - tgt) / tgt
+        return terms
 
-    current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6, tree_entropy_current, path_entropy_current, current_stars)
+    # Weight per active error-term stem; parallels _error_terms so the loss is a
+    # plain weighted sum over the shared term dict.
+    _term_weights: dict[str, float] = {"tri": LOSS_WEIGHT_TRIANGLES}
+    for ds in _motif4_targets:
+        _term_weights[_DS_STEM[ds]] = _MOTIF4_WEIGHTS.get(ds, 1.0)
+    if use_c5:
+        _term_weights["c5"] = LOSS_WEIGHT_C5
+    if use_c6:
+        _term_weights["c6"] = LOSS_WEIGHT_C6
+    if use_assort:
+        _term_weights["assort"] = LOSS_WEIGHT_ASSORTATIVITY
+    if use_cc:
+        _term_weights["cc"] = LOSS_WEIGHT_CC_AVG
+    if use_tree_entropy:
+        _term_weights["tree_entropy"] = LOSS_WEIGHT_TREE_ENTROPY
+    if use_path_entropy:
+        _term_weights["path_entropy_k3"] = LOSS_WEIGHT_PATH_ENTROPY
+    if use_stars:
+        for k in _star_targets:
+            _term_weights[f"star_k{k}"] = LOSS_WEIGHT_STARS
+
+    def _loss(st: _SAState) -> float:
+        """SA objective: weighted sum of the shared per-target relative errors."""
+        return sum(_term_weights[name] * err for name, err in _error_terms(st).items())
+
+    current = _SAState(
+        tri=current_tri, motifs4=current_motifs4, Q=Q_deg, cc=cc_current,
+        c5=current_c5, c6=current_c6, tree_h=tree_entropy_current,
+        path_h=path_entropy_current, stars=current_stars,
+    )
+    current_loss = _loss(current)
     best_loss = current_loss
     best_content = list(content_edge_data)
     best_accepted = 0
@@ -432,8 +487,6 @@ def refine(
     accepted = 0
 
     # ------------------------------------------------- convergence CSV setup
-    _DS_NAME = {(2, 2, 2, 2): "c4_err", (2, 2, 3, 3): "diamond_err",
-                (3, 3, 3, 3): "k4_err",  (1, 2, 2, 3): "paw_err"}
     # Block E attribute name → (deg_seq key into _motif4_targets, sig column name)
     _SIG_ATTRS = [
         ("triangle_count",       None,            "sig_tri_err"),
@@ -443,22 +496,8 @@ def refine(
         ("tailed_triangle_count",(1, 2, 2, 3),    "sig_paw_err"),
     ]
 
-    _conv_fields = ["accepted", "loss", "tri_err"]
-    _conv_fields += [_DS_NAME[ds] for ds in _motif4_targets if ds in _DS_NAME]
-    if use_c5:
-        _conv_fields.append("c5_err")
-    if use_c6:
-        _conv_fields.append("c6_err")
-    if use_cc:
-        _conv_fields.append("cc_err")
-    if use_assort:
-        _conv_fields.append("assort_err")
-    if use_tree_entropy:
-        _conv_fields.append("tree_entropy_err")
-    if use_path_entropy:
-        _conv_fields.append("path_entropy_k3_err")
-    if use_stars:
-        _conv_fields += [f"star_k{k}_err" for k in sorted(_star_targets)]
+    # Error columns mirror the active terms exactly (one per _error_terms key).
+    _conv_fields = ["accepted", "loss"] + [f"{name}_err" for name in _error_terms(current)]
     # sig_ columns are only logged when the global remeasurement is enabled; they
     # hold ground-truth errors from remeasuring the full graph (see _write_conv_row).
     if CONVERGENCE_LOG_GLOBAL_REMEASURE:
@@ -480,45 +519,19 @@ def refine(
     def _write_conv_row() -> None:
         if not _conv_writer:
             return
-        row: dict = {
-            "accepted": accepted,
-            "loss":     round(current_loss, 6),
-            "tri_err":  round(abs(current_tri - target_tri) / max(1, target_tri), 6),
-        }
-        for ds, name in _DS_NAME.items():
-            if name in _conv_fields:
-                row[name] = round(
-                    abs(current_motifs4.get(ds, 0) - _motif4_targets[ds])
-                    / max(1, _motif4_targets[ds]), 6
-                )
-        if use_c5:
-            row["c5_err"] = round(abs(current_c5 - _target_c5) / max(1, _target_c5), 6)
-        if use_c6:
-            row["c6_err"] = round(abs(current_c6 - _target_c6) / max(1, _target_c6), 6)
-        if use_cc:
-            row["cc_err"] = round(abs(cc_current - target_cc) / max(1e-9, target_cc), 6)
-        if use_assort:
-            row["assort_err"] = round(abs(_assort_from_Q(Q_deg) - target_r) / max(1e-9, abs(target_r)), 6)
-        if use_tree_entropy:
-            row["tree_entropy_err"] = round(
-                abs(tree_entropy_current - _target_tree_entropy) / max(1e-9, _target_tree_entropy), 6
-            )
-        if use_path_entropy:
-            row["path_entropy_k3_err"] = round(
-                abs(path_entropy_current - _target_path_entropy_k3) / max(1e-9, _target_path_entropy_k3), 6
-            )
-        if use_stars:
-            for k, tgt in _star_targets.items():
-                row[f"star_k{k}_err"] = round(abs(current_stars.get(k, 0) - tgt) / max(1, tgt), 6)
+        # Locally tracked errors: the same terms that drive the loss (single source).
+        row: dict = {"accepted": accepted, "loss": round(current_loss, 6)}
+        for name, err in _error_terms(current).items():
+            row[f"{name}_err"] = round(err, 6)
 
         # Ground-truth errors via a full-graph remeasurement (expensive); only when
         # enabled. Otherwise the row carries just the locally tracked errors above.
         if CONVERGENCE_LOG_GLOBAL_REMEASURE:
             _g_sig = _build_und_graph()
-            tri_sig = remeasure_motif_counter.count_triangles(_g_sig)
+            tri_sig = measure_counter.count_triangles(_g_sig)
             row["sig_tri_err"] = round(abs(tri_sig - target_tri) / max(1, target_tri), 6)
             if any(col in _conv_fields for _, _, col in _SIG_ATTRS[1:]):
-                _sig_motifs4 = remeasure_motif_counter.count_motifs4(_g_sig)
+                _sig_motifs4 = measure_counter.count_motifs4(_g_sig)
                 for _, ds, col in _SIG_ATTRS[1:]:
                     if col in _conv_fields:
                         tgt = _motif4_targets[ds]
@@ -526,7 +539,7 @@ def refine(
 
             # Ground-truth 5-cycle relative error: global (induced/chordless) count
             # measured via the hybrid counter vs target (raw count when target is 0).
-            c5_sig = remeasure_motif_counter.count_cycles(_g_sig, k5=True, k6=False)[0]
+            c5_sig = measure_counter.count_cycles(_g_sig, k5=True, k6=False)[0]
             row["sig_c5_err"] = round(abs(c5_sig - _target_c5) / max(1, _target_c5), 6)
 
         _conv_writer.writerow(row)
@@ -544,7 +557,7 @@ def refine(
         f"{target_cc:.4f}" if use_cc else "off",
         f"{_target_tree_entropy:.4f}" if use_tree_entropy else "off",
         f"{_target_path_entropy_k3:.4f}" if use_path_entropy else "off",
-        current_loss, current_tri, cc_current, tree_entropy_current, path_entropy_current,
+        current_loss, current.tri, current.cc, current.tree_h, current.path_h,
     )
 
     # -------------------------------------------- triangle-targeting indexes
@@ -683,11 +696,11 @@ def refine(
         if step > 0 and step % 5_000 == 0:
             log.info(
                 "Stage 3: step %d/%d — loss=%.4f, tri=%d (target %d), accepted=%d",
-                step, budget, current_loss, current_tri, target_tri, accepted,
+                step, budget, current_loss, current.tri, target_tri, accepted,
             )
         # Attempt targeted triangle-creating swap when triangles are below target.
         # The probability scales with how large the deficit is (max 50%).
-        tri_deficit = target_tri - current_tri
+        tri_deficit = target_tri - current.tri
         p_targeted = float(min(MAX_TARGETED_SWAP_PROB, tri_deficit / max(1, target_tri)))
         targeted = tri_deficit > 0 and rng.random() < p_targeted
         if targeted:
@@ -698,7 +711,7 @@ def refine(
         # Only attempted when not already doing a triangle-targeting swap.
         if not targeted and use_stars:
             star_deficit = sum(
-                max(0, tgt - current_stars.get(k, 0)) / tgt
+                max(0, tgt - current.stars.get(k, 0)) / tgt
                 for k, tgt in _star_targets.items()
             ) / max(1, len(_star_targets))
             p_star = float(min(MAX_STAR_TARGETED_PROB, star_deficit))
@@ -719,26 +732,34 @@ def refine(
             i1, i2, s1, o1, s2, o2, p1 = result
 
         tri_delta, node_delta = _triangle_node_delta(adj, s1, o1, s2, o2)
-        new_tri = current_tri + tri_delta
+        new_tri = current.tri + tri_delta
         # CC_avg delta: weighted sum of per-node triangle changes (denom fixed)
-        new_cc = cc_current + sum(dt / denom[v] for v, dt in node_delta.items()) / n
+        new_cc = current.cc + sum(dt / denom[v] for v, dt in node_delta.items()) / n
         # Assortativity delta: only Q changes (degrees are invariant)
         dQ = float(und_deg[s1] * und_deg[o2] + und_deg[s2] * und_deg[o1]
                    - und_deg[s1] * und_deg[o1] - und_deg[s2] * und_deg[o2])
-        new_Q = Q_deg + dQ
-        if USE_INCREMENTAL_MOTIF4 and _motif4_targets:
+        new_Q = current.Q + dQ
+        if _motif4_targets:
             _m4d = _motif4_delta(adj, s1, o1, s2, o2, types=_m4_types)
-            new_motifs4 = {k: current_motifs4.get(k, 0) + _m4d.get(k, 0) for k in _motif4_targets}
+            new_motifs4 = {k: current.motifs4.get(k, 0) + _m4d.get(k, 0) for k in _motif4_targets}
         else:
-            new_motifs4 = current_motifs4
-        # 5/6-cycle counts: exact incremental delta when enabled, else carry the
-        # current values (remeasured every remeasure_interval).
-        if USE_INCREMENTAL_CYCLES and (use_c5 or use_c6):
-            _dc5, _dc6 = _cycle_delta(adj, s1, o1, s2, o2, k5=use_c5, k6=use_c6)
-            new_c5 = current_c5 + _dc5
-            new_c6 = current_c6 + _dc6
+            new_motifs4 = current.motifs4
+        # 5/6-cycle counts: exact incremental delta when steered.
+        if use_c5 or use_c6:
+            # Skip the O(Δ^(k-2)) cycle delta on hub-touching swaps — the induced
+            # path enumeration branches on each endpoint's neighbourhood, so a
+            # high-degree node makes a single swap intractable.  Carrying the
+            # counts over unchanged leaves the cycle loss terms identical before
+            # and after, so they cancel in the accept test (no positive/negative
+            # contribution for these swaps).
+            if max(len(adj[s1]), len(adj[o1]), len(adj[s2]), len(adj[o2])) > CYCLE_DELTA_MAX_DEGREE:
+                new_c5, new_c6 = current.c5, current.c6
+            else:
+                _dc5, _dc6 = _cycle_delta(adj, s1, o1, s2, o2, k5=use_c5, k6=use_c6)
+                new_c5 = current.c5 + _dc5
+                new_c6 = current.c6 + _dc6
         else:
-            new_c5, new_c6 = current_c5, current_c6
+            new_c5, new_c6 = current.c5, current.c6
         # Tree template entropy: exact incremental update via _tree_entropy_delta.
         # rel_out is kept in sync with content_edge_data on accept.
         if use_tree_entropy:
@@ -746,7 +767,7 @@ def refine(
                 rel_out, _pair_freq, s1, o1, p1, s2, o2
             )
         else:
-            new_tree_h, new_pair_freq = tree_entropy_current, _pair_freq
+            new_tree_h, new_pair_freq = current.tree_h, _pair_freq
         # Path template entropy: exact incremental update via _path_entropy_delta.
         # out_edges[v] = [(rel, target), ...]; updated on accept when targets change.
         if use_path_entropy:
@@ -756,14 +777,20 @@ def refine(
             new_path_h = _new_path_ents.get(3, 0.0)
         else:
             _new_path_ents, _new_path_freqs = {}, _path_freqs
-            new_path_h = path_entropy_current
+            new_path_h = current.path_h
         # Induced k-star delta: exact O(Δ²) per swap; only computed when stars are steered.
         if use_stars:
-            _star_d = _star_count_delta(adj, s1, o1, s2, o2, max_k=_star_max_k)
-            new_stars = {k: current_stars.get(k, 0) + _star_d.get(k, 0) for k in _star_targets}
+            _star_d = _star_count_delta(adj, s1, o1, s2, o2, max_k=_star_max_k,
+                                        max_center_degree=STAR_CENTER_MAX_DEGREE)
+            new_stars = {k: current.stars.get(k, 0) + _star_d.get(k, 0) for k in _star_targets}
         else:
-            new_stars = current_stars
-        new_loss = _loss(new_tri, new_motifs4, new_Q, new_cc, new_c5, new_c6, new_tree_h, new_path_h, new_stars)
+            new_stars = current.stars
+
+        candidate = _SAState(
+            tri=new_tri, motifs4=new_motifs4, Q=new_Q, cc=new_cc,
+            c5=new_c5, c6=new_c6, tree_h=new_tree_h, path_h=new_path_h, stars=new_stars,
+        )
+        new_loss = _loss(candidate)
 
         if new_loss < current_loss:
             accept = True
@@ -786,30 +813,20 @@ def refine(
             _adj_inc(adj, s1, o2)
             _adj_inc(adj, s2, o1)
 
-            current_tri = new_tri
-            Q_deg = new_Q
             for v, dt in node_delta.items():
                 t_node[v] += dt
-            # Recompute from t_node to prevent float drift from accumulated deltas.
-            cc_current = float(np.sum(t_node / denom) / n)
-            current_loss = new_loss
-            temp *= cooling_rate
-            accepted += 1
+            # Recompute cc from t_node to prevent float drift from accumulated deltas;
+            # this drift-corrected value (not the incremental new_cc used in the loss)
+            # becomes the baseline for the next swap.
+            candidate.cc = float(np.sum(t_node / denom) / n)
 
-            if USE_INCREMENTAL_MOTIF4 and _motif4_targets:
-                current_motifs4 = new_motifs4
-            if USE_INCREMENTAL_CYCLES and (use_c5 or use_c6):
-                current_c5, current_c6 = new_c5, new_c6
             if use_tree_entropy:
-                # rel_out tracks outgoing relations per node as *source*.
                 # A same-relation swap leaves source nodes' relation labels unchanged
                 # (s1 still has p1, just to a new object) — only _pair_freq changes.
-                tree_entropy_current = new_tree_h
                 _pair_freq = new_pair_freq
             if use_path_entropy:
                 # Update out_edges: s1 now points to o2 (was o1), s2 now points to o1 (was o2).
                 # The relation p1 stays the same; only the target changes.
-                # Replace (p1, o1) → (p1, o2) in out_edges[s1] and vice versa for s2.
                 for i, (r, t) in enumerate(out_edges[s1]):
                     if r == p1 and t == o1:
                         out_edges[s1][i] = (p1, o2)
@@ -818,18 +835,12 @@ def refine(
                     if r == p1 and t == o2:
                         out_edges[s2][i] = (p1, o1)
                         break
-                path_entropy_current = new_path_h
                 _path_freqs = _new_path_freqs
-            if use_stars:
-                current_stars = new_stars
 
-            do_remeasure = accepted % remeasure_interval == 0
-            if not USE_INCREMENTAL_MOTIF4 and _motif4_targets and do_remeasure:
-                current_motifs4 = remeasure_motif_counter.count_motifs4(_build_und_graph())
-                current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6, tree_entropy_current, path_entropy_current, current_stars)
-            if not USE_INCREMENTAL_CYCLES and (use_c5 or use_c6) and do_remeasure:
-                current_c5, current_c6 = _measure_cycles(_build_und_graph())
-                current_loss = _loss(current_tri, current_motifs4, Q_deg, cc_current, current_c5, current_c6, tree_entropy_current, path_entropy_current, current_stars)
+            current = candidate
+            current_loss = new_loss
+            temp *= cooling_rate
+            accepted += 1
 
             if CONVERGENCE_LOG_INTERVAL > 0 and accepted % CONVERGENCE_LOG_INTERVAL == 0:
                 _write_conv_row()
@@ -845,8 +856,8 @@ def refine(
     log.info(
         "Stage 3: done — accepted %d/%d swaps, best loss=%.4f at accepted=%d, "
         "triangles=%d (target %d), cc_avg=%.4f (target %s)",
-        accepted, budget, best_loss, best_accepted, current_tri, target_tri,
-        cc_current, f"{target_cc:.4f}" if use_cc else "off",
+        accepted, budget, best_loss, best_accepted, current.tri, target_tri,
+        current.cc, f"{target_cc:.4f}" if use_cc else "off",
     )
 
     # Re-connect any components that SA swaps may have disconnected

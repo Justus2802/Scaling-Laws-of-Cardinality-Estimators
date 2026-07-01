@@ -4,22 +4,27 @@ Every reduced block keeps the *unsummarised* samples it fit (per-relation
 exponents, singular values, row entropies, path lengths, …) on the object, and
 its ``visualize`` draws those samples with the fitted distribution overlaid, so
 the fit can be eyeballed against the data it came from. The curve evaluations
-reuse the same library parameterisations the fits use (``scipy.stats.skewnorm``
-for skew-normal, the exp-decay/power-law closed forms).
+reuse the same library parameterisations the fits use (the stored quantile
+function for sample distributions, the exp-decay/power-law closed forms).
 """
 
 import numpy as np
-import scipy.stats
+
+from ._fits import QUANTILE_LEVELS
 
 
-def overlay_skewnorm(ax, values: np.ndarray, fit, *, bins: int = 20,
-                     label: str = "data", color: str = "steelblue") -> bool:
-    """Histogram ``values`` and overlay the fitted skew-normal density.
+def overlay_quantiles(ax, values: np.ndarray, fit, *, bins: int = 20,
+                      label: str = "data", color: str = "steelblue") -> bool:
+    """Histogram ``values`` and overlay the stored quantile markers.
+
+    Draws a vertical line at each stored quantile (the median dashed, the rest
+    dotted), so the non-parametric quantile fit can be eyeballed against the
+    sample it summarises.
 
     Args:
         ax: matplotlib axis.
-        values: the raw sample the skew-normal was fit to.
-        fit: a ``SkewNormFit`` (loc, scale, shape, lo, hi).
+        values: the raw sample the quantiles were computed from.
+        fit: a ``QuantileFit`` (quantiles at :data:`QUANTILE_LEVELS`).
         bins: histogram bin count.
         label: legend label for the data histogram.
         color: histogram colour.
@@ -31,13 +36,14 @@ def overlay_skewnorm(ax, values: np.ndarray, fit, *, bins: int = 20,
     values = values[np.isfinite(values)]
     if values.size == 0:
         return False
-    counts, edges, _ = ax.hist(values, bins=bins, alpha=0.6, label=label, color=color)
-    if np.isfinite([fit.loc, fit.scale, fit.shape]).all() and fit.scale > 0:
-        xs = np.linspace(edges[0], edges[-1], 200)
-        pdf = scipy.stats.skewnorm.pdf(xs, a=fit.shape, loc=fit.loc, scale=fit.scale)
-        bin_width = edges[1] - edges[0]
-        ax.plot(xs, pdf * values.size * bin_width, "r-", linewidth=1.5,
-                label="skew-normal fit")
+    ax.hist(values, bins=bins, alpha=0.6, label=label, color=color)
+    qs = np.asarray(fit, dtype=float)
+    if np.isfinite(qs).all():
+        for level, q in zip(QUANTILE_LEVELS, qs):
+            is_median = level == 0.5
+            ax.axvline(q, color="r", linewidth=1.5 if is_median else 1.0,
+                       linestyle="--" if is_median else ":",
+                       label="quantile fit" if is_median else None)
         ax.legend(fontsize=8)
     return True
 

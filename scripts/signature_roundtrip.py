@@ -31,6 +31,8 @@ sys.path.insert(0, str(_REPO / "src"))
 from generator import Generator, Signature
 from kg_io import load_kg, save_kg
 from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
+from signature import ReducedGraphSignature, write_signature_outputs
+from signature import _distance
 import signature._orig_block_e as _block_e
 from motif_counter import HybridMotifCounter
 
@@ -40,7 +42,7 @@ from motif_counter import HybridMotifCounter
 _FINAL_SAMPLE_BUDGET = 20_000
 
 # Surface generator + signature-measurement progress and errors in the console.
-logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 # Reduced block letter → class, in signature order.
 _BLOCK_CLASSES = {"a": BlockA, "b": BlockB, "c": BlockC, "d": BlockD, "f": BlockF}
@@ -225,12 +227,14 @@ def main():
         target_sig, tblocks = _measure_target_from_file(kg_path, skip_templates=args.skip_templates)
         default_out = kg_path.with_name(kg_path.stem + "_synth.ttl")
         graph_label = kg_path.stem
+        graph_dir = kg_path.parent
     elif args.graph:
         search_dirs = [Path(args.graphs_dir)] if args.graphs_dir else _DEFAULT_SEARCH_DIRS
         print(f"Loading   : cached target signature for '{args.graph}' from {[str(d) for d in search_dirs]}")
         target_sig, tblocks, found_graph_dir = _load_target_from_corpus(args.graph, search_dirs)
         default_out = found_graph_dir / f"{args.graph}_synth.ttl"
         graph_label = args.graph
+        graph_dir = found_graph_dir
     else:
         parser.error("provide a corpus graph name or --kg-file")
 
@@ -278,6 +282,17 @@ def main():
                             skip_stars_and_paths=args.skip_templates)
     sf = BlockF().calculate(g_synth, skip_shortest_paths=True)
 
+    # ── Step 4b: dump the synthetic signature (same layout as measured graphs) ─
+    # Write plots, per-block JSON, summary and combined JSON to a
+    # 'signature_synth/' dir next to the source graph, mirroring the measured
+    # 'signature/' dir so the two are directly comparable / drop-in for readers.
+    synth_sig = ReducedGraphSignature(a=sa, b=sb, c=sc, d=sd, e=se, f=sf)
+    synth_dir = graph_dir / "signature_synth"
+    synth_written = write_signature_outputs(
+        synth_sig, synth_dir, source=str(out_path)
+    )
+    print(f"Saved     : synthetic signature ({len(synth_written)} files) → {synth_dir}/")
+
     # ── Step 5: full reduced-signature comparison ────────────────────────────
     # Every feature of every block (the complete reduced signature vector), via each
     # block's feature_names() × as_vector(), so nothing is summarised away.
@@ -313,6 +328,32 @@ def main():
     print(f"  Mean  rel error  : {np.nanmean(rel_err):.3f}")
     print(f"  Median rel error : {np.nanmedian(rel_err):.3f}")
     print(f"  Max   rel error  : {np.nanmax(rel_err):.3f}")
+    print()
+
+    # ── Distribution Wasserstein-1 ────────────────────────────────────────────
+    # Per reported distribution, the W1 distance between the target and synthetic
+    # fits (measures distribution mismatch directly, unlike the per-parameter
+    # relative error above). Normalised W1 = W1 / target IQR is comparable across
+    # distributions on different scales. Blocks B/C/D expose distribution_fits();
+    # blocks without distributional features are skipped.
+    print(_header("Distribution Wasserstein-1"))
+    print(f"  {'Distribution':<28}  {'W1':>12}  {'W1 / target IQR':>16}")
+    print("  " + "─" * 60)
+    w1_norms: list[float] = []
+    for prefix, tblk, sblk in [("B", tb, sb), ("C", tc, sc), ("D", td, sd)]:
+        for (name, tfit, kind), (_, sfit, _) in zip(
+            tblk.distribution_fits(), sblk.distribution_fits()
+        ):
+            w1 = _distance.wasserstein1(tfit, sfit, kind)
+            iqr = _distance.reconstructed_iqr(tfit, kind)
+            w1_norm = w1 / iqr if (iqr is not None and iqr > 0) else float("nan")
+            if not np.isnan(w1_norm):
+                w1_norms.append(w1_norm)
+            print(f"  {prefix}:{name:<26}  {w1:>12.4f}  {w1_norm:>16.3f}")
+    if w1_norms:
+        print()
+        print(f"  Mean   norm W1   : {np.nanmean(w1_norms):.3f}")
+        print(f"  Median norm W1   : {np.nanmedian(w1_norms):.3f}")
     print()
 
 

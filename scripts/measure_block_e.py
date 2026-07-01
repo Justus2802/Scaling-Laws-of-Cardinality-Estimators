@@ -31,7 +31,7 @@ sys.path.insert(0, str(_REPO / "src"))
 from kg_io import load_kg
 from signature import BlockE
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
 def _find_graph_file(d: Path) -> Path | None:
