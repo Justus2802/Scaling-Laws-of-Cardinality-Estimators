@@ -131,3 +131,13 @@ python scripts/cc_variance.py wn18rr_v4 \
     --n-runs 10 --n-samples 1000 10000 100000 --n-colorings 1 4 16 --n-timings 3
 python scripts/cc_variance_viz.py experiments/cc_variance_sweeps/wn18rr_v4_sweep.csv
 ```
+
+To sweep several graphs at once, pass `--graphs`. Each graph gets its own
+`<graph>.csv` / `<graph>_meta.json` inside a directory named by the other sweep
+options plus a timestamp, so repeated runs never overwrite one another:
+
+```
+python scripts/cc_variance.py --graphs wn18rr_v4 fb237_v4_ind \
+    --n-runs 10 --n-samples 1000 10000 --n-colorings 1 4 16
+# → experiments/cc_variance_sweeps/ns1000-10000_nc1-4-16_runs10_<timestamp>/{wn18rr_v4,fb237_v4_ind}.csv
+```
