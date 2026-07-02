@@ -22,6 +22,8 @@ _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO / "src"))
 
 from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF  # noqa: E402
+from generator import Generator, Signature as GenSignature  # noqa: E402
+from generator.stage1 import sample_schema  # noqa: E402
 
 _LETTERS = ("a", "b", "c", "d", "e", "f")
 _BLOCK_CLS = {"a": BlockA, "b": BlockB, "c": BlockC, "d": BlockD, "e": BlockE, "f": BlockF}
@@ -48,6 +50,46 @@ def _all_feature_names(sig_dict: dict) -> list[str]:
         if blk is not None:
             names.extend(blk.feature_names())
     return names
+
+
+def _stage1_caps(target_dict: dict) -> tuple[int, int]:
+    """Return (max_out_degree, max_in_degree) as computed by Stage 1 for a target.
+
+    Runs sample_schema with a fixed seed; the caps are deterministic (no randomness).
+    Returns (0, 0) if block A or B are unavailable.
+    """
+    a = _reconstruct_block("a", target_dict.get("a"))
+    b = _reconstruct_block("b", target_dict.get("b"))
+    c = _reconstruct_block("c", target_dict.get("c"))
+    if a is None or c is None:
+        return 0, 0
+    schema = sample_schema(a, c, b=b, seed=0)
+    return schema.max_out_degree, schema.max_in_degree
+
+
+def _degree_stats(synth_dict: dict) -> dict:
+    """Extract max degree and top-10 out-degrees from a serialized synth block-B.
+
+    Returns keys: max_out, max_in, top10_out (list, descending) or None if unavailable.
+    """
+    import numpy as np
+
+    b_data = synth_dict.get("b")
+    if b_data is None:
+        return {"max_out": None, "max_in": None, "top10_out": None}
+
+    from signature import BlockB
+    b = BlockB.from_serializable(b_data)
+    out_deg = b._out_degrees
+    in_deg = b._in_degrees
+
+    max_out = int(out_deg.max()) if out_deg is not None and len(out_deg) else None
+    max_in = int(in_deg.max()) if in_deg is not None and len(in_deg) else None
+    top10_out = (
+        [int(d) for d in np.sort(out_deg)[::-1][:10]]
+        if out_deg is not None and len(out_deg) else None
+    )
+    return {"max_out": max_out, "max_in": max_in, "top10_out": top10_out}
 
 
 def _rel_err(target_val: float, synth_val: float) -> float | None:
@@ -105,6 +147,30 @@ def main() -> None:
         blk = _reconstruct_block(letter, target_dict.get(letter))
         target_features.update(_block_feature_map(blk))
 
+    # Compute stage-1 degree caps (deterministic from the target).
+    cap_out, cap_in = _stage1_caps(target_dict)
+    cap_str = (
+        f"stage-2 caps: max_out={cap_out or 'none'}  max_in={cap_in or 'none'}"
+    )
+
+    # Print per-record degree stats before any feature filtering.
+    print(f"\n{cap_str}")
+    print(f"\n{'budget':>8}  {'seed':>4}  {'max_out':>7}  {'max_in':>6}  top-10 out-degrees")
+    print("-" * 70)
+    for rec in records:
+        stats = _degree_stats(rec["synth"])
+        top10_str = (
+            ", ".join(str(d) for d in stats["top10_out"])
+            if stats["top10_out"] is not None else "n/a"
+        )
+        print(
+            f"{rec['budget']:>8}  {rec['seed']:>4}  "
+            f"{stats['max_out'] if stats['max_out'] is not None else 'n/a':>7}  "
+            f"{stats['max_in'] if stats['max_in'] is not None else 'n/a':>6}  "
+            f"{top10_str}"
+        )
+    print()
+
     if args.list_features:
         print("Available features:")
         for name in target_features:
@@ -128,14 +194,29 @@ def main() -> None:
 
     # Collect errors per budget group (older records may carry a now-removed
     # remeasure_interval field; include it in the label only when present).
-    # groups: label → feature_name → list[float]
-    groups: dict[str, dict[str, list[float]]] = {}
+    # groups: label → feature_name → list of (seed_idx, float) so dots can be
+    # colored consistently across feature subplots for the same record.
+    groups: dict[str, dict[str, list[tuple[int, float]]]] = {}
+    # seed_idx_map: (label, position_within_label) → global seed index
+    label_counters: dict[str, int] = {}
+    seed_idx_map: dict[tuple[str, int], int] = {}
+    next_seed_idx = 0
+
     for rec in records:
         label = f"B{rec['budget']}"
         if "remeasure_interval" in rec:
             label += f"/I{rec['remeasure_interval']}"
         if label not in groups:
             groups[label] = {f: [] for f in args.features}
+            label_counters[label] = 0
+
+        pos = label_counters[label]
+        label_counters[label] += 1
+        key = (label, pos)
+        if key not in seed_idx_map:
+            seed_idx_map[key] = next_seed_idx
+            next_seed_idx += 1
+        sidx = seed_idx_map[key]
 
         synth_features: dict[str, float] = {}
         for letter in _LETTERS:
@@ -147,36 +228,44 @@ def main() -> None:
             sval = synth_features.get(feat, float("nan"))
             err = _rel_err(tval, sval)
             if err is not None and not math.isnan(sval):
-                groups[label][feat].append(err)
+                groups[label][feat].append((sidx, err))
 
     # Sort config labels by budget then interval for a natural left-to-right order
     def _label_sort_key(lbl: str):
-        # format: "B{budget}/I{interval}"
+        # format: "B{budget}" or "B{budget}/I{interval}"
         parts = lbl.lstrip("B").split("/I")
-        return (int(parts[0]), int(parts[1]))
+        return (int(parts[0]), int(parts[1]) if len(parts) > 1 else 0)
 
     config_labels = sorted(groups.keys(), key=_label_sort_key)
 
     import matplotlib.pyplot as plt
+    import matplotlib.cm as cm
 
     n_feat = len(args.features)
     fig, axes = plt.subplots(1, n_feat, figsize=(max(6, 4 * n_feat), 5), squeeze=False)
     fig.suptitle(f"Signed relative error by config — {graph_name}", fontsize=12)
 
+    n_seeds = next_seed_idx
+    cmap = cm.get_cmap("tab10" if n_seeds <= 10 else "tab20", max(n_seeds, 1))
+    seed_colors = {i: cmap(i) for i in range(n_seeds)}
+
     for col, feat in enumerate(args.features):
         ax = axes[0][col]
-        data_per_config = [groups[lbl][feat] for lbl in config_labels]
+        # Strip seed index for boxplot/violin (they just need raw values)
+        raw_per_config = [[v for _, v in groups[lbl][feat]] for lbl in config_labels]
 
-        if args.kind == "violin" and all(len(d) >= 2 for d in data_per_config):
-            parts = ax.violinplot(data_per_config, positions=range(len(config_labels)),
-                                  showmedians=True, showextrema=True)
+        if args.kind == "violin" and all(len(d) >= 2 for d in raw_per_config):
+            ax.violinplot(raw_per_config, positions=range(len(config_labels)),
+                          showmedians=True, showextrema=True)
         else:
-            ax.boxplot(data_per_config, labels=config_labels, patch_artist=True)
+            ax.boxplot(raw_per_config, labels=config_labels, patch_artist=True)
 
-        # Overlay individual seed points — boxplot uses 1-based positions by default
+        # Overlay individual seed points colored by seed index
         base = 0 if args.kind == "violin" else 1
-        for x, vals in enumerate(data_per_config):
-            ax.scatter([base + x] * len(vals), vals, color="black", s=20, zorder=5, alpha=0.7)
+        for x, pairs in enumerate(groups[lbl][feat] for lbl in config_labels):
+            for sidx, val in pairs:
+                ax.scatter([base + x], [val], color=seed_colors[sidx],
+                           s=30, zorder=5, alpha=0.85, edgecolors="none")
 
         if args.kind == "violin":
             ax.set_xticks(range(len(config_labels)))
@@ -187,6 +276,16 @@ def main() -> None:
         ax.axhline(0, color="gray", linewidth=0.8, linestyle="--")
         ax.set_title(feat, fontsize=9)
         ax.set_ylabel("signed relative error" if col == 0 else "")
+
+    # Add a shared seed legend on the last axis
+    if n_seeds > 0:
+        handles = [
+            plt.Line2D([0], [0], marker="o", color="w", markerfacecolor=seed_colors[i],
+                       markersize=7, label=f"seed {i}")
+            for i in range(n_seeds)
+        ]
+        axes[0][-1].legend(handles=handles, title="seed", fontsize=7,
+                           title_fontsize=7, loc="upper right")
 
     fig.tight_layout()
 

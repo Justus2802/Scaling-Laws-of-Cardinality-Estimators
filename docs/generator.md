@@ -87,8 +87,10 @@ needs. All randomness from one seeded `np.random.Generator`.
    prototypes (replacing the `P(r|t)` path) and assigns types post-hoc. See
    [§ Co-occurrence groups](#co-occurrence-groups) below.
 7. **Multiplicity / degree (Block B).** `obj_alpha_q`, `subj_alpha_q`, `a_obj` passed
-   through; `in_pa_exponent = clip(1/(α_in−2), 0.1, 2)` (Dorogovtsev–Mendes); expected
-   `max_in_degree = n^(1/(α_in−1))`.  `max_out_degree` is derived via the alpha ratio:
+   through; `in_pa_exponent = clip(1/(α_in−2), 0.1, 2)` (Dorogovtsev–Mendes); the same
+   inversion on `α_out` yields `out_pa_exponent` (0 = disabled when `α_out ≤ 2` or NaN),
+   which gives high-out-degree subjects a richer-get-richer bias across relation passes.
+   Expected `max_in_degree = n^(1/(α_in−1))`.  `max_out_degree` is derived via the alpha ratio:
    `max_out_degree = round(max_in_degree / (α_in / α_out))`.  Both caps default to 0 (uncapped)
    when the corresponding alpha is unavailable or ≤ the minimum threshold.
 
@@ -134,7 +136,8 @@ where most of the fidelity fixes live.
    (all entities when no inverse templates). For each present relation (`S_r`, `O_r` non-empty;
    weights renormalised over them):
    - `|edges_r| = min(round(renorm_weight[r]·content_E), |S_r|·|O_r|)` (capacity bound).
-   - **Out-side** (per subject): weight `power-law(α_obj_r) · cs_size^a_obj` (G2 tail × G2b). **Floor
+   - **Out-side** (per subject): weight `power-law(α_obj_r) · cs_size^a_obj · (1+out_degree)^out_pa`
+     (G2 tail × G2b × out-side PA; the PA factor is skipped when `out_pa_exponent = 0`). **Floor
      each subject at 1**, allocate the surplus by `multinomial`, then **cap at `|O_r|`** + redistribute.
    - **In-side** (per object over `O_r`): weight `power-law(α_subj_r) · in_degree^pa · inv_cs_size^a_subj`
      (subject-multiplicity tail × hub preference × **G2b in-side offset**), masked by `max_in_degree`;

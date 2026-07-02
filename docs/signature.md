@@ -22,19 +22,27 @@ serialization, logging, and the `powerlaw` fitter). Library-backed distribution 
 in `_fits.py` (`np.quantile` for the non-parametric quantile-function fits,
 `scipy.stats.linregress`, the `powerlaw` package);
 `_plot_helpers.py` overlays each fit on the raw data it was computed from — every block
-keeps that pre-fit data (singular values, row entropies, per-relation exponents, path
-counts, path lengths) on the object for `visualize`.
+keeps that pre-fit data (singular values, row entropies, per-relation exponents,
+per-relation edge counts, class sizes, path counts, path lengths, CS-frequency counts)
+on the object for `visualize`. The overlay helpers cover every fitted distribution:
+`overlay_quantiles`, `overlay_exp_decay_rank`, `overlay_truncated_powerlaw`,
+`overlay_powerlaw` (open-tailed `PowerLawStats`) and `overlay_zipf` (`ZipfFit`). So each
+block's plot now shows all of its distribution fits, not just a subset:
+- **B** (2×3): out/in-degree power-laws, relation-usage **Zipf**, obj/subj multiplicity-α quantiles.
+- **C** (3×3): three co-occurrence/`P(r|t)` spectra (exp-decay), subj/obj row-entropy quantiles, per-type entropy, class-size **power-law**.
+- **D** (2×3): forward/inverse CS **size** (quantiles), two-step path counts (trunc. power-law), forward/inverse CS **frequency** (power-law).
+- **E** (2×2): motif counts, path-template stats by k, induced star counts by k, tree-template scalars.
 
 | Block | Vec | Stored representation (rationale in the sections below) |
 |---|---|---|
 | **A** — G0 | 3 | `num_entities`, `num_relations`, **mean degree** `E/V` |
-| **B** — G1/G2/G2b | 22 | out/in-degree power-law (target); relation-usage **Zipf**; obj/subj multiplicity-α **quantile function** (7 levels, cutoffs [1.4,3.0]); CS-size offsets `a_obj`, `a_subj` |
+| **B** — G1/G2/G2b | 26 | out/in-degree power-law (target); relation-usage **Zipf**; obj/subj multiplicity-α **quantile function** (7 levels, cutoffs [1.4,3.0]); CS-size offsets `a_obj`, `a_subj`; high-end degree targets `out/in_degree_max`, `out/in_degree_p90` (explicit hub-steering targets for Stage 2) |
 | **C** — G3 | 27 | class-size **power-law**; subj/obj co-occurrence **exp-decay** + density; row entropy **quantile function** (7 levels); `P(r\|t)` spectrum **exp-decay**; per-type entropy **exp-decay** |
 | **D** — G3 | 23 | `num_distinct_cs`; CS-freq **power-law**; CS-size **quantile function** (7 levels); symmetric inverse side (`inv_num_distinct_cs`, inverse-CS-freq **power-law**, inverse-CS-size **quantile function**); two-step path-count **truncated power-law** |
 | **E** — G5 | 36 | raw motif counts (triangle, 4-/5-/6-cycle, diamond, k4, tailed triangle); **induced** `star_count_k*` (k=2..10); path-template **Zipf** + entropy (k=2..10); tree-template Zipf + entropy. Stars are *induced* (centre + k mutually non-adjacent leaves, as measured by the color-coding counter), **not** the non-induced `Σ C(deg,k)`, so they are not fixed by the degree distribution and carry independent structure |
 | **F** — G4 | 9 | components, LCC fraction, avg-local clustering, assortativity; shortest-path **skew-normal** |
 
-Total **120** features (A3 + B22 + C27 + D23 + E36 + F9).
+Total **124** features (A3 + B26 + C27 + D23 + E36 + F9).
 The fits are stored as NamedTuples that restore as plain tuples through the JSON
 round-trip, so each block property re-wraps them to preserve attribute access.
 

@@ -347,8 +347,17 @@ def sample_schema(
             max_out_degree = max(MAX_IN_DEGREE_FLOOR, int(round(max_in_degree / alpha_ratio)))
         else:
             max_out_degree = 0
+        # Out-side PA exponent: same Dorogovtsev-Mendes inversion as the in-side.
+        # Makes nodes that already have high out-degree attract more stubs in later
+        # relation passes, concentrating out-degree onto fewer hubs and sharpening
+        # the heavy tail that drives star counts.
+        if not math.isnan(alpha_out) and alpha_out > MIN_ALPHA_FOR_PA:
+            out_pa_exponent = float(np.clip(1.0 / (alpha_out - 2.0), *PA_EXPONENT_BOUNDS))
+        else:
+            out_pa_exponent = 0.0
     else:
         in_pa_exponent = PA_EXPONENT_DEFAULT
+        out_pa_exponent = 0.0
         max_in_degree = 0
         max_out_degree = 0
 
@@ -371,10 +380,10 @@ def sample_schema(
     )
 
     log.info(
-        "Stage 1: schema ready — mean_functionality=%.3f, in_pa_exponent=%.3f, "
+        "Stage 1: schema ready — mean_functionality=%.3f, in_pa_exponent=%.3f, out_pa_exponent=%.3f, "
         "max_in_degree=%d, max_out_degree=%d, cs_num_templates=%d, a_obj=%.3f, obj_alpha_qmin=%.3f",
-        mean_functionality, in_pa_exponent, max_in_degree, max_out_degree, cs_num_templates,
-        a_obj, obj_alpha_q[0],
+        mean_functionality, in_pa_exponent, out_pa_exponent, max_in_degree, max_out_degree,
+        cs_num_templates, a_obj, obj_alpha_q[0],
     )
     target_num_components = int(f.num_components) if f is not None else DEFAULT_NUM_COMPONENTS
     target_lcc = float(f.largest_component_fraction) if f is not None else DEFAULT_LCC
@@ -401,6 +410,7 @@ def sample_schema(
         cs_template_zipf=cs_template_zipf,
         mean_functionality=mean_functionality,
         in_pa_exponent=in_pa_exponent,
+        out_pa_exponent=out_pa_exponent,
         max_in_degree=max_in_degree,
         max_out_degree=max_out_degree,
         obj_alpha_q=obj_alpha_q,

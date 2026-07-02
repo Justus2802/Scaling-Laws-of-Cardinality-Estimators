@@ -8,9 +8,9 @@ discard. Aggregate out/in-degree power-laws are kept as *targets* (a compound
 sum the marginals do not pin). ``functionality`` and the multiplicity *scale*
 are dropped — both are guaranteed by the stored law and edge conservation.
 
-The unsummarised inputs to the fits (the per-relation exponents and the degree
-sequences) are kept on the object so ``visualize`` can overlay each fit on the
-data it came from.
+The unsummarised inputs to the fits (the per-relation exponents, the degree
+sequences and the per-relation edge counts) are kept on the object so
+``visualize`` can overlay each fit on the data it came from.
 """
 
 from collections import defaultdict
@@ -33,7 +33,7 @@ from ._fits import (
     fit_cs_size_offset,
     nan_zipf,
 )
-from ._plot_helpers import overlay_quantiles
+from ._plot_helpers import overlay_quantiles, overlay_zipf
 from . import _distance
 
 log = get_logger(__name__)
@@ -64,11 +64,17 @@ class BlockB(SignatureBlock):
         self._subj_alpha_q = _NOT_CALCULATED            # G2 subject side
         self._a_obj = _NOT_CALCULATED                   # G2b object-side offset
         self._a_subj = _NOT_CALCULATED                  # G2b subject-side offset
+        # high-end degree statistics (explicit targets for hub steering)
+        self._out_degree_max = _NOT_CALCULATED
+        self._out_degree_p90 = _NOT_CALCULATED
+        self._in_degree_max = _NOT_CALCULATED
+        self._in_degree_p90 = _NOT_CALCULATED
         # unsummarised data kept for visualization
         self._obj_alphas = _NOT_CALCULATED
         self._subj_alphas = _NOT_CALCULATED
         self._out_degrees = _NOT_CALCULATED
         self._in_degrees = _NOT_CALCULATED
+        self._rel_edge_counts = _NOT_CALCULATED
 
     # ── properties ────────────────────────────────────────────────────────────
     # The quantile / Zipf fits are NamedTuples; the JSON round-trip restores
@@ -102,6 +108,22 @@ class BlockB(SignatureBlock):
     def a_subj(self) -> float:
         return self._require("a_subj", self._a_subj)
 
+    @property
+    def out_degree_max(self) -> int:
+        return self._require("out_degree_max", self._out_degree_max)
+
+    @property
+    def out_degree_p90(self) -> float:
+        return self._require("out_degree_p90", self._out_degree_p90)
+
+    @property
+    def in_degree_max(self) -> int:
+        return self._require("in_degree_max", self._in_degree_max)
+
+    @property
+    def in_degree_p90(self) -> float:
+        return self._require("in_degree_p90", self._in_degree_p90)
+
     # ── core ──────────────────────────────────────────────────────────────────
 
     def calculate(self, g: igraph.Graph) -> "BlockB":
@@ -126,6 +148,10 @@ class BlockB(SignatureBlock):
         self._in_degrees = in_degrees
         self._out_degree_fit = _fit_powerlaw(out_degrees)
         self._in_degree_fit = _fit_powerlaw(in_degrees)
+        self._out_degree_max = int(out_degrees.max()) if out_degrees.size else 0
+        self._out_degree_p90 = float(np.percentile(out_degrees, 90)) if out_degrees.size else 0.0
+        self._in_degree_max = int(in_degrees.max()) if in_degrees.size else 0
+        self._in_degree_p90 = float(np.percentile(in_degrees, 90)) if in_degrees.size else 0.0
 
         is_literal: list[bool] = g.vs["is_literal"] if g.vcount() else []
 
@@ -146,9 +172,12 @@ class BlockB(SignatureBlock):
                 inv_cs_of[e.target].add(r)
 
         # --- G1: relation-usage frequency (Zipf over per-predicate edge counts) ---
+        self._rel_edge_counts = (
+            np.fromiter(rel_edge_counts.values(), dtype=float, count=len(rel_edge_counts))
+            if rel_edge_counts else np.array([], dtype=float)
+        )
         self._relation_zipf = (
-            fit_zipf(np.fromiter(rel_edge_counts.values(), dtype=float, count=len(rel_edge_counts)))
-            if rel_edge_counts else nan_zipf()
+            fit_zipf(self._rel_edge_counts) if self._rel_edge_counts.size else nan_zipf()
         )
 
         # --- G2: per-relation exponents, then quantile function across relations ---
@@ -225,6 +254,10 @@ class BlockB(SignatureBlock):
             *self._safe_iter(lambda: self.subj_alpha_q, n_q),
             self._safe_scalar(lambda: self.a_obj),
             self._safe_scalar(lambda: self.a_subj),
+            self._safe_scalar(lambda: self.out_degree_max),
+            self._safe_scalar(lambda: self.out_degree_p90),
+            self._safe_scalar(lambda: self.in_degree_max),
+            self._safe_scalar(lambda: self.in_degree_p90),
         ]
 
     @classmethod
@@ -238,12 +271,13 @@ class BlockB(SignatureBlock):
         for side in ("obj", "subj"):
             names += [f"{side}_mult_alpha_{suffix}" for suffix in QUANTILE_SUFFIXES]
         names += ["a_obj", "a_subj"]
+        names += ["out_degree_max", "out_degree_p90", "in_degree_max", "in_degree_p90"]
         return names
 
     @classmethod
     def get_na_vec(cls) -> list[float]:
         """Return a NaN vector the same length as as_vector()."""
-        return [float("nan")] * (6 + 2 * len(QUANTILE_LEVELS) + 2)
+        return [float("nan")] * (6 + 2 * len(QUANTILE_LEVELS) + 2 + 4)
 
     def distribution_fits(self) -> list[tuple[str, object, str]]:
         """Return ``(name, fit, kind)`` for each reportable distribution.
@@ -286,6 +320,8 @@ class BlockB(SignatureBlock):
             f"  obj  mult-alpha quantiles: median={s.q50:.3f} IQR=[{s.q25:.3f},{s.q75:.3f}] cutoffs=[{s.q0:.2f},{s.q100:.2f}]",
             f"  subj mult-alpha quantiles: median={ss.q50:.3f} IQR=[{ss.q25:.3f},{ss.q75:.3f}] cutoffs=[{ss.q0:.2f},{ss.q100:.2f}]",
             f"  CS-size offset : a_obj={self.a_obj:.4f}  a_subj={self.a_subj:.4f}",
+            f"  out-degree     : max={self.out_degree_max}  p90={self.out_degree_p90:.1f}",
+            f"  in-degree      : max={self.in_degree_max}  p90={self.in_degree_p90:.1f}",
         ]
         text = "\n".join(lines)
         if path is None:
@@ -300,13 +336,25 @@ class BlockB(SignatureBlock):
             subj_alphas = self._require("_subj_alphas", self._subj_alphas)
             out_degrees = self._require("_out_degrees", self._out_degrees)
             in_degrees = self._require("_in_degrees", self._in_degrees)
-            fig, axes = plt.subplots(2, 2, figsize=(12, 9))
+            fig, axes = plt.subplots(2, 3, figsize=(18, 9))
 
             # Degree targets: raw histogram + fitted power-law (reused from original).
             _OrigBlockB._plot_degree_hist(axes[0, 0], out_degrees, self.out_degree_fit,
                                           "Out-degree distribution (target)", False)
             _OrigBlockB._plot_degree_hist(axes[0, 1], in_degrees, self.in_degree_fit,
                                           "In-degree distribution (target)", False)
+
+            # Relation-usage frequency: raw per-predicate edge counts + Zipf tail.
+            ax = axes[0, 2]
+            if self._rel_edge_counts is _NOT_CALCULATED:
+                ax.text(0.5, 0.5, "not in serialized data\n(re-run measurement)", ha="center",
+                        va="center", transform=ax.transAxes, fontsize=8)
+            elif not overlay_zipf(ax, self._rel_edge_counts, self.relation_zipf,
+                                  label="relation usage", color="teal"):
+                ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
+            ax.set_xlabel("edge count per relation")
+            ax.set_ylabel("P(X ≥ x)")
+            ax.set_title("Relation-usage frequency (fit: Zipf, CCDF)")
 
             # Per-relation exponents: raw histogram + stored quantile markers.
             ax = axes[1, 0]
@@ -324,6 +372,8 @@ class BlockB(SignatureBlock):
             ax.set_xlabel("subject-multiplicity exponent α")
             ax.set_ylabel("count (relations)")
             ax.set_title("Subject-multiplicity α (fit: quantiles)")
+
+            axes[1, 2].axis("off")  # spare cell in the 2×3 grid
 
             plt.tight_layout()
             if path is None:

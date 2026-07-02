@@ -618,6 +618,8 @@ def instantiate(
         w_out = sample_powerlaw(_relation_alpha(schema.obj_alpha_q), n_sr, rng)
         cs_sizes = np.array([len(entity_cs[s]) for s in S_r], dtype=float)
         w_out = w_out * np.power(np.maximum(cs_sizes, 1.0), schema.a_obj)
+        if schema.out_pa_exponent > 0.0:
+            w_out = w_out * np.power(1.0 + out_degrees[subj_ids], schema.out_pa_exponent)
         if schema.max_out_degree > 0:
             # Zero weight for subjects already at / above the global out-degree cap.
             w_out[out_degrees[subj_ids] >= schema.max_out_degree] = 0.0
