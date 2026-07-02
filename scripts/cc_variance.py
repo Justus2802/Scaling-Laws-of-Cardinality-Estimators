@@ -25,7 +25,8 @@ Motivo / Bressan et al. 2021) and from drawing more path samples can be read
 off later.  This script only *collects* — plot the result with
 ``scripts/cc_variance_viz.py``.
 
-Output (default prefix: experiments/cc_variance_sweeps/<graph>_sweep)
+Output (single graph → prefix experiments/cc_variance_sweeps/<graph>_sweep;
+        --graphs → experiments/cc_variance_sweeps/<sweep-options>_<timestamp>/<graph>)
 ------
   <out>.csv         — one row per (n_samples, n_colorings, seed); columns:
                       n_samples, n_colorings, seed, triangle_count,
@@ -40,6 +41,11 @@ Output (default prefix: experiments/cc_variance_sweeps/<graph>_sweep)
                       per-family runtimes (exact_runtime) and the pre-measured
                       target signature values.
 
+Multiple graphs can be swept in one invocation via ``--graphs``; each graph then
+gets its own ``<graph>.csv`` / ``<graph>_meta.json`` inside a directory named by
+the other sweep options (n_samples / n_colorings / n_runs) plus a timestamp, so
+repeated runs never overwrite one another.
+
 Usage
 -----
     python scripts/cc_variance.py wn18rr_v4
@@ -47,6 +53,7 @@ Usage
     python scripts/cc_variance.py wn18rr_v4 --n-colorings 1 4 16 64 --n-samples 1000 10000 100000
     python scripts/cc_variance.py wn18rr_v4 --n-timings 5   # average exact runtime over 5 repeats
     python scripts/cc_variance.py wn18rr_v4 --skip-exact    # CC sweep only, no exact ground truth
+    python scripts/cc_variance.py --graphs wn18rr_v4 fb237_v4_ind  # sweep several graphs
 """
 
 import argparse
@@ -109,7 +116,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("graph", help="Graph name in the corpus (e.g. fb237_v4_ind)")
+    parser.add_argument("graph", nargs="?", default=None,
+                        help="Graph name in the corpus (e.g. fb237_v4_ind)")
+    parser.add_argument("--graphs", nargs="+", default=None,
+                        help="Sweep across multiple graphs. Each graph gets its own "
+                             "<graph>.csv / <graph>_meta.json inside a directory named by "
+                             "the other sweep options plus a timestamp (so repeated runs "
+                             "don't overwrite each other).")
     parser.add_argument("--n-runs", type=int, default=50,
                         help="Number of CC estimator runs with different seeds (default: 50)")
     parser.add_argument("--n-samples", type=int, nargs="+", default=[10_000, 100_000],
@@ -137,20 +150,67 @@ def main() -> None:
     parser.add_argument("--graphs-dir", type=Path, default=None,
                         help="Corpus root directory")
     parser.add_argument("--out", type=Path, default=None,
-                        help="Output path prefix (no extension); "
-                             "default: experiments/cc_variance_sweeps/<graph>_sweep")
+                        help="Single graph: output path prefix (no extension), default "
+                             "experiments/cc_variance_sweeps/<graph>_sweep. With --graphs: "
+                             "the base directory that holds the timestamped sweep directory "
+                             "(default experiments/cc_variance_sweeps).")
     args = parser.parse_args()
 
-    out_prefix: Path = args.out or (
-        _REPO / "experiments" / "cc_variance_sweeps" / f"{args.graph}_sweep"
-    )
+    # Collect the graphs to run: either the multi-graph sweep or the single positional.
+    graphs = args.graphs if args.graphs else ([args.graph] if args.graph else [])
+    if not graphs:
+        parser.error("provide a graph name positionally or via --graphs")
+
+    search_dirs = [args.graphs_dir] if args.graphs_dir else _DEFAULT_SEARCH_DIRS
+    base_dir = args.out or (_REPO / "experiments" / "cc_variance_sweeps")
+
+    if args.graphs:
+        # Multi-graph sweep: one directory named by the sweep options + a timestamp,
+        # holding one <graph>.csv / <graph>_meta.json per graph.
+        sweep_dir = base_dir / _sweep_slug(args)
+        sweep_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Sweeping {len(graphs)} graph(s) into {sweep_dir}")
+        for graph in graphs:
+            print(f"\n=== {graph} ===")
+            _run_graph(graph, sweep_dir / graph, args, search_dirs)
+        print(f"\nAll graphs done → {sweep_dir}")
+    else:
+        # Single-graph run (backward-compatible naming).
+        out_prefix = base_dir if args.out else base_dir / f"{graphs[0]}_sweep"
+        _run_graph(graphs[0], out_prefix, args, search_dirs)
+
+
+def _sweep_slug(args) -> str:
+    """Build a directory-name slug encoding the swept axes plus a timestamp.
+
+    The slug mirrors how single-graph runs distinguish output by graph name: here
+    the directory instead encodes n_samples / n_colorings / n_runs and a run
+    timestamp, so each ``--graphs`` invocation lands in its own directory.
+
+    :param args: parsed argparse namespace.
+    :returns: slug like ``ns10000-100000_nc1-2-4_runs50_20260701-142530``.
+    """
+    ns = "-".join(str(x) for x in sorted(set(args.n_samples)))
+    nc = "-".join(str(x) for x in sorted(set(args.n_colorings)))
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    return f"ns{ns}_nc{nc}_runs{args.n_runs}_{ts}"
+
+
+def _run_graph(graph: str, out_prefix: Path, args, search_dirs) -> None:
+    """Run the exact + CC sweep for one graph and write its CSV and meta sidecar.
+
+    :param graph: graph name in the corpus.
+    :param out_prefix: output path prefix (no extension); ``.csv`` and
+        ``_meta.json`` are appended.
+    :param args: parsed argparse namespace (sweep axes and guards).
+    :param search_dirs: corpus search directories.
+    """
     out_prefix.parent.mkdir(parents=True, exist_ok=True)
     csv_path = out_prefix.with_suffix(".csv")
     meta_path = out_prefix.with_name(out_prefix.name + "_meta.json")
 
-    search_dirs = [args.graphs_dir] if args.graphs_dir else _DEFAULT_SEARCH_DIRS
-    print(f"Loading '{args.graph}' …")
-    _, tblocks, graph_dir = _load_target_from_corpus(args.graph, search_dirs)
+    print(f"Loading '{graph}' …")
+    _, tblocks, graph_dir = _load_target_from_corpus(graph, search_dirs)
     assert graph_dir is not None
 
     from kg_io import load_kg
@@ -259,7 +319,7 @@ def main() -> None:
             target[feat] = None if val is None else float(val)
 
     meta = {
-        "graph": args.graph,
+        "graph": graph,
         "n_runs": args.n_runs,
         "n_samples_list": n_samples_list,
         "n_colorings_list": n_colorings_list,

@@ -14,8 +14,8 @@ using both relations. This mirrors — but is distinct from — the *row*-normal
 ``P(r|t)`` spectrum (whose scale is already bounded); see
 ``docs/notes/signature_size_dependence.md``.
 
-The unsummarised spectra and entropy samples are kept on the object so
-``visualize`` can overlay each fit on the data it was computed from.
+The unsummarised spectra, entropy samples and class sizes are kept on the object
+so ``visualize`` can overlay each fit on the data it was computed from.
 """
 
 from collections import defaultdict
@@ -40,7 +40,7 @@ from ._fits import (
     nan_exp_decay,
     nan_quantiles,
 )
-from ._plot_helpers import overlay_exp_decay_rank, overlay_quantiles
+from ._plot_helpers import overlay_exp_decay_rank, overlay_powerlaw, overlay_quantiles
 from . import _distance
 
 log = get_logger(__name__)
@@ -76,6 +76,7 @@ class BlockC(SignatureBlock):
         self._subj_row_entropies = _NOT_CALCULATED
         self._obj_row_entropies = _NOT_CALCULATED
         self._per_type_entropies = _NOT_CALCULATED
+        self._class_sizes = _NOT_CALCULATED
 
     # ── properties ────────────────────────────────────────────────────────────
     # Exp-decay / quantile fits are NamedTuples re-wrapped on access so they
@@ -180,9 +181,12 @@ class BlockC(SignatureBlock):
             for t in types:
                 class_counts[t] += 1
         self._num_classes = len(class_counts)
+        self._class_sizes = (
+            np.array(list(class_counts.values()), dtype=float)
+            if class_counts else np.array([], dtype=float)
+        )
         self._class_size_fit = (
-            _fit_powerlaw(np.array(list(class_counts.values()), dtype=float))
-            if class_counts else _nan_power_law_stats()
+            _fit_powerlaw(self._class_sizes) if self._class_sizes.size else _nan_power_law_stats()
         )
 
         # --- P(r|t) spectrum + per-type relation entropy ---
@@ -366,7 +370,7 @@ class BlockC(SignatureBlock):
 
     def _visualize_plot(self, path: str | None) -> None:
         try:
-            fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+            fig, axes = plt.subplots(3, 3, figsize=(16, 13))
 
             # Row 0: spectra (raw singular values + exp-decay fit).
             for ax, svs, fit, title in [
@@ -401,6 +405,21 @@ class BlockC(SignatureBlock):
             ax.set_xlabel("type rank")
             ax.set_ylabel("H(r | type) (nats)")
             ax.set_title("Per-type relation entropy")
+
+            # Row 2: class-size power-law (raw class sizes + fitted tail).
+            ax = axes[2, 0]
+            if self._class_sizes is _NOT_CALCULATED:
+                ax.text(0.5, 0.5, "not in serialized data\n(re-run measurement)", ha="center",
+                        va="center", transform=ax.transAxes, fontsize=8)
+            elif not overlay_powerlaw(ax, self._class_sizes, self.class_size_fit,
+                                      label="class size", color="seagreen"):
+                ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
+            ax.set_xlabel("class size (member count)")
+            ax.set_ylabel("P(X ≥ x)")
+            ax.set_title("Class size (fit: power-law, CCDF)")
+
+            axes[2, 1].axis("off")  # spare cells in the 3×3 grid
+            axes[2, 2].axis("off")
 
             plt.tight_layout()
             if path is None:

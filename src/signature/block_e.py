@@ -253,10 +253,11 @@ class BlockE(SignatureBlock):
 
     def _visualize_plot(self, path: str | None) -> None:
         try:
-            fig, axes = plt.subplots(1, 2, figsize=(11, 5))
+            fig, axes = plt.subplots(2, 2, figsize=(12, 9))
+            ks = list(range(2, _MAX_K + 1))
 
             # Motif / cycle counts
-            ax = axes[0]
+            ax = axes[0, 0]
             labels = ["triangles", "4-cycles", "5-cycles\n(est)", "6-cycles\n(est)",
                       "diamonds", "K4", "tailed\ntriangles"]
             values = [
@@ -270,8 +271,7 @@ class BlockE(SignatureBlock):
             ax.tick_params(axis="x", labelsize=8)
 
             # Path template zipf alpha and entropy vs k
-            ax = axes[1]
-            ks = list(range(2, _MAX_K + 1))
+            ax = axes[0, 1]
             zipf_vals = [self.path_template_zipf.get(k, float("nan")) for k in ks]
             ent_vals = [self.path_template_entropy.get(k, float("nan")) for k in ks]
             ax.plot(ks, zipf_vals, "o-", label="zipf alpha", color="steelblue")
@@ -284,6 +284,22 @@ class BlockE(SignatureBlock):
             lines1, labels1 = ax.get_legend_handles_labels()
             lines2, labels2 = ax2.get_legend_handles_labels()
             ax.legend(lines1 + lines2, labels1 + labels2, fontsize=8)
+
+            # Induced star counts vs k
+            ax = axes[1, 0]
+            star_vals = [float(self.star_counts.get(k, float("nan"))) for k in ks]
+            ax.bar(ks, star_vals, color="mediumpurple")
+            ax.set_xlabel("star size k (leaf count)")
+            ax.set_ylabel("induced star count")
+            ax.set_title("Induced star counts by size")
+
+            # Tree-template summary scalars (zipf exponent, entropy)
+            ax = axes[1, 1]
+            ax.bar(["zipf alpha", "entropy"],
+                   [self.tree_template_zipf, self.tree_template_entropy],
+                   color=["steelblue", "darkorange"])
+            ax.set_ylabel("value")
+            ax.set_title("Tree template statistics")
 
             plt.tight_layout()
             if path is None:

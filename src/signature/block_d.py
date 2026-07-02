@@ -7,8 +7,8 @@ range). Inverse-CS size is kept as a target (object-side wiring aggregation, not
 given by subject multiplicity). The CS / inverse-CS / path-count computations
 are reused from the original Block D.
 
-The unsummarised CS sizes and path counts are kept on the object so ``visualize``
-can overlay each fit on the data it was computed from.
+The unsummarised CS sizes, CS-frequency counts and path counts are kept on the
+object so ``visualize`` can overlay each fit on the data it was computed from.
 """
 
 from collections import Counter, defaultdict
@@ -31,7 +31,7 @@ from ._fits import (
     nan_quantiles,
     nan_trunc_powerlaw,
 )
-from ._plot_helpers import overlay_quantiles, overlay_truncated_powerlaw
+from ._plot_helpers import overlay_powerlaw, overlay_quantiles, overlay_truncated_powerlaw
 from . import _distance
 
 log = get_logger(__name__)
@@ -62,6 +62,8 @@ class BlockD(SignatureBlock):
         # unsummarised data kept for visualization
         self._cs_sizes = _NOT_CALCULATED
         self._inv_cs_sizes = _NOT_CALCULATED
+        self._cs_freq_counts = _NOT_CALCULATED
+        self._inv_cs_freq_counts = _NOT_CALCULATED
         self._pair_counts = _NOT_CALCULATED
         self._top_pairs = _NOT_CALCULATED
 
@@ -117,17 +119,17 @@ class BlockD(SignatureBlock):
         # CS frequency: how often each distinct (inverse-)CS recurs → power-law.
         if cs_of:
             freq = Counter(cs_of.values())
-            self._cs_freq_fit = _fit_powerlaw(
-                np.fromiter(freq.values(), dtype=int, count=len(freq))
-            )
+            self._cs_freq_counts = np.fromiter(freq.values(), dtype=float, count=len(freq))
+            self._cs_freq_fit = _fit_powerlaw(self._cs_freq_counts)
         else:
+            self._cs_freq_counts = np.array([], dtype=float)
             self._cs_freq_fit = _nan_power_law_stats()
         if inv_cs_of:
             inv_freq = Counter(inv_cs_of.values())
-            self._inv_cs_freq_fit = _fit_powerlaw(
-                np.fromiter(inv_freq.values(), dtype=int, count=len(inv_freq))
-            )
+            self._inv_cs_freq_counts = np.fromiter(inv_freq.values(), dtype=float, count=len(inv_freq))
+            self._inv_cs_freq_fit = _fit_powerlaw(self._inv_cs_freq_counts)
         else:
+            self._inv_cs_freq_counts = np.array([], dtype=float)
             self._inv_cs_freq_fit = _nan_power_law_stats()
 
         # Two-step path counts → truncated power-law over the full value set.
@@ -270,16 +272,16 @@ class BlockD(SignatureBlock):
             cs_sizes = self._require("_cs_sizes", self._cs_sizes)
             inv_cs_sizes = self._require("_inv_cs_sizes", self._inv_cs_sizes)
             pair_counts = self._require("_pair_counts", self._pair_counts)
-            fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
+            fig, axes = plt.subplots(2, 3, figsize=(16, 9))
 
-            ax = axes[0]
+            ax = axes[0, 0]
             if not overlay_quantiles(ax, cs_sizes, self.cs_size_q, label="|CS|", color="steelblue"):
                 ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
             ax.set_xlabel("|CS| (predicate count)")
             ax.set_ylabel("entity count")
             ax.set_title("Forward CS size (fit: quantiles)")
 
-            ax = axes[1]
+            ax = axes[0, 1]
             if not overlay_quantiles(ax, inv_cs_sizes, self.inv_cs_size_q,
                                      label="inverse |CS|", color="darkorange"):
                 ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
@@ -287,12 +289,37 @@ class BlockD(SignatureBlock):
             ax.set_ylabel("entity count")
             ax.set_title("Inverse CS size (fit: quantiles)")
 
-            ax = axes[2]
+            ax = axes[0, 2]
             if not overlay_truncated_powerlaw(ax, pair_counts, self.two_step_fit, label="path counts"):
                 ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
             ax.set_xlabel("path count per (q, p)")
-            ax.set_ylabel("number of pairs")
-            ax.set_title("Two-step path counts (fit: trunc. power-law)")
+            ax.set_ylabel("P(X ≥ x)")
+            ax.set_title("Two-step path counts (fit: trunc. power-law, CCDF)")
+
+            _missing = "not in serialized data\n(re-run measurement)"
+            ax = axes[1, 0]
+            if self._cs_freq_counts is _NOT_CALCULATED:
+                ax.text(0.5, 0.5, _missing, ha="center", va="center",
+                        transform=ax.transAxes, fontsize=8)
+            elif not overlay_powerlaw(ax, self._cs_freq_counts, self.cs_freq_fit,
+                                      label="CS freq", color="seagreen"):
+                ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
+            ax.set_xlabel("recurrence count per distinct CS")
+            ax.set_ylabel("P(X ≥ x)")
+            ax.set_title("Forward CS frequency (fit: power-law, CCDF)")
+
+            ax = axes[1, 1]
+            if self._inv_cs_freq_counts is _NOT_CALCULATED:
+                ax.text(0.5, 0.5, _missing, ha="center", va="center",
+                        transform=ax.transAxes, fontsize=8)
+            elif not overlay_powerlaw(ax, self._inv_cs_freq_counts, self.inv_cs_freq_fit,
+                                      label="inverse CS freq", color="mediumvioletred"):
+                ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
+            ax.set_xlabel("recurrence count per distinct inverse CS")
+            ax.set_ylabel("P(X ≥ x)")
+            ax.set_title("Inverse CS frequency (fit: power-law, CCDF)")
+
+            axes[1, 2].axis("off")  # spare cell in the 2×3 grid
 
             plt.tight_layout()
             if path is None:

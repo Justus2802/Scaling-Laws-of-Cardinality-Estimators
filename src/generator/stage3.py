@@ -34,7 +34,7 @@ from .stage2 import _connect_components
 
 # ── Tuning constants (Stage-3 refinement) — adjust here ─────────────────────────
 MAX_TARGETED_SWAP_PROB = 0.5   # cap on the probability of attempting a triangle-closing swap
-MAX_STAR_TARGETED_PROB = 0.5   # cap on the probability of attempting a triangle-breaking swap for stars; 0 = disabled
+MAX_STAR_TARGETED_PROB = 0  # cap on the probability of attempting a triangle-breaking swap for stars; 0 = disabled
 TEMP_FLOOR = 1e-10             # numerical floor on the SA temperature in the accept test
 # k values tracked for induced star counts in the SA loss.
 # Smaller sets are cheaper (O(Δ²) per swap per k); k=2..4 covers the most sensitive range.
@@ -56,7 +56,7 @@ LOSS_WEIGHT_ASSORTATIVITY: float = 1.0
 LOSS_WEIGHT_CC_AVG:        float = 1.0
 LOSS_WEIGHT_TREE_ENTROPY:  float = 1.0
 LOSS_WEIGHT_PATH_ENTROPY:  float = 1.0
-LOSS_WEIGHT_STARS:         float = 1.0   # applied per k (k=2..STAR_K_TRACKED[-1]); 0 = disabled (stars are structurally set by Stage 2 degree distribution)
+LOSS_WEIGHT_STARS:         float = 0   # applied per k (k=2..STAR_K_TRACKED[-1]); 0 = disabled (stars are structurally set by Stage 2 degree distribution)
 
 # Lookup table used by _loss; keeps the function body concise.
 _MOTIF4_WEIGHTS: dict[tuple, float] = {
