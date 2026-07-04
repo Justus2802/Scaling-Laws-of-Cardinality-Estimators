@@ -2,10 +2,9 @@
 counter (``motifs_randesu``) on real KG files.
 
 Block E hand-rolls exact 3-/4-node motif counts (triangles, 4-cycles, diamonds,
-K4, tailed triangles) and star counts for speed on sparse KGs. This module
-verifies those custom results against ground truth produced by independent
-igraph library methods, for every graph listed in
-``tests/block_e_verification_graphs.csv``.
+K4, tailed triangles) for speed on sparse KGs. This module verifies those custom
+results against ground truth produced by independent igraph library methods, for
+every graph listed in ``tests/block_e_verification_graphs.csv``.
 
 CSV columns:
     name    — human-readable label used in subTest output
@@ -13,8 +12,8 @@ CSV columns:
     format  — ``nt`` or ``ttl`` (passed to the oracle CLI; load_kg itself
               detects the serialization from file content)
 
-Triangles (``list_triangles``) and star counts (degree formula) are exact at
-any graph size and are always checked exactly. The 4-node motif counts
+Triangles (``list_triangles``) are exact at any graph size and are always
+checked exactly. The 4-node motif counts
 (4-cycle, diamond, K4, tailed triangle) are exact only below ``_LARGE_N``
 undirected nodes; above it Block E switches to color-coding estimates, so those
 four counts are compared against the exact library values within a relative
@@ -44,8 +43,8 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 sys.path.insert(0, os.path.dirname(__file__))  # for the sibling oracle module
-from signature._orig_block_e import BlockE
-from signature._orig_block_e import _LARGE_N
+from signature import BlockE
+from signature.block_e import _LARGE_N
 from _block_e_library_oracle import load_graph
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -164,22 +163,6 @@ class TestBlockEAgainstLibrary(unittest.TestCase):
                 self._assert_motif(e.diamond_count, gt["diamond"], estimated, f"{name}: diamond")
                 self._assert_motif(e.k4_count, gt["k4"], estimated, f"{name}: k4")
                 self._assert_motif(e.tailed_triangle_count, gt["tailed"], estimated, f"{name}: tailed_triangle")
-
-                # Star counts are computed by Block E with a vectorized float64
-                # formula, so very large counts (k-stars on high-degree hubs can
-                # exceed 2**53) lose exact-integer precision. Verify with a small
-                # relative tolerance rather than exact equality.
-                for k in range(2, 11):
-                    custom = e.star_counts.get(k, 0)
-                    expected = gt["stars"][str(k)]
-                    if expected == 0:
-                        self.assertEqual(custom, 0, f"{name}: star_count k={k}")
-                    else:
-                        self.assertTrue(
-                            math.isclose(custom, expected, rel_tol=1e-9),
-                            f"{name}: star_count k={k}: {custom} != {expected} "
-                            f"(rel err {abs(custom - expected) / expected:.2e})",
-                        )
 
 
 if __name__ == "__main__":

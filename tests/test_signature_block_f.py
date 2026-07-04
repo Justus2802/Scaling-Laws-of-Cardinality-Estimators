@@ -8,9 +8,9 @@ import igraph
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from kg_io import load_kg
-from signature._orig_block_f import BlockF
+from signature import BlockF
 
-_VECTOR_LEN = 6
+_VECTOR_LEN = len(BlockF.feature_names())   # 7
 
 
 def _make_g(n: int, edges: list, literals: list | None = None) -> igraph.Graph:
@@ -27,33 +27,33 @@ class TestBlockFEdgeCases(unittest.TestCase):
         f = BlockF().calculate(g)
         self.assertEqual(f.num_components, 0)
         self.assertTrue(math.isnan(f.largest_component_fraction))
-        self.assertTrue(math.isnan(f.avg_shortest_path_length))
+        self.assertTrue(math.isnan(f.shortest_path_mean))
         self.assertTrue(math.isnan(f.clustering_coefficient))
         self.assertTrue(math.isnan(f.degree_assortativity))
         self.assertEqual(len(f.as_vector()), _VECTOR_LEN)
 
     def test_single_vertex_no_edges(self):
-        # 1 non-literal vertex, no edges → can't form a pair → avg_sp NaN
+        # 1 non-literal vertex, no edges → can't form a pair → path stats NaN
         g = _make_g(1, [])
         f = BlockF().calculate(g)
         self.assertEqual(f.num_components, 1)
         self.assertAlmostEqual(f.largest_component_fraction, 1.0)
-        self.assertTrue(math.isnan(f.avg_shortest_path_length))
+        self.assertTrue(math.isnan(f.shortest_path_mean))
         self.assertEqual(len(f.as_vector()), _VECTOR_LEN)
 
     def test_all_literal_vertices(self):
-        # non_lit pool is empty → avg_sp NaN, other stats still computed
+        # non_lit pool is empty → path stats NaN, other stats still computed
         g = _make_g(3, [(0, 1), (1, 2)], literals=[True, True, True])
         f = BlockF().calculate(g)
         self.assertEqual(f.num_components, 1)
-        self.assertTrue(math.isnan(f.avg_shortest_path_length))
+        self.assertTrue(math.isnan(f.shortest_path_mean))
         self.assertEqual(len(f.as_vector()), _VECTOR_LEN)
 
     def test_one_literal_one_non_literal(self):
-        # Only 1 non-literal → pool size < 2 → avg_sp NaN
+        # Only 1 non-literal → pool size < 2 → path stats NaN
         g = _make_g(2, [(0, 1)], literals=[False, True])
         f = BlockF().calculate(g)
-        self.assertTrue(math.isnan(f.avg_shortest_path_length))
+        self.assertTrue(math.isnan(f.shortest_path_mean))
         self.assertEqual(len(f.as_vector()), _VECTOR_LEN)
 
 
@@ -76,7 +76,7 @@ class TestBlockFConnectivity(unittest.TestCase):
         f = BlockF().calculate(g)
         self.assertEqual(f.num_components, 1)
         self.assertAlmostEqual(f.largest_component_fraction, 1.0)
-        self.assertAlmostEqual(f.avg_shortest_path_length, 1.0)
+        self.assertAlmostEqual(f.shortest_path_mean, 1.0)
         # No vertex has ≥2 neighbours → local clustering = 0
         self.assertAlmostEqual(f.clustering_coefficient, 0.0)
         self.assertEqual(len(f.as_vector()), _VECTOR_LEN)
@@ -94,7 +94,7 @@ class TestBlockFConnectivity(unittest.TestCase):
         f = BlockF().calculate(g)
         self.assertEqual(f.num_components, 1)
         self.assertAlmostEqual(f.largest_component_fraction, 1.0)
-        self.assertAlmostEqual(f.avg_shortest_path_length, 1.0)
+        self.assertAlmostEqual(f.shortest_path_mean, 1.0)
         self.assertAlmostEqual(f.clustering_coefficient, 1.0)
         self.assertEqual(len(f.as_vector()), _VECTOR_LEN)
 
@@ -110,9 +110,9 @@ class TestBlockFConnectivity(unittest.TestCase):
         f = BlockF().calculate(g)
         self.assertEqual(f.num_components, 2)
         self.assertAlmostEqual(f.largest_component_fraction, 3 / 5)
-        # avg_sp sampled within LCC (c-d-e chain); distances are 1 or 2
-        self.assertGreaterEqual(f.avg_shortest_path_length, 1.0)
-        self.assertLessEqual(f.avg_shortest_path_length, 2.0)
+        # path lengths sampled within LCC (c-d-e chain); distances are 1 or 2
+        self.assertGreaterEqual(f.shortest_path_mean, 1.0)
+        self.assertLessEqual(f.shortest_path_mean, 2.0)
         self.assertEqual(len(f.as_vector()), _VECTOR_LEN)
 
     def test_lcc_fraction_denominator_includes_literals(self):
@@ -127,8 +127,8 @@ class TestBlockFConnectivity(unittest.TestCase):
         f = BlockF().calculate(g)
         self.assertEqual(f.num_components, 1)
         self.assertAlmostEqual(f.largest_component_fraction, 1.0)
-        # Only non-literal vertices (ex:a, ex:b) sampled → avg_sp = 1.0
-        self.assertAlmostEqual(f.avg_shortest_path_length, 1.0)
+        # Only non-literal vertices (ex:a, ex:b) sampled → mean = 1.0
+        self.assertAlmostEqual(f.shortest_path_mean, 1.0)
         self.assertEqual(len(f.as_vector()), _VECTOR_LEN)
 
     def test_negative_assortativity_star(self):
@@ -145,7 +145,7 @@ class TestBlockFConnectivity(unittest.TestCase):
         f = BlockF().calculate(g)
         self.assertAlmostEqual(f.clustering_coefficient, 0.0)
 
-    def test_avg_sp_on_isolated_pairs_equals_one(self):
+    def test_mean_on_isolated_pairs_equals_one(self):
         # 10 disconnected s_i-o_i pairs — all edges have distance 1 within
         # each pair; the LCC is one such pair (2 non-lit nodes, distance 1)
         ttl = (
@@ -155,29 +155,29 @@ class TestBlockFConnectivity(unittest.TestCase):
         g = self._load_ttl(ttl)
         f1 = BlockF().calculate(g, sample_k=1)
         f2 = BlockF().calculate(g, sample_k=2)
-        self.assertAlmostEqual(f1.avg_shortest_path_length, 1.0)
-        self.assertAlmostEqual(f2.avg_shortest_path_length, 1.0)
+        self.assertAlmostEqual(f1.shortest_path_mean, 1.0)
+        self.assertAlmostEqual(f2.shortest_path_mean, 1.0)
 
-    def test_se_nan_when_avg_sp_nan(self):
-        # Empty graph → avg_sp NaN → SE must also be NaN
+    def test_var_nan_when_mean_nan(self):
+        # Empty graph → mean NaN → variance must also be NaN
         g = igraph.Graph(directed=True)
         g.vs["is_literal"] = []
         f = BlockF().calculate(g)
-        self.assertTrue(math.isnan(f.avg_shortest_path_length_se))
+        self.assertTrue(math.isnan(f.shortest_path_var))
 
-    def test_se_finite_and_non_negative_on_chain(self):
-        # Chain a-b-c: distances are 1 and 2 → variance > 0 → SE > 0
+    def test_var_positive_on_chain(self):
+        # Chain a-b-c: distances are 1 and 2 → variance > 0
         g = self._load_ttl(
             "@prefix ex: <http://example.org/> .\n"
             "ex:a ex:p ex:b .\n"
             "ex:b ex:q ex:c .\n"
         )
         f = BlockF().calculate(g, sample_k=2)
-        self.assertFalse(math.isnan(f.avg_shortest_path_length_se))
-        self.assertGreater(f.avg_shortest_path_length_se, 0.0)
+        self.assertFalse(math.isnan(f.shortest_path_var))
+        self.assertGreater(f.shortest_path_var, 0.0)
 
-    def test_se_zero_on_triangle(self):
-        # Triangle: all pairwise distances == 1 → no variance → SE == 0
+    def test_var_zero_on_triangle(self):
+        # Triangle: all pairwise distances == 1 → no variance
         g = self._load_ttl(
             "@prefix ex: <http://example.org/> .\n"
             "ex:a ex:p ex:b .\n"
@@ -185,7 +185,7 @@ class TestBlockFConnectivity(unittest.TestCase):
             "ex:c ex:r ex:a .\n"
         )
         f = BlockF().calculate(g, sample_k=2)
-        self.assertAlmostEqual(f.avg_shortest_path_length_se, 0.0)
+        self.assertAlmostEqual(f.shortest_path_var, 0.0)
 
     def test_sample_k_larger_gives_finite_result(self):
         # Increasing k should not break anything; result stays finite
@@ -196,7 +196,7 @@ class TestBlockFConnectivity(unittest.TestCase):
             "ex:c ex:r ex:a .\n"
         )
         f = BlockF().calculate(g, sample_k=3)
-        self.assertFalse(math.isnan(f.avg_shortest_path_length))
+        self.assertFalse(math.isnan(f.shortest_path_mean))
         self.assertEqual(len(f.as_vector()), _VECTOR_LEN)
 
     def test_vector_length_invariant(self):
@@ -231,13 +231,15 @@ class TestBlockFSerialize(unittest.TestCase):
         self.assertEqual(list(f.as_dict().keys()), BlockF.feature_names())
 
     def test_as_dict_values_match_as_vector(self):
+        import numpy as np
         f = self._make()
-        self.assertEqual(list(f.as_dict().values()), f.as_vector())
+        np.testing.assert_array_equal(list(f.as_dict().values()), f.as_vector())
 
     def test_serialization_roundtrip(self):
+        import numpy as np
         f = self._make()
         restored = BlockF.from_serializable(f.to_serializable())
-        self.assertEqual(f.as_vector(), restored.as_vector())
+        np.testing.assert_array_equal(f.as_vector(), restored.as_vector())
 
 
 if __name__ == "__main__":

@@ -37,18 +37,26 @@ class SignatureBlock(ABC):
 
     @staticmethod
     def _safe_scalar(fn) -> float:
-        """Call *fn* and return its float result, or NaN if calculate() was never called."""
+        """Call *fn* and return its float result, or NaN if calculate() was never called.
+
+        TypeError also maps to NaN: stale serialized data can hold a fit of a
+        superseded shape (e.g. a 6-field PowerLawStats where a 3-field
+        TruncPowerLawFit is expected), which fails on unpacking.
+        """
         try:
             return float(fn())
-        except RuntimeError:
+        except (RuntimeError, TypeError):
             return float("nan")
 
     @staticmethod
     def _safe_iter(fn, n: int) -> list[float]:
-        """Call *fn* and unpack its *n*-element result, or NaN×n if not calculated."""
+        """Call *fn* and unpack its *n*-element result, or NaN×n if not calculated.
+
+        TypeError (stale serialized fit of a superseded shape) also yields NaN×n.
+        """
         try:
             return [float(x) for x in fn()]
-        except RuntimeError:
+        except (RuntimeError, TypeError):
             return [float("nan")] * n
 
     @abstractmethod

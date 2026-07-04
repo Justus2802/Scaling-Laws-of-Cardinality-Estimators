@@ -13,10 +13,11 @@ below as "the notes"). For which features scale with graph size vs. which are si
 
 ## Implemented module
 
-`src/signature/` is the signature package (Blocks A–F). The public blocks are the reduced,
-non-over-determined measurements; the over-determined "full" measurement each block reduces
-from lives alongside as an internal `_orig_block_*` module (e.g. `_orig_block_e.py`), which the
-public reduced block delegates to. The package reuses a shared block infrastructure (the
+`src/signature/` is the signature package (Blocks A–F). Each block is a single
+non-over-determined ("reduced") measurement in `block_<x>.py`; the over-determined "full"
+measurements that earlier lived alongside as internal `_orig_block_*` modules have been folded
+in and removed, so each block is now one class with no second version. The package reuses a
+shared block infrastructure (the
 `SignatureBlock` ABC with `as_dict` / `to_serializable`, JSON
 serialization, logging, and the `powerlaw` fitter). Library-backed distribution fits live
 in `_fits.py` (`np.quantile` for the non-parametric quantile-function fits,
@@ -30,19 +31,19 @@ on the object for `visualize`. The overlay helpers cover every fitted distributi
 block's plot now shows all of its distribution fits, not just a subset:
 - **B** (2×3): out/in-degree power-laws, relation-usage **Zipf**, obj/subj multiplicity-α quantiles.
 - **C** (3×3): three co-occurrence/`P(r|t)` spectra (exp-decay), subj/obj row-entropy quantiles, per-type entropy, class-size **power-law**.
-- **D** (2×3): forward/inverse CS **size** (quantiles), two-step path counts (trunc. power-law), forward/inverse CS **frequency** (power-law).
-- **E** (2×2): motif counts, path-template stats by k, induced star counts by k, tree-template scalars.
+- **D** (2×3): forward/inverse CS **size** (quantiles), two-step path counts (trunc. power-law), forward/inverse CS **frequency** (trunc. power-law).
+- **E** (2×2): motif counts, path-template stats by k, tree-template scalars (the star-count panel is disabled).
 
 | Block | Vec | Stored representation (rationale in the sections below) |
 |---|---|---|
 | **A** — G0 | 3 | `num_entities`, `num_relations`, **mean degree** `E/V` |
 | **B** — G1/G2/G2b | 26 | out/in-degree power-law (target); relation-usage **Zipf**; obj/subj multiplicity-α **quantile function** (7 levels, cutoffs [1.4,3.0]); CS-size offsets `a_obj`, `a_subj`; high-end degree targets `out/in_degree_max`, `out/in_degree_p90` (explicit hub-steering targets for Stage 2) |
 | **C** — G3 | 27 | class-size **power-law**; subj/obj co-occurrence **exp-decay** + density; row entropy **quantile function** (7 levels); `P(r\|t)` spectrum **exp-decay**; per-type entropy **exp-decay** |
-| **D** — G3 | 23 | `num_distinct_cs`; CS-freq **power-law**; CS-size **quantile function** (7 levels); symmetric inverse side (`inv_num_distinct_cs`, inverse-CS-freq **power-law**, inverse-CS-size **quantile function**); two-step path-count **truncated power-law** |
-| **E** — G5 | 36 | raw motif counts (triangle, 4-/5-/6-cycle, diamond, k4, tailed triangle); **induced** `star_count_k*` (k=2..10); path-template **Zipf** + entropy (k=2..10); tree-template Zipf + entropy. Stars are *induced* (centre + k mutually non-adjacent leaves, as measured by the color-coding counter), **not** the non-induced `Σ C(deg,k)`, so they are not fixed by the degree distribution and carry independent structure |
+| **D** — G3 | 25 | `num_distinct_cs`; CS-freq **truncated power-law** (α, v_min, v_max); CS-size **quantile function** (7 levels); symmetric inverse side (`inv_num_distinct_cs`, inverse-CS-freq **truncated power-law**, inverse-CS-size **quantile function**); two-step path-count **truncated power-law** |
+| **E** — G5 | 27 | raw motif counts (triangle, 4-/5-/6-cycle, diamond, k4, tailed triangle); path-template **Zipf** + entropy (k=2..10); tree-template Zipf + entropy. Induced `star_count_k*` were removed — no longer measured or vectorised (the `count_stars` helper is kept, unused) |
 | **F** — G4 | 9 | components, LCC fraction, avg-local clustering, assortativity; shortest-path **skew-normal** |
 
-Total **124** features (A3 + B26 + C27 + D23 + E36 + F9).
+Total **117** features (A3 + B26 + C27 + D25 + E27 + F9).
 The fits are stored as NamedTuples that restore as plain tuples through the JSON
 round-trip, so each block property re-wraps them to preserve attribute access.
 
@@ -115,15 +116,19 @@ Each retained value carries a **why** (what it controls in generation) and a **n
 | Relation-usage frequency | **Zipf / power-law** (decision) | exponent (+ scale) |
 
 **CS-frequency** is not covered by the notes, but **confirmed power-law** (consistent
-with class size and the existing `cs_freq_stats` fit).
+with class size and the existing `cs_freq_stats` fit). It is stored as a **truncated
+power-law** on the observed `[v_min, v_max]` range (recurrence counts are bounded by the
+entity count): pinning the range keeps fits comparable across graphs — a free `x_min`
+can land on the tail of one graph but the full body of another — and the bounded
+reconstruction keeps the roundtrip W1 distance finite even when α ≤ 2.
 
 ### Reading these representations (what the parameters mean)
 
 - **power-law `(α, x_min)`** — `P(x) ∝ x^(−α)` for `x ≥ x_min`. `α` is the **tail
   exponent**: larger α ⇒ lighter tail (few hubs, counts stay small); smaller α ⇒
   heavier tail (strong hubs). `x_min` is where power-law behaviour begins; below it the
-  body is not power-law. Used for strictly-heavy-tailed counts (class size, CS
-  frequency, relation frequency as a Zipf rank-law).
+  body is not power-law. Used for strictly-heavy-tailed counts (class size, relation
+  frequency as a Zipf rank-law).
 - **quantile function (7 quantiles at levels 0, .1, .25, .5, .75, .9, 1)** — the
   non-parametric empirical inverse CDF: the stored values are the sample quantiles, so
   q@0/q@1 are the min/max (hard truncation cutoffs, e.g. per-relation α confined to
@@ -144,7 +149,8 @@ with class size and the existing `cs_freq_stats` fit).
   the bounds are required because these quantities are inherently bounded (and `α`≈1
   isn't normalisable unbounded). **Contains log-uniform as the special case `α = 1`.**
   Used for **two-step pair frequencies** — **originally an exponential-decay rank curve in
-  the notes**, reformulated here as a value distribution (see below).
+  the notes**, reformulated here as a value distribution (see below) — and for the
+  **forward/inverse CS-frequency** recurrence counts (bounded by the entity count).
 - **Zipf / power-law over frequencies `(exponent)`** — rank-ordered frequency
   `f(rank) ∝ rank^(−exponent)`. Larger exponent ⇒ usage dominated by the top few
   relations; near 0 ⇒ near-uniform usage.
@@ -464,7 +470,7 @@ two-step pairs.
 |---|---|---|---|
 | CS-size distribution | **quantile function** (7 levels) over `cs_size(s)` | C | Per subject, how many distinct predicates it uses (number of terms in the degree sum). |
 | distinct-CS count | `num_distinct_cs` (or fraction of V) | C | Degree of CS reuse / schema regularity. |
-| CS-frequency distribution | **power-law** (α, x_min) over CS occurrence counts | C | How skewed CS reuse is (schema regularity / template reuse). |
+| CS-frequency distribution | **truncated power-law** (α, v_min, v_max) over CS occurrence counts | C | How skewed CS reuse is (schema regularity / template reuse). |
 
 Under S-B, **emergent:** co-occurrence spectrum, densities, row/type entropies, inverse
 CS, two-step pairs.
@@ -509,7 +515,7 @@ Genuinely derived/dropped: nothing extra here beyond the global drop list.
 | 5/6-cycle counts | raw (sampled/estimated) counts | E | Longer cyclic structure. |
 | path templates | per-k **Zipf exponent + entropy** (k = 2..K) | E | Label-sequence diversity along paths — query-shape realism. |
 | tree templates | **Zipf exponent + entropy** | E | Branching label diversity. |
-| star counts | **induced** `star_count_k2..k10` (raw counts) | E | k mutually non-adjacent leaves around a centre — local sparsity not fixed by the degree sequence. |
+| star counts | **removed** — no longer measured or vectorised (was **induced** `star_count_k2..k10`). The counter's `count_stars` helper is kept, unused. |
 
 > Raw counts are strongly size-dependent (per the decision) → more work for the Stage-1
 > conditional-on-size model.
@@ -543,11 +549,12 @@ drafts wrongly dropped.
 ## Decisions — resolved
 
 Schema = **both** spectrum + CS distributions (complementary). **Edge-budget handle =
-mean degree** (`E/V`); E and density derived. **CS-frequency = power-law**. Per-relation
+mean degree** (`E/V`); E and density derived. **CS-frequency = truncated power-law**. Per-relation
 multiplicity is free (shape only); functionality and multiplicity *scale* are derived
 (guaranteed); **aggregate degree, inverse-CS size, row entropy, cooc density, `P(r|t)`
 spectrum + per-type relation entropy, and two-step pairs are kept as targets**; **induced
-star counts kept** (not the degree-fixed `Σ C(deg,k)`, so they carry independent structure).
+star counts removed** from the signature (no longer measured; the `count_stars` helper is
+kept unused).
 
 Resolved against the project spec (the document):
 

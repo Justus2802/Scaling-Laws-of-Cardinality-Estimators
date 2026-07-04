@@ -15,7 +15,7 @@ This module provides the sampler **class hierarchy**:
   independently from a uniform distribution over its observed corpus range,
   widened by ±10 % of that range.
 
-Output is the **69-value feature dict** (the same shape as a measured
+Output is the **88-value feature dict** (the same shape as a measured
 ``signature.json``'s ``"features"`` block), so sampled signatures are drop-in
 compatible with the existing readers. Reconstruction into a
 ``ReducedGraphSignature`` object is intentionally not done here.
@@ -43,7 +43,7 @@ from signature import BlockA, BlockB, BlockC, BlockD, BlockF
 _ROOT = Path(__file__).resolve().parents[1]
 _DEFAULT_CORPUS = _ROOT / "data" / "graphs"
 
-# Canonical 69-key order, in the same order as ``ReducedGraphSignature.as_dict()``.
+# Canonical 88-key order, in the same order as ``ReducedGraphSignature.as_dict()``.
 # Derived from the block classes so it never drifts from the measured schema.
 _BLOCKS = [BlockA, BlockB, BlockC, BlockD, BlockF]
 FEATURE_ORDER: list[str] = [name for blk in _BLOCKS for name in blk.feature_names()]
@@ -54,7 +54,8 @@ FEATURE_ORDER: list[str] = [name for blk in _BLOCKS for name in blk.feature_name
 _INTEGER_FEATURES: frozenset[str] = frozenset({
     "num_entities", "num_relations", "num_classes", "num_distinct_cs",
     "num_components", "out_degree_xmin", "in_degree_xmin", "relation_zipf_xmin",
-    "class_size_xmin", "cs_freq_xmin", "two_step_vmin", "two_step_vmax",
+    "class_size_xmin", "cs_freq_vmin", "cs_freq_vmax",
+    "inv_cs_freq_vmin", "inv_cs_freq_vmax", "two_step_vmin", "two_step_vmax",
 })
 
 # Type-block parameters held at the untyped default (NaN) until more typed KGs
@@ -77,7 +78,8 @@ _SIGNED_UNIT: frozenset[str] = frozenset({"degree_assortativity"})
 _MIN_ONE: frozenset[str] = frozenset({
     "num_entities", "num_relations", "num_distinct_cs", "num_components",
     "out_degree_xmin", "in_degree_xmin", "relation_zipf_xmin", "class_size_xmin",
-    "cs_freq_xmin", "two_step_vmin", "two_step_vmax",
+    "cs_freq_vmin", "cs_freq_vmax", "inv_cs_freq_vmin", "inv_cs_freq_vmax",
+    "two_step_vmin", "two_step_vmax",
 })
 
 _MIN_FINITE_SUPPORT = 2  # need ≥2 finite corpus values to form a range
@@ -137,7 +139,7 @@ class SignatureSampler(ABC):
         """Draw a raw value for *feature* (before shared post-processing)."""
 
     def sample(self, seed: int | None = None) -> dict[str, float]:
-        """Sample a full reduced signature as a 69-key feature dict.
+        """Sample a full reduced signature as an 88-key feature dict.
 
         Args:
             seed: RNG seed for reproducibility.

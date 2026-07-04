@@ -33,7 +33,7 @@ from kg_io import load_kg, save_kg
 from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
 from signature import ReducedGraphSignature, write_signature_outputs
 from signature import _distance
-import signature._orig_block_e as _block_e
+import signature.block_e as _block_e
 from motif_counter import HybridMotifCounter
 
 # Sample budget for the synthetic graph's final re-measurement (Block E motif CC

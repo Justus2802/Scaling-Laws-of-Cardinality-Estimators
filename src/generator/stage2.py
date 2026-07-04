@@ -5,8 +5,8 @@ Turns a Schema into an igraph.Graph by
   - assigning types to entities via the Schema's type_weights,
   - sampling each entity's characteristic set from P(r | type) so the
     co-occurrence structure matches the target,
-  - wiring edges with preferential attachment to reproduce heavy-tailed
-    in-degree distributions,
+  - wiring edges toward per-entity target degrees sampled from the measured
+    degree distribution (no degree steering when unavailable),
   - adding rdf:type edges for all typed entities,
   - selectively bridging isolated components to match target num_components / LCC fraction.
 """
@@ -41,7 +41,7 @@ def _connect_components(
     in_degrees: "np.ndarray",
     target_nc: int = 1,
     target_lcc: float = 1.0,
-) -> None:
+) -> "np.ndarray":
     """Bridge isolated entity components, targeting a specific component count and LCC fraction.
 
     Selects satellites (components left disconnected) so that their combined
@@ -57,9 +57,19 @@ def _connect_components(
         Desired number of weakly-connected components.  1 → fully connect.
     target_lcc : float
         Desired fraction of entity nodes in the largest component.
+
+    Returns
+    -------
+    np.ndarray
+        Boolean mask, length ``actual_V``, True for nodes left in a
+        deliberately-unbridged satellite component. Callers that add further
+        edges after this (deficit recovery, path-length steering) must not
+        touch these nodes — doing so would silently reconnect a satellite
+        and undo the ``target_nc`` / ``target_lcc`` guarantee established here.
     """
+    is_satellite = np.zeros(actual_V, dtype=bool)
     if actual_V < 2:
-        return
+        return is_satellite
 
     adj: list[list[int]] = [[] for _ in range(actual_V)]
     for s, o, _ in content_edges:
@@ -83,7 +93,7 @@ def _connect_components(
             comps.append(comp)
 
     if len(comps) <= 1:
-        return
+        return is_satellite
 
     comps.sort(key=len, reverse=True)
     giant = comps[0]
@@ -111,6 +121,9 @@ def _connect_components(
                 target_nc, target_lcc, len(comps),
             )
         satellites_to_keep = {id(c) for c in sats_asc[:best_j]}
+        for c in sats_asc[:best_j]:
+            for v in c:
+                is_satellite[v] = True
 
     for comp in comps[1:]:
         if id(comp) in satellites_to_keep:
@@ -124,6 +137,8 @@ def _connect_components(
             content_edges.append(triple)
             in_degrees[bridge] += 1.0
 
+    return is_satellite
+
 
 def _steer_path_lengths(
     content_edges: list,
@@ -132,6 +147,7 @@ def _steer_path_lengths(
     rng: "np.random.Generator",
     seen: set,
     in_degrees: "np.ndarray",
+    is_satellite: "np.ndarray | None" = None,
 ) -> None:
     """Steer mean path length and diameter toward Block F targets via hub shortcuts.
 
@@ -141,6 +157,14 @@ def _steer_path_lengths(
     Runs at most 4 estimation + injection rounds.
 
     No-ops when schema.path_mean_target is NaN and schema.path_hi_target is 0.
+
+    Parameters
+    ----------
+    is_satellite : np.ndarray, optional
+        Boolean mask (from ``_connect_components``) marking nodes in a
+        deliberately-unbridged satellite component. All BFS-source and
+        shortcut-endpoint sampling is restricted to the complement (the giant
+        component) so this pass cannot silently reconnect a satellite.
     """
     path_mean_target = schema.path_mean_target
     path_hi_target = schema.path_hi_target
@@ -154,9 +178,15 @@ def _steer_path_lengths(
     ig.add_edges([(s, o) for s, o, _ in content_edges
                   if s < actual_V and o < actual_V and s != o])
 
+    giant_nodes = (np.where(~is_satellite)[0] if is_satellite is not None
+                   else np.arange(actual_V))
+    n_giant = giant_nodes.size
+    if n_giant < 3:
+        return
+
     def estimate_stats(k: int = 50) -> tuple[int, float]:
         diam = ig.diameter(directed=False, unconn=True)
-        srcs = rng.choice(actual_V, size=min(k, actual_V), replace=False)
+        srcs = rng.choice(giant_nodes, size=min(k, n_giant), replace=False)
         tot = cnt = 0
         for src in srcs:
             for d in ig.distances(source=[int(src)], mode="all")[0]:
@@ -191,24 +221,24 @@ def _steer_path_lengths(
             # diameter converges from multiple directions simultaneously.
             n_hi = max(1, (diam - path_hi_target + 1) // 2)
             for _ in range(n_hi):
-                src = int(rng.integers(actual_V))
+                src = int(rng.choice(giant_nodes))
                 row = ig.distances(source=[src], mode="all")[0]
-                far = int(max(range(actual_V),
+                far = int(max(giant_nodes,
                               key=lambda v, r=row: r[v] if r[v] < float("inf") else -1))
                 add_shortcut(src, far)
 
         if not mean_ok:
-            deg = np.array(ig.degree(), dtype=np.float64)
+            deg = np.array(ig.degree(), dtype=np.float64)[giant_nodes]
             deg_sum = deg.sum()
             if deg_sum > 0:
                 p = deg / deg_sum
-                n_sc = max(1, round(actual_V ** 0.5 * (mean_path - path_mean_target) / mean_path))
+                n_sc = max(1, round(n_giant ** 0.5 * (mean_path - path_mean_target) / mean_path))
                 added = 0
                 for _ in range(n_sc * 8):
                     if added >= n_sc:
                         break
-                    if add_shortcut(int(rng.choice(actual_V, p=p)),
-                                    int(rng.choice(actual_V, p=p))):
+                    if add_shortcut(int(rng.choice(giant_nodes, p=p)),
+                                    int(rng.choice(giant_nodes, p=p))):
                         added += 1
 
     diam1, mean1 = estimate_stats(k=30)
@@ -398,10 +428,13 @@ def instantiate(
         return pool
 
     def _assign_templates(entities: list[int], pool: list[np.ndarray], reuse_zipf: float,
-                          target: list) -> None:
+                          target: list, reuse_vmax: float = float("nan")) -> None:
         """Assign entities to templates: floor each template at ≥1 entity (so every distinct
         (inverse-)CS is realised), then distribute the rest by a power-law(reuse_zipf) reuse
-        tail. Writes the chosen relation-set into ``target[v]``. Empty pool → empty set."""
+        tail. ``reuse_vmax`` truncates the raw reuse draws, mirroring the measured truncated
+        power-law's upper bound so no template dominates beyond the target's observed max
+        recurrence; NaN → unbounded. Writes the chosen relation-set into ``target[v]``.
+        Empty pool → empty set."""
         n_p = len(pool)
         if n_p == 0:
             for v in entities:
@@ -409,6 +442,8 @@ def instantiate(
             return
         order = rng.permutation(len(entities))
         fit = sample_powerlaw(reuse_zipf, n_p, rng)
+        if np.isfinite(reuse_vmax) and reuse_vmax >= 1.0:
+            fit = np.minimum(fit, reuse_vmax)
         sfit = fit.sum()
         fit = fit / sfit if sfit > 0 else np.full(n_p, 1.0 / n_p)
         for rank, oi in enumerate(order):
@@ -437,7 +472,8 @@ def instantiate(
                 buckets_sg.setdefault(int(entity_subj_group[v]), []).append(v)
             for g in range(n_sg):
                 _assign_templates(buckets_sg.get(g, []), group_fwd_pools[g],
-                                  schema.cs_template_zipf, entity_cs)
+                                  schema.cs_template_zipf, entity_cs,
+                                  reuse_vmax=schema.cs_template_vmax)
             used = len({frozenset(int(x) for x in entity_cs[v])
                         for v in range(actual_V) if entity_cs[v] is not None and len(entity_cs[v])})
             log.info("Stage 2: group forward CS (target %d templates, realised %d)",
@@ -478,11 +514,13 @@ def instantiate(
                 buckets.setdefault(int(entity_types[v]), []).append(v)
             for t in range(num_types):
                 _assign_templates(buckets.get(t, []), type_templates[t],
-                                  schema.cs_template_zipf, entity_cs)
+                                  schema.cs_template_zipf, entity_cs,
+                                  reuse_vmax=schema.cs_template_vmax)
         else:
             probs, nz = _cs_probs(-1)
             untyped = _build_distinct(probs, nz, schema.cs_size_q, max(1, schema.cs_num_templates))
-            _assign_templates(list(range(actual_V)), untyped, schema.cs_template_zipf, entity_cs)
+            _assign_templates(list(range(actual_V)), untyped, schema.cs_template_zipf,
+                              entity_cs, reuse_vmax=schema.cs_template_vmax)
         used = len({frozenset(int(x) for x in entity_cs[v]) for v in range(actual_V) if len(entity_cs[v])})
         log.info("Stage 2: forward CS (target %d distinct, realised %d)", schema.cs_num_templates, used)
     else:
@@ -512,7 +550,8 @@ def instantiate(
                 buckets_og.setdefault(int(entity_obj_group[v]), []).append(v)
             for g in range(n_og):
                 _assign_templates(buckets_og.get(g, []), group_inv_pools[g],
-                                  schema.inv_cs_template_zipf, entity_inv_cs)
+                                  schema.inv_cs_template_zipf, entity_inv_cs,
+                                  reuse_vmax=schema.inv_cs_template_vmax)
             inv_used = len({frozenset(int(x) for x in entity_inv_cs[v])
                             for v in range(actual_V) if entity_inv_cs[v] is not None and len(entity_inv_cs[v])})
             log.info("Stage 2: group inverse CS (target %d templates, realised %d)",
@@ -535,11 +574,80 @@ def instantiate(
                                         max(1, schema.inv_cs_num_templates))
         entity_inv_cs = [None] * actual_V
         _assign_templates(list(range(actual_V)), inv_templates,
-                          schema.inv_cs_template_zipf, entity_inv_cs)
+                          schema.inv_cs_template_zipf, entity_inv_cs,
+                          reuse_vmax=schema.inv_cs_template_vmax)
         inv_used = len({frozenset(int(x) for x in entity_inv_cs[v])
                         for v in range(actual_V) if len(entity_inv_cs[v])})
         log.info("Stage 2: inverse CS (target %d distinct, realised %d)",
                  schema.inv_cs_num_templates, inv_used)
+
+    # ------------------------------------------------------------------
+    # 3c. Per-entity target degrees (replace the old global max-degree caps).
+    #     Sampled target values are rank-matched to (inverse-)CS size so entities
+    #     with larger characteristic sets receive the larger degree targets —
+    #     preserving the CS-size↔degree correlation (G2b) and keeping the
+    #     ≥1-edge-per-CS-relation floor feasible.  A multinomial top-up ensures
+    #     Σ targets covers the content-edge budget so capacity caps cannot
+    #     starve edge conservation.
+    # ------------------------------------------------------------------
+
+    def _assign_degree_targets(samples: np.ndarray, rank_scores: np.ndarray) -> np.ndarray:
+        """Rank-match sampled degree targets to per-entity scores (descending)."""
+        vals = np.sort(np.asarray(samples, dtype=np.int64))[::-1]
+        if vals.size < actual_V:
+            vals = np.concatenate([vals, rng.choice(vals, size=actual_V - vals.size)])
+        vals = vals[:actual_V]
+        order = np.argsort(-rank_scores, kind="stable")
+        out = np.empty(actual_V, dtype=np.int64)
+        out[order] = vals
+        return out
+
+    def _cover_edge_budget(tgt: np.ndarray) -> np.ndarray:
+        """Top up targets multinomially so Σ targets ≥ content-edge budget."""
+        shortfall = content_E_target - int(tgt.sum())
+        if shortfall > 0:
+            tot = float(tgt.sum())
+            p = tgt / tot if tot > 0 else np.full(actual_V, 1.0 / actual_V)
+            tgt = tgt + rng.multinomial(shortfall, p)
+        return tgt
+
+    cs_sizes_all = np.array(
+        [len(entity_cs[v]) if entity_cs[v] is not None else 0 for v in range(actual_V)],
+        dtype=np.int64,
+    )
+    tgt_out: np.ndarray | None = None
+    if schema.target_out_degrees is not None and actual_V > 0:
+        samples_out = np.asarray(schema.target_out_degrees, dtype=np.int64)
+        if num_types > 0:
+            # The measured out-degree includes each typed entity's rdf:type edge,
+            # which is wired separately from the content budget.
+            samples_out = np.maximum(samples_out - 1, 0)
+        tgt_out = _assign_degree_targets(samples_out, cs_sizes_all.astype(float))
+        tgt_out = np.maximum(tgt_out, cs_sizes_all)   # keep per-CS-relation floor feasible
+        tgt_out = _cover_edge_budget(tgt_out)
+
+    tgt_in: np.ndarray | None = None
+    if schema.target_in_degrees is not None and actual_V > 0:
+        if entity_inv_cs is not None:
+            in_scores = np.array([len(entity_inv_cs[v]) if entity_inv_cs[v] is not None else 0
+                                  for v in range(actual_V)], dtype=float)
+            # Random tiebreak within equal inverse-CS sizes.
+            in_scores = in_scores + rng.random(actual_V)
+        else:
+            in_scores = rng.random(actual_V)
+        tgt_in = _assign_degree_targets(np.asarray(schema.target_in_degrees, dtype=np.int64),
+                                        in_scores)
+        tgt_in = _cover_edge_budget(tgt_in)
+
+    if tgt_out is not None or tgt_in is not None:
+        log.info(
+            "Stage 2: degree targets (%s) — out(max=%s, p90=%s) in(max=%s, p90=%s)",
+            schema.degree_mechanism,
+            int(tgt_out.max()) if tgt_out is not None else "—",
+            int(np.percentile(tgt_out, 90)) if tgt_out is not None else "—",
+            int(tgt_in.max()) if tgt_in is not None else "—",
+            int(np.percentile(tgt_in, 90)) if tgt_in is not None else "—",
+        )
 
     # ------------------------------------------------------------------
     # 4. Wire content edges: per-relation multiplicity-then-PA with edge conservation,
@@ -618,50 +726,59 @@ def instantiate(
         w_out = sample_powerlaw(_relation_alpha(schema.obj_alpha_q), n_sr, rng)
         cs_sizes = np.array([len(entity_cs[s]) for s in S_r], dtype=float)
         w_out = w_out * np.power(np.maximum(cs_sizes, 1.0), schema.a_obj)
-        if schema.out_pa_exponent > 0.0:
-            w_out = w_out * np.power(1.0 + out_degrees[subj_ids], schema.out_pa_exponent)
-        if schema.max_out_degree > 0:
-            # Zero weight for subjects already at / above the global out-degree cap.
-            w_out[out_degrees[subj_ids] >= schema.max_out_degree] = 0.0
+        if tgt_out is not None:
+            if schema.degree_mechanism == "chunglu":
+                # Expected-degree weighting: allocation ∝ sampled target degree.
+                w_out = w_out * np.maximum(tgt_out[subj_ids], 1.0)
+            else:
+                # Capacity weighting: allocation ∝ remaining quota (target − placed).
+                w_out = w_out * np.maximum(tgt_out[subj_ids] - out_degrees[subj_ids], 0.0)
         sw_out = w_out.sum()
         w_out = w_out / sw_out if sw_out > 0 else np.full(n_sr, 1.0 / n_sr)
         if edges_r >= n_sr:
             m_obj = np.ones(n_sr, dtype=np.int64) + rng.multinomial(edges_r - n_sr, w_out)
         else:
             m_obj = np.zeros(n_sr, dtype=np.int64)
-            m_obj[rng.choice(n_sr, size=edges_r, replace=False, p=w_out)] = 1
+            nz = int((w_out > 0).sum())
+            if nz >= edges_r:
+                m_obj[rng.choice(n_sr, size=edges_r, replace=False, p=w_out)] = 1
+            else:
+                # Capacity exhausted for most subjects: take every positive-weight
+                # subject and fill the remainder uniformly from the zero-weight pool.
+                m_obj[w_out > 0] = 1
+                zero_pool = np.where(w_out <= 0)[0]
+                m_obj[rng.choice(zero_pool, size=edges_r - nz, replace=False)] = 1
         _cap_redistribute(m_obj, n_or, w_out)
-        if schema.max_out_degree > 0:
-            # Hard per-subject global out-degree cap (same logic as in-side global cap).
-            out_cap = np.maximum(schema.max_out_degree - out_degrees[subj_ids], 0).astype(np.int64)
+        if tgt_out is not None and schema.degree_mechanism == "capacity":
+            # Hard per-subject quota: never exceed the sampled target degree.
+            out_cap = np.maximum(tgt_out[subj_ids] - out_degrees[subj_ids], 0).astype(np.int64)
             _cap_redistribute(m_obj, n_or, w_out, hard_cap=out_cap)
 
         # In-side: edges per object (over O_r) = power-law(α_subj) subject-multiplicity tail ×
-        # in_degree^pa hub preference × inv_cs_size^a_subj (G2b), masked by max_in_degree, then
-        # cap at |S_r| (≤ |S_r| distinct subjects per object) + redistribute. Replaces the old
-        # hard inverse-functionality cap: the object-stub multiset *is* the subject-mult law.
+        # degree-target weighting (capacity or expected-degree) × inv_cs_size^a_subj (G2b),
+        # then cap at |S_r| (≤ |S_r| distinct subjects per object) + redistribute.
+        # The object-stub multiset *is* the subject-mult law.
         w_in = sample_powerlaw(_relation_alpha(schema.subj_alpha_q), n_or, rng)
-        w_in = w_in * (in_degrees[obj_ids] ** schema.in_pa_exponent)
+        if tgt_in is not None:
+            # in_degrees starts at ones, so placed edges = in_degrees − 1.
+            if schema.degree_mechanism == "chunglu":
+                w_in = w_in * np.maximum(tgt_in[obj_ids], 1.0)
+            else:
+                w_in = w_in * np.maximum(tgt_in[obj_ids] - (in_degrees[obj_ids] - 1.0), 0.0)
         if O_r is not None and schema.a_subj != 0.0:
             inv_sizes = np.array([len(entity_inv_cs[o]) for o in O_r], dtype=float)
             w_in = w_in * np.power(np.maximum(inv_sizes, 1.0), schema.a_subj)
-        if schema.max_in_degree > 0:
-            # Per-relation cap: no object receives more distinct subjects than max_in_degree.
-            w_in[unique_src_count[obj_ids] >= schema.max_in_degree] = 0.0
-            # Global weight cap: zero out nodes already at / above the global degree limit
-            # so they receive no further allocation weight.
-            w_in[in_degrees[obj_ids] >= schema.max_in_degree] = 0.0
         sw_in = w_in.sum()
         if sw_in <= 0.0:
             continue
         m_in = rng.multinomial(edges_r, w_in / sw_in)
         _cap_redistribute(m_in, n_sr, w_in)
-        if schema.max_in_degree > 0:
-            # Hard per-node global cap: m_in[i] is limited so that total in_degrees[o]
-            # does not exceed max_in_degree.  The multinomial above can still over-allocate
-            # to a single node within one relation pass (all edges placed before in_degrees
-            # is updated).  Redistribute the excess proportionally to uncapped nodes.
-            global_cap = np.maximum(schema.max_in_degree - in_degrees[obj_ids], 0).astype(np.int64)
+        if tgt_in is not None and schema.degree_mechanism == "capacity":
+            # Hard per-object quota: never exceed the sampled target in-degree.  The
+            # multinomial above can still over-allocate to a single node within one
+            # relation pass (all edges placed before in_degrees is updated), so the
+            # excess is redistributed proportionally to nodes with remaining quota.
+            global_cap = np.maximum(tgt_in[obj_ids] - (in_degrees[obj_ids] - 1.0), 0).astype(np.int64)
             _cap_redistribute(m_in, n_sr, w_in, hard_cap=global_cap)
 
         # Pair subject-stubs with object-stubs within S_r × O_r (configuration model). Each
@@ -691,22 +808,82 @@ def instantiate(
                 break
             # else: no valid object found within retries → drop this stub (rare)
 
-    # ------------------------------------------------------------------
     log.info("Stage 2: wired %d content edges", len(content_edges))
 
     # ------------------------------------------------------------------
-    # 5. Connectivity guarantee: bridge any isolated components to the giant
+    # 5. Connectivity guarantee: bridge isolated components to the giant,
+    #     selectively — keeps up to (target_nc - 1) satellite components
+    #     unbridged to hit target_lcc, bridges the rest.  Runs *first* among
+    #     the connectivity-affecting steps so the two passes below (which
+    #     sample edge endpoints freely and would otherwise reconnect a
+    #     deliberately-kept-isolated satellite) can be told which nodes to
+    #     avoid via the returned mask.  See _connect_components.
     # ------------------------------------------------------------------
-    _connect_components(
+    is_satellite = _connect_components(
         content_edges, actual_V, schema, rng, seen, in_degrees,
         target_nc=schema.target_num_components,
         target_lcc=schema.target_lcc,
     )
+    non_satellite = ~is_satellite
 
     # ------------------------------------------------------------------
-    # 5b. Path-length steering (diameter cap + mean compression via shortcuts)
+    # 5a. Deficit recovery: per-relation budget vs degree-quota misalignment can
+    #     leave part of the edge budget unplaced (capacity mode drops overflow
+    #     rather than exceeding a node's sampled target, and skips relations
+    #     whose object pool is fully saturated).  Places the remainder by
+    #     sampling (subject, object) pairs weighted by remaining quota — the
+    #     +1e-3 smoothing lets fully saturated pools still accept edges (soft
+    #     overflow spread evenly) so edge conservation always wins.  Pools are
+    #     restricted to non-satellite nodes so this can't undo step 5's
+    #     component selection; a relation with no non-satellite subjects/objects
+    #     is skipped for that attempt.
     # ------------------------------------------------------------------
-    _steer_path_lengths(content_edges, actual_V, schema, rng, seen, in_degrees)
+    deficit = content_E_target - len(content_edges)
+    if deficit > 0 and present:
+        rel_w = np.array([schema.relation_weights[r] for r in present], dtype=float)
+        s_rw = rel_w.sum()
+        rel_w = rel_w / s_rw if s_rw > 0 else np.full(len(present), 1.0 / len(present))
+        placed = 0
+        for _ in range(deficit * MAX_PAIR_RETRY):
+            if placed >= deficit:
+                break
+            rel_idx = present[int(rng.choice(len(present), p=rel_w))]
+            subj_pool = np.asarray(subjects_by_rel[rel_idx], dtype=np.int64)
+            subj_pool = subj_pool[non_satellite[subj_pool]]
+            obj_pool = (np.asarray(objects_by_rel[rel_idx], dtype=np.int64)
+                        if objects_by_rel is not None else all_objs)
+            obj_pool = obj_pool[non_satellite[obj_pool]]
+            if subj_pool.size == 0 or obj_pool.size == 0:
+                continue
+            if tgt_out is not None:
+                w_s = np.maximum(tgt_out[subj_pool] - out_degrees[subj_pool], 0) + 1e-3
+            else:
+                w_s = np.ones(subj_pool.shape[0], dtype=float)
+            s = int(rng.choice(subj_pool, p=w_s / w_s.sum()))
+            if tgt_in is not None:
+                w_o = np.maximum(tgt_in[obj_pool] - (in_degrees[obj_pool] - 1.0), 0) + 1e-3
+            else:
+                w_o = np.ones(obj_pool.shape[0], dtype=float)
+            o = int(rng.choice(obj_pool, p=w_o / w_o.sum()))
+            predicate = schema.relations[rel_idx]
+            if s == o or (s, o, predicate) in seen:
+                continue
+            seen.add((s, o, predicate))
+            content_edges.append((s, o, predicate))
+            in_degrees[o] += 1.0
+            out_degrees[s] += 1
+            if s not in seen_src[o]:
+                seen_src[o].add(s)
+                unique_src_count[o] += 1
+            placed += 1
+        log.info("Stage 2: deficit recovery placed %d/%d missing edges", placed, deficit)
+
+    # ------------------------------------------------------------------
+    # 5b. Path-length steering (diameter cap + mean compression via shortcuts).
+    #     Restricted to non-satellite nodes for the same reason as 5a.
+    # ------------------------------------------------------------------
+    _steer_path_lengths(content_edges, actual_V, schema, rng, seen, in_degrees,
+                        is_satellite=is_satellite)
 
     # ------------------------------------------------------------------
     # 6. Build rdf:type edges

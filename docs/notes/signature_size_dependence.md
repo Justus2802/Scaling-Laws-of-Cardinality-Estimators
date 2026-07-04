@@ -36,7 +36,7 @@ Count thresholds and lengths that *drift upward* with size but do not scale line
 | `out_degree_xmin`, `in_degree_xmin` | B | power-law onset — shifts up as hubs grow |
 | `relation_zipf_xmin` | B | threshold over per-relation edge counts (∝ E) |
 | `class_size_xmin` | C | threshold over entities-per-class (∝ V) |
-| `cs_freq_xmin` | D | threshold over CS occurrence counts (∝ V) |
+| `cs_freq_vmax`, `inv_cs_freq_vmax` | D | max CS recurrence count (∝ V); `v_min` sits at the observed minimum (usually 1) |
 | `shortest_path_loc` (and `lo`/`hi`) | F | grows ~`log V` (small-world); `shape` stays size-free |
 
 ## Size-independent (intensive — shape / exponent / ratio / vocab-bounded)

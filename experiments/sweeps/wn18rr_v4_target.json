@@ -60,6 +60,10 @@
     },
     "_a_obj": 0.08709799806860682,
     "_a_subj": 0.1398547699499935,
+    "_out_degree_max": 26,
+    "_out_degree_p90": 5.0,
+    "_in_degree_max": 64,
+    "_in_degree_p90": 5.0,
     "_obj_alphas": {
       "__sig_type__": "ndarray",
       "dtype": "float64",

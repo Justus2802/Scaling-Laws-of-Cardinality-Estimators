@@ -1,4 +1,3 @@
-import math
 import os
 import sys
 import tempfile
@@ -8,9 +7,9 @@ import igraph
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from kg_io import load_kg
-from signature._orig_block_a import BlockA
+from signature import BlockA
 
-_VECTOR_LEN = 6
+_VECTOR_LEN = 3   # num_entities, num_relations, mean_degree
 
 
 class TestBlockASmallFixtures(unittest.TestCase):
@@ -28,11 +27,8 @@ class TestBlockASmallFixtures(unittest.TestCase):
         g.vs["is_literal"] = []
         a = BlockA().calculate(g)
         self.assertEqual(a.num_entities, 0)
-        self.assertEqual(a.num_triples, 0)
         self.assertEqual(a.num_relations, 0)
-        self.assertEqual(a.density, 0.0)
-        self.assertEqual(a.triples_per_entity, 0.0)
-        self.assertEqual(a.relation_reuse, 0.0)
+        self.assertEqual(a.mean_degree, 0.0)
         self.assertEqual(len(a.as_vector()), _VECTOR_LEN)
 
     def test_single_triple_values(self):
@@ -42,11 +38,8 @@ class TestBlockASmallFixtures(unittest.TestCase):
             "ex:s ex:p ex:o .\n"
         ))
         self.assertEqual(a.num_entities, 2)
-        self.assertEqual(a.num_triples, 1)
         self.assertEqual(a.num_relations, 1)
-        self.assertAlmostEqual(a.density, 1 / 4)        # 1 / 2^2
-        self.assertAlmostEqual(a.triples_per_entity, 0.5)
-        self.assertAlmostEqual(a.relation_reuse, 1.0)
+        self.assertAlmostEqual(a.mean_degree, 0.5)   # E/V = 1/2
         self.assertEqual(len(a.as_vector()), _VECTOR_LEN)
 
     def test_literals_excluded_from_entity_count(self):
@@ -56,19 +49,18 @@ class TestBlockASmallFixtures(unittest.TestCase):
             'ex:s ex:label "hello" .\n'
         ))
         self.assertEqual(a.num_entities, 1)    # only ex:s; "hello" is a literal
-        self.assertEqual(a.num_triples, 1)
         self.assertEqual(a.num_relations, 1)
+        self.assertAlmostEqual(a.mean_degree, 1.0)   # 1 triple / 1 entity
 
-    def test_density_uses_v_squared_denominator(self):
-        # 3 non-literal entities, 2 triples → density = 2/9, not 2/6
+    def test_mean_degree_is_edges_over_entities(self):
+        # 3 non-literal entities, 2 triples → mean_degree = 2/3
         a = BlockA().calculate(self._load_ttl(
             "@prefix ex: <http://example.org/> .\n"
             "ex:a ex:p ex:b .\n"
             "ex:b ex:q ex:c .\n"
         ))
         self.assertEqual(a.num_entities, 3)
-        self.assertEqual(a.num_triples, 2)
-        self.assertAlmostEqual(a.density, 2 / 9)
+        self.assertAlmostEqual(a.mean_degree, 2 / 3)
 
     def test_relation_count_distinct(self):
         # Two triples sharing the same predicate → |R| = 1, not 2
@@ -78,10 +70,9 @@ class TestBlockASmallFixtures(unittest.TestCase):
             "ex:c ex:p ex:d .\n"
         ))
         self.assertEqual(a.num_relations, 1)
-        self.assertAlmostEqual(a.relation_reuse, 2.0)   # 2 triples / 1 relation
 
-    def test_relation_reuse_multiple_predicates(self):
-        # 3 triples using 2 distinct predicates → relation_reuse = 1.5
+    def test_relation_count_multiple_predicates(self):
+        # 3 triples using 2 distinct predicates
         a = BlockA().calculate(self._load_ttl(
             "@prefix ex: <http://example.org/> .\n"
             "ex:a ex:p ex:b .\n"
@@ -89,9 +80,8 @@ class TestBlockASmallFixtures(unittest.TestCase):
             "ex:a ex:q ex:b .\n"
         ))
         self.assertEqual(a.num_relations, 2)
-        self.assertAlmostEqual(a.relation_reuse, 1.5)
 
-    def test_rdf_type_included_in_relations_and_triples(self):
+    def test_rdf_type_included_in_relations(self):
         # rdf:type is not special-cased: counts toward |E| and |R|
         ttl = (
             "@prefix ex: <http://example.org/> .\n"
@@ -100,7 +90,6 @@ class TestBlockASmallFixtures(unittest.TestCase):
             "ex:s ex:name ex:n .\n"
         )
         a = BlockA().calculate(self._load_ttl(ttl))
-        self.assertEqual(a.num_triples, 2)
         self.assertEqual(a.num_relations, 2)
 
     def test_multiple_literals_only_one_entity(self):
@@ -111,7 +100,7 @@ class TestBlockASmallFixtures(unittest.TestCase):
             'ex:s ex:age "42"^^<http://www.w3.org/2001/XMLSchema#integer> .\n'
         ))
         self.assertEqual(a.num_entities, 1)
-        self.assertEqual(a.num_triples, 2)
+        self.assertAlmostEqual(a.mean_degree, 2.0)   # 2 triples / 1 entity
 
     def test_vector_length_invariant(self):
         for ttl in [

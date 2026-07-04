@@ -28,7 +28,7 @@ exponents, path counts, path lengths — on the object for `visualize`).
 | `block_b.py` | B — G1/G2/G2b | 18 | out/in-degree power-law (target); relation-usage **Zipf**; obj/subj multiplicity-α **skew-normal** (cutoffs [1.4,3.0]); CS-size offsets `a_obj`,`a_subj` |
 | `block_c.py` | C — G3 | 23 | class-size **power-law**; subj/obj co-occurrence **exp-decay** + density; row entropy **skew-normal**; `P(r\|t)` spectrum **exp-decay**; per-type entropy **exp-decay** |
 | `block_d.py` | D — G3 | 16 | `num_distinct_cs`; CS-freq **power-law**; CS-size & inverse-CS-size **skew-normal**; two-step path-count **truncated power-law** |
-| `block_f.py` | F — G4 | 9 | components, LCC fraction, avg-local clustering, assortativity; shortest-path **skew-normal** (composes the original Block F sampler) |
+| `block_f.py` | F — G4 | 9 | components, LCC fraction, avg-local clustering, assortativity; shortest-path **skew-normal** |
 
 Reduced-signature feature count = **69** (A3 + B18 + C23 + D16 + F9). The NamedTuple fits
 (`SkewNormFit`, `ExpDecayFit`, …) restore as plain tuples through the generic JSON

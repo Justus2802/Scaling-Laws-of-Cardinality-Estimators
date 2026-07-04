@@ -55,7 +55,6 @@
     "per_type_entropy_scale": 0.9506486568575773,
     "num_distinct_cs": 9.0,
     "cs_freq_alpha": NaN,
-    "cs_freq_xmin": NaN,
     "cs_size_q00": 1.0,
     "cs_size_q10": 2.0,
     "cs_size_q25": 2.0,
@@ -65,7 +64,6 @@
     "cs_size_q100": 3.0,
     "inv_num_distinct_cs": 9.0,
     "inv_cs_freq_alpha": NaN,
-    "inv_cs_freq_xmin": NaN,
     "inv_cs_size_q00": 1.0,
     "inv_cs_size_q10": 1.0,
     "inv_cs_size_q25": 1.0,
@@ -122,6 +120,10 @@
     "out_degree_max": 12,
     "out_degree_p90": 4.0,
     "in_degree_max": 184493,
-    "in_degree_p90": 3.0
+    "in_degree_p90": 3.0,
+    "cs_freq_vmin": NaN,
+    "cs_freq_vmax": NaN,
+    "inv_cs_freq_vmin": NaN,
+    "inv_cs_freq_vmax": NaN
   }
 }

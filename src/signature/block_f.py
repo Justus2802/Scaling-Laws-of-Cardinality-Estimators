@@ -2,10 +2,8 @@
 
 Keeps the connectivity scalars (component structure, average-local clustering,
 degree assortativity) and summarises sampled shortest-path lengths as three
-descriptive statistics: max (diameter), mean, and variance.  The path sampling,
-clustering and assortativity computations are reused from the original Block F
-(composed, not re-implemented); the sampled path lengths are kept on the object
-so ``visualize`` can show their histogram.
+descriptive statistics: max (diameter), mean, and variance.  The sampled path
+lengths are kept on the object so ``visualize`` can show their histogram.
 """
 
 import math
@@ -17,9 +15,11 @@ import scipy.stats
 
 from ._logging import get_logger
 from ._block_base import SignatureBlock, _NOT_CALCULATED
-from ._orig_block_f import BlockF as _OrigBlockF, _SAMPLE_K, _N_BOOTSTRAP
 
 log = get_logger(__name__)
+
+_SAMPLE_K = 3       # default exponent: 10^k independently sampled pairs
+_N_BOOTSTRAP = 999  # accepted for signature compatibility; no longer used
 
 
 class BlockF(SignatureBlock):
@@ -105,24 +105,73 @@ class BlockF(SignatureBlock):
     ) -> "BlockF":
         """Compute reduced Block F (connectivity).
 
-        Composes the original Block F to reuse its component analysis, sampled
-        shortest-path lengths, average-local clustering and degree assortativity,
-        then computes max, mean, and variance over the finite sampled path lengths.
+        Shortest-path length is estimated by sampling 10^sample_k independent
+        (src, tgt) pairs with replacement from non-literal vertices in the largest
+        weakly connected component (LCC); max, mean and variance are taken over the
+        finite sampled lengths. Clustering and assortativity use the undirected
+        simplification of g (same pattern as Block E).
 
         Parameters
         ----------
+        n_bootstrap : int
+            Accepted for signature compatibility; no longer used (the reduced
+            block summarises the sampled lengths directly, without bootstrapping).
         skip_shortest_paths : bool
             When True, skip path-length sampling; path stats will be NaN.
         """
-        orig = _OrigBlockF().calculate(g, sample_k=sample_k, n_bootstrap=n_bootstrap,
-                                       skip_shortest_paths=skip_shortest_paths)
-        self._num_components = orig.num_components
-        self._largest_component_fraction = orig.largest_component_fraction
-        self._clustering_coefficient = orig.clustering_coefficient
-        self._degree_assortativity = orig.degree_assortativity
+        if g.vcount() == 0:
+            self._num_components = 0
+            self._largest_component_fraction = float("nan")
+            self._clustering_coefficient = float("nan")
+            self._degree_assortativity = float("nan")
+            self._pair_dists_finite = np.array([], dtype=float)
+            self._shortest_path_max = float("nan")
+            self._shortest_path_mean = float("nan")
+            self._shortest_path_var = float("nan")
+            log.info("Block F: empty graph — all features set to NaN/0")
+            return self
 
-        finite = orig._pair_dists_finite
-        finite = np.asarray(finite, dtype=float) if finite is not None else np.array([], dtype=float)
+        cc = g.connected_components(mode="weak")
+        self._num_components = len(cc)
+        log.info("Block F: computed num_components (%d)", self._num_components)
+        lcc = cc.giant()
+        self._largest_component_fraction = lcc.vcount() / g.vcount()
+        log.info(
+            "Block F: computed largest_component_fraction (%.4f, %d/%d vertices)",
+            self._largest_component_fraction, lcc.vcount(), g.vcount(),
+        )
+
+        # --- Sampled shortest-path lengths (over the LCC, undirected BFS) ---
+        if skip_shortest_paths:
+            log.info("Block F: skipping shortest-path sampling.")
+            finite = np.array([], dtype=float)
+        else:
+            non_lit: list[int] = [v.index for v in lcc.vs if not v["is_literal"]]
+            if len(non_lit) >= 2:
+                n_samples: int = 10 ** sample_k
+                rng = np.random.default_rng(42)
+                src_idx = rng.choice(len(non_lit), size=n_samples, replace=True)
+                tgt_idx = rng.choice(len(non_lit), size=n_samples, replace=True)
+                srcs: list[int] = [non_lit[i] for i in src_idx]
+                tgts: list[int] = [non_lit[i] for i in tgt_idx]
+
+                unique_srcs: list[int] = list(dict.fromkeys(srcs))
+                unique_tgts: list[int] = list(dict.fromkeys(tgts))
+                mat = np.array(
+                    lcc.distances(source=unique_srcs, target=unique_tgts, mode="all"),
+                    dtype=float,
+                )
+                src_pos: dict[int, int] = {v: i for i, v in enumerate(unique_srcs)}
+                tgt_pos: dict[int, int] = {v: i for i, v in enumerate(unique_tgts)}
+                pair_dists = np.array(
+                    [mat[src_pos[s], tgt_pos[t]] for s, t in zip(srcs, tgts)],
+                    dtype=float,
+                )
+                pair_dists[pair_dists == np.inf] = np.nan
+                finite = pair_dists[pair_dists > 0]  # exclude self-pairs (distance == 0)
+            else:
+                finite = np.array([], dtype=float)
+
         self._pair_dists_finite = finite
         if finite.size:
             self._shortest_path_max  = float(np.max(finite))
@@ -133,11 +182,16 @@ class BlockF(SignatureBlock):
             self._shortest_path_mean = float("nan")
             self._shortest_path_var  = float("nan")
 
+        # --- Clustering coefficient and assortativity (undirected simplification) ---
+        g_und = g.as_undirected(combine_edges="first").simplify()
+        self._clustering_coefficient = float(g_und.transitivity_avglocal_undirected(mode="zero"))
+        log.info("Block F: computed clustering_coefficient (%.4f)", self._clustering_coefficient)
+        self._degree_assortativity = float(g_und.assortativity_degree(directed=False))
+        log.info("Block F: computed degree_assortativity (%.4f)", self._degree_assortativity)
+
         log.info(
-            "Block F: components=%d, lcc=%.4f, clustering=%.4f, path(max=%.1f, mean=%.3f, var=%.3f)",
-            self._num_components, self._largest_component_fraction,
-            self._clustering_coefficient, self._shortest_path_max,
-            self._shortest_path_mean, self._shortest_path_var,
+            "Block F: path(max=%.1f, mean=%.3f, var=%.3f)",
+            self._shortest_path_max, self._shortest_path_mean, self._shortest_path_var,
         )
         return self
 

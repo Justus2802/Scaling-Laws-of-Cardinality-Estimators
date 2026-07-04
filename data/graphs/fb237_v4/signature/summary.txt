@@ -10,6 +10,8 @@
   obj  mult-alpha quantiles: median=2.358 IQR=[2.042,2.711] cutoffs=[1.40,3.00]
   subj mult-alpha quantiles: median=2.263 IQR=[1.985,2.544] cutoffs=[1.40,3.00]
   CS-size offset : a_obj=-0.0773  a_subj=0.0074
+  out-degree     : max=195  p90=15.0
+  in-degree      : max=1442  p90=11.0
 
 === Reduced Block C: Schema & Co-occurrence (G3) ===
   num_classes        : 0
@@ -23,10 +25,10 @@
 
 === Reduced Block D: Characteristic Sets & Two-step (G3) ===
   num_distinct_cs    : 2370
-  CS frequency       : power-law(alpha=2.6583, xmin=1.0)
+  CS frequency       : trunc. power-law(alpha=2.6561, range=[1,156])
   CS size            : quantiles(median=3.0, IQR=[2.0,6.0], range=[1.0,20.0])
   inv_num_distinct_cs: 1425
-  inverse-CS freq    : power-law(alpha=2.0353, xmin=2.0)
+  inverse-CS freq    : trunc. power-law(alpha=2.2006, range=[1,172])
   inverse-CS size    : quantiles(median=2.0, IQR=[1.0,3.0], range=[1.0,25.0])
   two-step path count: trunc. power-law(alpha=1.2796, range=[1,115200])
 
@@ -34,34 +36,31 @@
 
 --- Subgraph counts ---
   triangles:           17114
-  4-cycles:            1551692
-  5-cycles (est):      3513862
-  6-cycles (est):      155271133
-  diamonds:            414439
-  K4:                  14961
-  tailed triangles:    5612792
-
---- Star counts (induced) ---
-  k=2: 2942474  k=3: 671355761  k=4: 154444317984  k=5: 29913622997798  k=6: 4909210322441342  k=7: 677097501972804352  k=8: 84389389426672107520  k=9: 9261362575553504215040  k=10: 920313072905587678773248
+  4-cycles:            1520129
+  5-cycles (est):      3573855
+  6-cycles (est):      165156712
+  diamonds:            413970
+  K4:                  14239
+  tailed triangles:    5533706
 
 --- Path templates ---
     k  zipf_alpha     entropy
     2         nan     -0.0000
     3      1.3889      0.0357
-    4      1.2275      0.4928
-    5      1.2752      1.4223
-    6      1.1676      2.4231
-    7      1.1615      3.2567
-    8      1.1928      4.1274
-    9      1.2612      4.9718
-   10      1.3467      5.8179
+    4      1.2259      0.4896
+    5      1.2754      1.4248
+    6      1.1599      2.4323
+    7      1.1618      3.2529
+    8      1.2024      4.1733
+    9      1.2629      4.9558
+   10      1.3638      5.8215
 
 --- Tree templates ---
-  zipf_alpha=1.0621  entropy=0.1208
+  zipf_alpha=1.0621  entropy=0.1278
 
 === Reduced Block F: Connectivity (G4) ===
   num_components            : 11
   largest_component_fraction: 0.9890
   clustering_coefficient    : 0.1483
   degree_assortativity      : -0.1547
-  shortest path             : max=6.0, mean=3.399, var=0.982
+  shortest path             : max=7.0, mean=3.398, var=1.020

@@ -50,13 +50,19 @@ class Schema:
     # Block D-derived CS structure (defaults = legacy behaviour)
     cs_size_mean: float = 0.0       # 0 → derive from E/V budget at instantiate time
     cs_num_templates: int = 0       # 0 → per-entity independent sampling
-    cs_template_zipf: float = 2.0   # Zipf exponent for template frequency
+    cs_template_zipf: float = 2.0   # Zipf exponent for template frequency (cs_freq α)
+    cs_template_vmax: float = float("nan")  # reuse-draw truncation (cs_freq v_max); NaN → unbounded
     # Block B-derived edge multiplicity and degree distribution
     mean_functionality: float = 1.0      # out-side fallback only (CS-size mean when no Block D)
-    in_pa_exponent: float = 0.5          # PA exponent → aggregate in-degree hub preference
-    out_pa_exponent: float = 0.0         # PA exponent → out-degree hub preference (0 = disabled)
-    max_in_degree: int = 0               # 0 → uncapped; limits in-degree hub formation
-    max_out_degree: int = 0              # 0 → uncapped; limits out-degree hub formation
+    # Per-entity target degree sequences sampled from Block B's signature-vector
+    # components (degree power-law α, p90/max scalars, mean degree); replace the
+    # old global max-degree caps.  None → legacy PA fallback, no degree steering.
+    target_out_degrees: "np.ndarray | None" = None
+    target_in_degrees: "np.ndarray | None" = None
+    # How Stage 2 steers wiring toward the target sequences:
+    #   "capacity" — weight ∝ remaining quota (target − placed), hard cap at target
+    #   "chunglu"  — weight ∝ target degree (expected-degree model), no cap
+    degree_mechanism: str = "capacity"
     # Per-relation multiplicity shape + G2b offset (Block B); CS-size shape (Block D).
     # Defaults are NEUTRAL (no tail shape / no offset / budget-derived CS size), not the
     # old wiring — Stage 2 falls back to uniform per-subject weights when these are NaN.
@@ -70,6 +76,7 @@ class Schema:
     inv_cs_size_q: tuple = field(default_factory=lambda: _NAN_Q)
     inv_cs_num_templates: int = 0        # 0 → no inverse-CS restriction
     inv_cs_template_zipf: float = 2.0    # inverse-CS reuse skew (inv_cs_freq α)
+    inv_cs_template_vmax: float = float("nan")  # reuse-draw truncation (inv_cs_freq v_max)
     # Block F-derived connectivity targets.  Defaults reproduce current fully-connected behaviour.
     target_num_components: int = 1    # target weakly-connected component count
     target_lcc: float = 1.0           # target largest-component fraction of entity nodes

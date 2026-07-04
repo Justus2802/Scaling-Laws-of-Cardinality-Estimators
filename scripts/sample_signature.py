@@ -2,7 +2,7 @@
 """Sample a novel reduced signature from the measured corpus (doc-Stage-1).
 
 Loads the measured signatures under ``data/graphs/<name>/signature/signature.json``
-and draws one novel 69-feature signature with the v0 ``UniformRangeSampler``
+and draws one novel 88-feature signature with the v0 ``UniformRangeSampler``
 (each feature ~ uniform over its corpus range, widened by ±10 %). Writes the
 ``{"source", "features"}`` JSON to a file or stdout — the same shape as a measured
 ``signature.json``, so it is drop-in compatible with the existing readers.

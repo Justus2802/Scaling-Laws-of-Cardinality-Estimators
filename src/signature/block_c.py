@@ -5,7 +5,8 @@ each spectrum (rate λ, scale A), and the moment summaries of row entropy with a
 **quantile function**. Adds the ``P(r|t)`` type-relation spectrum as its own exp-decay
 curve (the original conflated it with ``M``). Co-occurrence density and per-type
 relation entropy are kept as targets — functionals the lossy spectrum does not
-pin. The matrix/SVD/row-entropy machinery is reused from the original Block C.
+pin. The co-occurrence matrix / SVD / row-entropy machinery lives in this
+block's own ``_build_cooc_matrix`` / ``_cooc_stats`` helpers.
 
 The ``M`` co-occurrence spectrum is **V-normalised** (the singular values are
 divided by the entity count, i.e. ``M/V``) so its ``scale`` is size-free; the
@@ -29,7 +30,6 @@ import scipy.sparse.linalg
 from ._logging import get_logger
 from ._block_base import SignatureBlock, _NOT_CALCULATED
 from ._utils import RDF_TYPE, PowerLawStats, _fit_powerlaw, _nan_power_law_stats
-from ._orig_block_c import BlockC as _OrigBlockC, _TOP_K_SV
 from ._fits import (
     ExpDecayFit,
     QuantileFit,
@@ -44,6 +44,8 @@ from ._plot_helpers import overlay_exp_decay_rank, overlay_powerlaw, overlay_qua
 from . import _distance
 
 log = get_logger(__name__)
+
+_TOP_K_SV = 10  # number of singular values retained per spectrum
 
 
 class BlockC(SignatureBlock):
@@ -145,10 +147,10 @@ class BlockC(SignatureBlock):
             obj_to_rels[e.target].add(ri)
 
         # Reuse the original matrix builder + SVD/density/row-entropy summary.
-        M_subj = _OrigBlockC._build_cooc_matrix(subj_to_rels, num_relations)
-        M_obj = _OrigBlockC._build_cooc_matrix(obj_to_rels, num_relations)
-        subj_svs, self._subj_cooc_density, subj_ent = _OrigBlockC._cooc_stats(M_subj)
-        obj_svs, self._obj_cooc_density, obj_ent = _OrigBlockC._cooc_stats(M_obj)
+        M_subj = self._build_cooc_matrix(subj_to_rels, num_relations)
+        M_obj = self._build_cooc_matrix(obj_to_rels, num_relations)
+        subj_svs, self._subj_cooc_density, subj_ent = self._cooc_stats(M_subj)
+        obj_svs, self._obj_cooc_density, obj_ent = self._cooc_stats(M_obj)
 
         # Normalise the spectra by V so the exp-decay `scale` is size-free: M holds
         # raw entity counts (top singular value ∝ V), so we divide by the entity
@@ -430,3 +432,54 @@ class BlockC(SignatureBlock):
         except Exception as exc:
             log.warning("Block C: plot failed: %s", exc, exc_info=True)
             plt.close("all")
+
+    @staticmethod
+    def _build_cooc_matrix(
+        entity_to_rels: dict[int, set[int]],
+        num_relations: int,
+    ) -> scipy.sparse.csr_matrix:
+        """Build a relation co-occurrence count matrix from a mapping entity -> {rel_idx}."""
+        rows, cols, data = [], [], []
+        for rel_set in entity_to_rels.values():
+            rel_list = list(rel_set)
+            for ri in rel_list:
+                for rj in rel_list:
+                    rows.append(ri)
+                    cols.append(rj)
+                    data.append(1)
+        if not rows:
+            return scipy.sparse.csr_matrix((num_relations, num_relations), dtype=np.int32)
+        return scipy.sparse.csr_matrix(
+            (data, (rows, cols)),
+            shape=(num_relations, num_relations),
+            dtype=np.int32,
+        )
+
+    @staticmethod
+    def _cooc_stats(
+        M: scipy.sparse.csr_matrix,
+    ) -> tuple[np.ndarray, float, np.ndarray]:
+        """Return (top-k singular values padded to _TOP_K_SV, density, row entropies)."""
+        n_rows, n_cols = M.shape
+        total_cells = n_rows * n_cols
+        density = M.nnz / total_cells if total_cells > 0 else 0.0
+
+        k = min(_TOP_K_SV, min(n_rows, n_cols) - 1)
+        svs = np.zeros(_TOP_K_SV)
+        if k > 0 and M.nnz > 0:
+            computed = scipy.sparse.linalg.svds(
+                M.astype(float), k=k, return_singular_vectors=False
+            )
+            computed = np.sort(computed)[::-1]
+            svs[:len(computed)] = computed
+
+        row_entropies = np.zeros(n_rows)
+        for i in range(n_rows):
+            row = np.asarray(M.getrow(i).todense(), dtype=float).ravel()
+            s = row.sum()
+            if s > 0:
+                p = row / s
+                p = p[p > 0]
+                row_entropies[i] = -np.sum(p * np.log(p))
+
+        return svs, density, row_entropies

@@ -22,7 +22,6 @@ import numpy as np
 from ._logging import get_logger
 from ._block_base import SignatureBlock, _NOT_CALCULATED
 from ._utils import MIN_SAMPLES_FOR_FIT, PowerLawStats, _fit_powerlaw
-from ._orig_block_b import BlockB as _OrigBlockB
 from ._fits import (
     QuantileFit,
     QUANTILE_LEVELS,
@@ -338,11 +337,11 @@ class BlockB(SignatureBlock):
             in_degrees = self._require("_in_degrees", self._in_degrees)
             fig, axes = plt.subplots(2, 3, figsize=(18, 9))
 
-            # Degree targets: raw histogram + fitted power-law (reused from original).
-            _OrigBlockB._plot_degree_hist(axes[0, 0], out_degrees, self.out_degree_fit,
-                                          "Out-degree distribution (target)", False)
-            _OrigBlockB._plot_degree_hist(axes[0, 1], in_degrees, self.in_degree_fit,
-                                          "In-degree distribution (target)", False)
+            # Degree targets: raw histogram + fitted power-law.
+            self._plot_degree_hist(axes[0, 0], out_degrees, self.out_degree_fit,
+                                   "Out-degree distribution (target)", False)
+            self._plot_degree_hist(axes[0, 1], in_degrees, self.in_degree_fit,
+                                   "In-degree distribution (target)", False)
 
             # Relation-usage frequency: raw per-predicate edge counts + Zipf tail.
             ax = axes[0, 2]
@@ -384,3 +383,37 @@ class BlockB(SignatureBlock):
         except Exception as exc:
             log.warning("Block B: plot failed: %s", exc, exc_info=True)
             plt.close("all")
+
+    @staticmethod
+    def _plot_degree_hist(ax, degrees: np.ndarray, fit: PowerLawStats, title: str, log_scale: bool) -> None:
+        """Plot a degree histogram with an overlaid fitted power-law tail."""
+        pos = degrees[degrees > 0]
+        if pos.size == 0:
+            ax.set_title(f"{title} (no data)")
+            return
+
+        if log_scale:
+            bins = np.logspace(np.log10(pos.min()), np.log10(pos.max() + 1), 30)
+        else:
+            bins = np.linspace(pos.min(), pos.max() + 1, 30)
+        counts, edges = np.histogram(pos, bins=bins)
+        centers = (edges[:-1] + edges[1:]) / 2
+        plot_fn = ax.loglog if log_scale else ax.plot
+        plot_fn(centers[counts > 0], counts[counts > 0], "o", markersize=4, label="data")
+
+        if not np.isnan(fit.alpha) and not np.isnan(fit.xmin):
+            xmin = max(int(fit.xmin), 1)
+            x_fit = np.arange(xmin, pos.max() + 1, dtype=float)
+            y_fit = x_fit ** (-fit.alpha)
+            # normalize scale to histogram counts above xmin
+            tail_counts, _ = np.histogram(pos[pos >= xmin], bins=bins)
+            total = tail_counts.sum()
+            if total > 0:
+                y_fit = y_fit / y_fit.sum() * total
+            plot_fn(x_fit, y_fit, "-", color="red", linewidth=1.5,
+                    label=f"powerlaw α={fit.alpha:.2f}")
+
+        ax.set_xlabel("degree")
+        ax.set_ylabel("count")
+        ax.set_title(title)
+        ax.legend(fontsize=8)

@@ -1,11 +1,15 @@
 """Reduced Block D — Characteristic sets, inverse CS & two-step targets (G3).
 
 Replaces the original mean/median/p90 CS-size summaries with a **quantile
-function** fit, keeps CS-frequency as a power-law, and stores the two-step pair
-**path-count** distribution as a **truncated power-law** (free α on a bounded
-range). Inverse-CS size is kept as a target (object-side wiring aggregation, not
-given by subject multiplicity). The CS / inverse-CS / path-count computations
-are reused from the original Block D.
+function** fit, and stores CS-frequency, inverse-CS-frequency and the two-step
+pair **path-count** distributions as **truncated power-laws** (free α on the
+observed bounded range). Recurrence counts are inherently bounded by the entity
+count, and pinning the range removes the free-``xmin`` instability that made
+the fits incomparable across graphs (and let α < 2 fits explode the roundtrip
+W1 distance). Inverse-CS size is kept as a target (object-side wiring
+aggregation, not given by subject multiplicity). The CS / inverse-CS /
+path-count computations are done by this block's own ``_compute_cs`` /
+``_compute_inv_cs`` / ``_two_step_pair_counts`` helpers.
 
 The unsummarised CS sizes, CS-frequency counts and path counts are kept on the
 object so ``visualize`` can overlay each fit on the data it was computed from.
@@ -19,8 +23,6 @@ import numpy as np
 
 from ._logging import get_logger
 from ._block_base import SignatureBlock, _NOT_CALCULATED
-from ._utils import PowerLawStats, _fit_powerlaw, _nan_power_law_stats
-from ._orig_block_d import BlockD as _OrigBlockD
 from ._fits import (
     QuantileFit,
     QUANTILE_LEVELS,
@@ -31,7 +33,7 @@ from ._fits import (
     nan_quantiles,
     nan_trunc_powerlaw,
 )
-from ._plot_helpers import overlay_powerlaw, overlay_quantiles, overlay_truncated_powerlaw
+from ._plot_helpers import overlay_quantiles, overlay_truncated_powerlaw
 from . import _distance
 
 log = get_logger(__name__)
@@ -74,8 +76,8 @@ class BlockD(SignatureBlock):
         return self._require("num_distinct_cs", self._num_distinct_cs)
 
     @property
-    def cs_freq_fit(self) -> PowerLawStats:
-        return self._require("cs_freq_fit", self._cs_freq_fit)
+    def cs_freq_fit(self) -> TruncPowerLawFit:
+        return TruncPowerLawFit(*self._require("cs_freq_fit", self._cs_freq_fit))
 
     @property
     def cs_size_q(self) -> QuantileFit:
@@ -86,8 +88,8 @@ class BlockD(SignatureBlock):
         return self._require("inv_num_distinct_cs", self._inv_num_distinct_cs)
 
     @property
-    def inv_cs_freq_fit(self) -> PowerLawStats:
-        return self._require("inv_cs_freq_fit", self._inv_cs_freq_fit)
+    def inv_cs_freq_fit(self) -> TruncPowerLawFit:
+        return TruncPowerLawFit(*self._require("inv_cs_freq_fit", self._inv_cs_freq_fit))
 
     @property
     def inv_cs_size_q(self) -> QuantileFit:
@@ -101,8 +103,8 @@ class BlockD(SignatureBlock):
 
     def calculate(self, g: igraph.Graph) -> "BlockD":
         """Compute reduced Block D (CS, inverse CS, two-step path counts)."""
-        cs_of = _OrigBlockD._compute_cs(g)
-        inv_cs_of = _OrigBlockD._compute_inv_cs(g)
+        cs_of = self._compute_cs(g)
+        inv_cs_of = self._compute_inv_cs(g)
 
         cs_sizes = np.fromiter((len(cs) for cs in cs_of.values()), dtype=float, count=len(cs_of)) \
             if cs_of else np.array([], dtype=float)
@@ -116,21 +118,22 @@ class BlockD(SignatureBlock):
         self._cs_size_q = fit_quantiles(cs_sizes) if cs_sizes.size else nan_quantiles()
         self._inv_cs_size_q = fit_quantiles(inv_cs_sizes) if inv_cs_sizes.size else nan_quantiles()
 
-        # CS frequency: how often each distinct (inverse-)CS recurs → power-law.
+        # CS frequency: how often each distinct (inverse-)CS recurs → truncated
+        # power-law on the observed range (recurrence is bounded by |entities|).
         if cs_of:
             freq = Counter(cs_of.values())
             self._cs_freq_counts = np.fromiter(freq.values(), dtype=float, count=len(freq))
-            self._cs_freq_fit = _fit_powerlaw(self._cs_freq_counts)
+            self._cs_freq_fit = fit_truncated_powerlaw(self._cs_freq_counts)
         else:
             self._cs_freq_counts = np.array([], dtype=float)
-            self._cs_freq_fit = _nan_power_law_stats()
+            self._cs_freq_fit = nan_trunc_powerlaw()
         if inv_cs_of:
             inv_freq = Counter(inv_cs_of.values())
             self._inv_cs_freq_counts = np.fromiter(inv_freq.values(), dtype=float, count=len(inv_freq))
-            self._inv_cs_freq_fit = _fit_powerlaw(self._inv_cs_freq_counts)
+            self._inv_cs_freq_fit = fit_truncated_powerlaw(self._inv_cs_freq_counts)
         else:
             self._inv_cs_freq_counts = np.array([], dtype=float)
-            self._inv_cs_freq_fit = _nan_power_law_stats()
+            self._inv_cs_freq_fit = nan_trunc_powerlaw()
 
         # Two-step path counts → truncated power-law over the full value set.
         pair_counts, top_pairs = self._two_step_pair_counts(g)
@@ -149,24 +152,23 @@ class BlockD(SignatureBlock):
         return self
 
     def as_vector(self) -> list[float]:
-        """Flatten to a fixed-length 23-vector for cross-KG comparison.
+        """Flatten to a fixed-length 25-vector for cross-KG comparison.
 
         Layout (forward then inverse, symmetric): num_distinct_cs; CS-frequency
-        power-law (alpha, xmin); CS-size quantile function (7); inv_num_distinct_cs;
-        inverse-CS-frequency power-law (alpha, xmin); inverse-CS-size quantile
-        function (7); two-step truncated power-law (alpha, v_min, v_max).
+        truncated power-law (alpha, v_min, v_max); CS-size quantile function (7);
+        inv_num_distinct_cs; inverse-CS-frequency truncated power-law (alpha,
+        v_min, v_max); inverse-CS-size quantile function (7); two-step truncated
+        power-law (alpha, v_min, v_max).
 
         Attributes absent from stale serialized data are emitted as NaN.
         """
         n_q = len(QUANTILE_LEVELS)
         return [
             self._safe_scalar(lambda: self.num_distinct_cs),
-            self._safe_scalar(lambda: self.cs_freq_fit.alpha),
-            self._safe_scalar(lambda: self.cs_freq_fit.xmin),
+            *self._safe_iter(lambda: self.cs_freq_fit, 3),
             *self._safe_iter(lambda: self.cs_size_q, n_q),
             self._safe_scalar(lambda: self.inv_num_distinct_cs),
-            self._safe_scalar(lambda: self.inv_cs_freq_fit.alpha),
-            self._safe_scalar(lambda: self.inv_cs_freq_fit.xmin),
+            *self._safe_iter(lambda: self.inv_cs_freq_fit, 3),
             *self._safe_iter(lambda: self.inv_cs_size_q, n_q),
             *self._safe_iter(lambda: self.two_step_fit, 3),
         ]
@@ -174,9 +176,10 @@ class BlockD(SignatureBlock):
     @classmethod
     def feature_names(cls) -> list[str]:
         """Return feature names in the same order as :meth:`as_vector`."""
-        names = ["num_distinct_cs", "cs_freq_alpha", "cs_freq_xmin"]
+        names = ["num_distinct_cs", "cs_freq_alpha", "cs_freq_vmin", "cs_freq_vmax"]
         names += [f"cs_size_{s}" for s in QUANTILE_SUFFIXES]
-        names += ["inv_num_distinct_cs", "inv_cs_freq_alpha", "inv_cs_freq_xmin"]
+        names += ["inv_num_distinct_cs", "inv_cs_freq_alpha", "inv_cs_freq_vmin",
+                  "inv_cs_freq_vmax"]
         names += [f"inv_cs_size_{s}" for s in QUANTILE_SUFFIXES]
         names += ["two_step_alpha", "two_step_vmin", "two_step_vmax"]
         return names
@@ -184,7 +187,7 @@ class BlockD(SignatureBlock):
     @classmethod
     def get_na_vec(cls) -> list[float]:
         """Return a NaN vector the same length as as_vector()."""
-        return [float("nan")] * (3 + len(QUANTILE_LEVELS) + 3 + len(QUANTILE_LEVELS) + 3)
+        return [float("nan")] * (4 + len(QUANTILE_LEVELS) + 4 + len(QUANTILE_LEVELS) + 3)
 
     def distribution_fits(self) -> list[tuple[str, object, str]]:
         """Return ``(name, fit, kind)`` for each reportable distribution.
@@ -193,9 +196,9 @@ class BlockD(SignatureBlock):
         distribution between this block and a re-measured one.
         """
         return [
-            ("cs_freq", self.cs_freq_fit, _distance.POWERLAW),
+            ("cs_freq", self.cs_freq_fit, _distance.TRUNC_POWERLAW),
             ("cs_size", self.cs_size_q, _distance.QUANTILE),
-            ("inv_cs_freq", self.inv_cs_freq_fit, _distance.POWERLAW),
+            ("inv_cs_freq", self.inv_cs_freq_fit, _distance.TRUNC_POWERLAW),
             ("inv_cs_size", self.inv_cs_size_q, _distance.QUANTILE),
             ("two_step", self.two_step_fit, _distance.TRUNC_POWERLAW),
         ]
@@ -217,13 +220,31 @@ class BlockD(SignatureBlock):
     # ── private helpers ───────────────────────────────────────────────────────
 
     @staticmethod
+    def _compute_cs(g: igraph.Graph) -> dict[int, frozenset[str]]:
+        """Single g.es pass → cs_of[v_idx] = frozenset of outgoing predicates."""
+        cs_of: defaultdict[int, set[str]] = defaultdict(set)
+        for e in g.es:
+            cs_of[e.source].add(e["predicate"])
+        return {v: frozenset(preds) for v, preds in cs_of.items()}
+
+    @staticmethod
+    def _compute_inv_cs(g: igraph.Graph) -> dict[int, frozenset[str]]:
+        """Single g.es pass → inv_cs_of[v_idx] = frozenset of incoming predicates (non-literals only)."""
+        inv_cs_of: defaultdict[int, set[str]] = defaultdict(set)
+        is_literal: list[bool] = g.vs["is_literal"]
+        for e in g.es:
+            if not is_literal[e.target]:
+                inv_cs_of[e.target].add(e["predicate"])
+        return {v: frozenset(preds) for v, preds in inv_cs_of.items()}
+
+    @staticmethod
     def _two_step_pair_counts(g: igraph.Graph) -> tuple[np.ndarray, list[tuple[str, str, int]]]:
         """Return the full path-count value set and the top pairs (for viz).
 
         Path count per ``(in_pred q, out_pred p)`` is
         ``Σ_x deg_in(x,q)·deg_out(x,p)`` — the multiplicity-weighted 2-hop count.
-        Mirrors the original Block D computation but returns the *complete* count
-        array (so the truncated power-law sees every value), not just the top-k.
+        Returns the *complete* count array (so the truncated power-law sees
+        every value), not just the top-k.
         """
         out_deg: defaultdict[int, Counter] = defaultdict(Counter)
         in_deg: defaultdict[int, Counter] = defaultdict(Counter)
@@ -249,14 +270,15 @@ class BlockD(SignatureBlock):
 
     def _visualize_text(self, path: str | None) -> None:
         cs, inv = self.cs_size_q, self.inv_cs_size_q
+        cf, icf = self.cs_freq_fit, self.inv_cs_freq_fit
         ts = self.two_step_fit
         lines = [
             "=== Reduced Block D: Characteristic Sets & Two-step (G3) ===",
             f"  num_distinct_cs    : {self.num_distinct_cs}",
-            f"  CS frequency       : power-law(alpha={self.cs_freq_fit.alpha:.4f}, xmin={self.cs_freq_fit.xmin})",
+            f"  CS frequency       : trunc. power-law(alpha={cf.alpha:.4f}, range=[{cf.v_min:.0f},{cf.v_max:.0f}])",
             f"  CS size            : quantiles(median={cs.q50:.1f}, IQR=[{cs.q25:.1f},{cs.q75:.1f}], range=[{cs.q0:.1f},{cs.q100:.1f}])",
             f"  inv_num_distinct_cs: {self.inv_num_distinct_cs}",
-            f"  inverse-CS freq    : power-law(alpha={self.inv_cs_freq_fit.alpha:.4f}, xmin={self.inv_cs_freq_fit.xmin})",
+            f"  inverse-CS freq    : trunc. power-law(alpha={icf.alpha:.4f}, range=[{icf.v_min:.0f},{icf.v_max:.0f}])",
             f"  inverse-CS size    : quantiles(median={inv.q50:.1f}, IQR=[{inv.q25:.1f},{inv.q75:.1f}], range=[{inv.q0:.1f},{inv.q100:.1f}])",
             f"  two-step path count: trunc. power-law(alpha={ts.alpha:.4f}, range=[{ts.v_min:.0f},{ts.v_max:.0f}])",
         ]
@@ -301,23 +323,23 @@ class BlockD(SignatureBlock):
             if self._cs_freq_counts is _NOT_CALCULATED:
                 ax.text(0.5, 0.5, _missing, ha="center", va="center",
                         transform=ax.transAxes, fontsize=8)
-            elif not overlay_powerlaw(ax, self._cs_freq_counts, self.cs_freq_fit,
-                                      label="CS freq", color="seagreen"):
+            elif not overlay_truncated_powerlaw(ax, self._cs_freq_counts, self.cs_freq_fit,
+                                                label="CS freq"):
                 ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
             ax.set_xlabel("recurrence count per distinct CS")
             ax.set_ylabel("P(X ≥ x)")
-            ax.set_title("Forward CS frequency (fit: power-law, CCDF)")
+            ax.set_title("Forward CS frequency (fit: trunc. power-law, CCDF)")
 
             ax = axes[1, 1]
             if self._inv_cs_freq_counts is _NOT_CALCULATED:
                 ax.text(0.5, 0.5, _missing, ha="center", va="center",
                         transform=ax.transAxes, fontsize=8)
-            elif not overlay_powerlaw(ax, self._inv_cs_freq_counts, self.inv_cs_freq_fit,
-                                      label="inverse CS freq", color="mediumvioletred"):
+            elif not overlay_truncated_powerlaw(ax, self._inv_cs_freq_counts,
+                                                self.inv_cs_freq_fit, label="inverse CS freq"):
                 ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
             ax.set_xlabel("recurrence count per distinct inverse CS")
             ax.set_ylabel("P(X ≥ x)")
-            ax.set_title("Inverse CS frequency (fit: power-law, CCDF)")
+            ax.set_title("Inverse CS frequency (fit: trunc. power-law, CCDF)")
 
             axes[1, 2].axis("off")  # spare cell in the 2×3 grid
 

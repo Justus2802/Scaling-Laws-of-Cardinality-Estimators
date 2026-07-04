@@ -6,7 +6,9 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from signature import BlockA, BlockB, BlockC, BlockD  # noqa: E402
-from signature._fits import ExpDecayFit, ZipfFit, fit_quantiles, nan_exp_decay  # noqa: E402
+from signature._fits import (  # noqa: E402
+    ExpDecayFit, TruncPowerLawFit, ZipfFit, fit_quantiles, nan_exp_decay,
+)
 from signature._utils import PowerLawStats  # noqa: E402
 from generator import sample_schema, instantiate  # noqa: E402
 
@@ -65,9 +67,9 @@ def _make_block_d(
     d._cs_size_q = _q(cs_size_loc, 1.0, 1.0, 8.0)
     d._inv_cs_size_q = _q(inv_cs_size_loc, 1.0, 1.0, 8.0)
     d._num_distinct_cs = num_distinct_cs
-    d._cs_freq_fit = _pls(cs_freq_alpha)
+    d._cs_freq_fit = TruncPowerLawFit(cs_freq_alpha, 1.0, 100.0)
     d._inv_num_distinct_cs = inv_num_distinct_cs
-    d._inv_cs_freq_fit = _pls(inv_cs_freq_alpha)
+    d._inv_cs_freq_fit = TruncPowerLawFit(inv_cs_freq_alpha, 1.0, 100.0)
     return d
 
 
@@ -117,9 +119,10 @@ class TestStage2EdgeBudget(unittest.TestCase):
         content = _content_edges(g)
         target = schema.num_triples - schema.num_entities
         # _connect_components may add a small number of bridge edges (one per
-        # isolated component) beyond the budget to guarantee connectivity.
-        num_components = len(g.connected_components(mode="weak"))
-        self.assertLessEqual(len(content), target + num_components)
+        # isolated component *before* bridging) beyond the budget to guarantee
+        # connectivity; the final component count under-counts them, so allow a
+        # small absolute slack instead.
+        self.assertLessEqual(len(content), target + 8)
         self.assertGreaterEqual(len(content), 0.7 * target)
 
     def test_no_subject_multiplicity_cap(self):

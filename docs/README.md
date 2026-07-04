@@ -20,9 +20,9 @@ build records) in [`notes/`](notes/).
   property guards, `visualize` split, logging conventions, selective block computation).
 
 A single `signature` package (`src/signature/`) provides the public Blocks A–F as the
-reduced, non-over-determined measurements; the over-determined "full" measurements are
-retained internally as `_orig_block_*` modules (the reduced blocks delegate to them, and the
-`test_signature_block_*` tests exercise them directly). Both `scripts/measure_signature.py`
+reduced, non-over-determined measurements. Each block is a single class in `block_<x>.py`
+(the earlier `_orig_block_*` "full" measurements have been folded in and removed); the
+`test_signature_block_*` tests exercise these blocks directly. Both `scripts/measure_signature.py`
 and `scripts/measure_signature_reduced.py` now produce the reduced signature and write a
 `signature/` directory next to each graph file (`data/graphs/<name>/signature/`).
 `scripts/measure_all_raw.py` runs it over all raw KGs in `data/graphs/` and the test
