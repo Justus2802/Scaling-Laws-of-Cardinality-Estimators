@@ -1,10 +1,12 @@
 """Plot Stage 3 convergence curves from one or more CSV files.
 
 Each CSV is produced by refine() when convergence_log is set.  Columns:
-  accepted, loss, tri_err, [c4_err, diamond_err, k4_err, paw_err,] [c5_err, c6_err,]
+  step, accepted, loss, tri_err, [c4_err, diamond_err, k4_err, paw_err,] [c5_err, c6_err,]
   [cc_err,] [assort_err], sig_tri_err, [sig_c4_err, …], sig_c5_err
 
-All metric columns are relative errors (plotted against a 0 reference line).  The
+``step`` is the proposal index (accepted + rejected) and forms the x-axis;
+``accepted`` is the accepted-swap count so far.  All metric columns are relative
+errors (plotted against a 0 reference line).  The
 ``sig_*_err`` columns are ground-truth errors measured periodically on the full
 graph; ``sig_c5_err`` is the global (induced) 5-cycle error, validating the
 incremental cycle delta.
@@ -57,8 +59,8 @@ def main() -> None:
             sys.exit(f"File not found: {p}")
         datasets[p.stem] = _load_csv(p)
 
-    # Collect available metric columns (union across files, excluding accepted/loss)
-    _skip = {"accepted", "loss"}
+    # Collect available metric columns (union across files, excluding step/accepted/loss)
+    _skip = {"step", "accepted", "loss"}
     all_metrics: list[str] = []
     seen: set[str] = set()
     for data in datasets.values():
@@ -107,11 +109,13 @@ def main() -> None:
         for label, data in datasets.items():
             if feat not in data:
                 continue
-            xs = data.get("accepted", list(range(len(data[feat]))))
+            # Plot over proposals (``step``); fall back to ``accepted`` for older
+            # CSVs that predate the step column, then to a plain row index.
+            xs = data.get("step") or data.get("accepted") or list(range(len(data[feat])))
             ax.plot(xs, data[feat], marker=".", markersize=4, linewidth=1, label=label)
         ax.axhline(0, color="gray", linewidth=0.8, linestyle="--")
         ax.set_title(feat, fontsize=9)
-        ax.set_xlabel("accepted swaps")
+        ax.set_xlabel("proposals")
         if idx % ncols == 0:
             ax.set_ylabel("error")
         if len(datasets) > 1:

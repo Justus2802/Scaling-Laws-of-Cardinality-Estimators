@@ -54,11 +54,12 @@ python scripts/sample_signature.py --out sampled.json
 ```
 
 ### `signature_roundtrip.py`
-Full pipeline test: loads a target reduced signature for a named graph, runs Stage 3 to generate a synthetic graph, re-measures it, and compares the result to the target. Useful for end-to-end validation.
+Full pipeline test: loads a target reduced signature for a named graph, runs Stage 3 to generate a synthetic graph, re-measures it, and compares the result to the target. Useful for end-to-end validation. `--convergence-log` records the Stage-3 convergence CSV (auto-named into `experiments/convergence_logs/`; plot with `convergence_plot.py`); `--swap-log` records one row per evaluated Stage-3 swap proposal — per-motif deltas, Δloss, accepted — auto-named into `experiments/swap_delta_logs/` (plot with `swap_delta_viz.py`).
 
 ```
 python scripts/signature_roundtrip.py aids
 python scripts/signature_roundtrip.py wn18rr_v4 --seed 7 --rewire-budget 5000
+python scripts/signature_roundtrip.py wn18rr_v4 --swap-log
 python scripts/signature_roundtrip.py --kg-file path/to/graph.ttl
 ```
 
@@ -94,6 +95,14 @@ python scripts/cc_variance_viz.py experiments/cc_variance_sweeps/wn18rr_v4_sweep
 python scripts/cc_variance_viz.py <csv> --out fig.png --meta path/to/meta.json
 ```
 
+### `profile_stage3_deltas.py`
+Profiles the **per-swap incremental delta cost** of Stage 3 on a graph's Stage-2 synthetic output (diagnoses slow `refine()` runs, e.g. fb237_v4). Rebuilds the exact Stage-2 graph a `signature_roundtrip.py` run feeds into `refine()` (same derived seeds from `--seed`), replays Stage-3's uniform swap-proposal sampling, and times `_triangle_node_delta`, `_motif4_delta`, and `_cycle_delta` (k=5 and k=6 separately, unguarded, plus the node-level-guarded k5+k6 call Stage 3 actually runs with the current `CYCLE_DELTA_MAX_DEGREE`) per proposal, each bounded by `--timeout` seconds via SIGALRM (timed-out costs are censored at the cap, so aggregates are lower bounds). Writes per-proposal timings + endpoint degrees (`proposals_<graph>_seed<seed>.csv`), the Stage-2 degree distribution (`degree_stats_<graph>_seed<seed>.csv`), and a regenerated `summary.md` aggregating every profiled graph, all to `experiments/stage3_delta_profiling/`.
+
+```
+python scripts/profile_stage3_deltas.py fb237_v4 wn18rr_v4
+python scripts/profile_stage3_deltas.py fb237_v4 --proposals 300 --timeout 5
+```
+
 ## Visualisation
 
 ### `convergence_plot.py`
@@ -106,12 +115,21 @@ python scripts/convergence_plot.py experiments/conv_a.csv --list-features
 ```
 
 ### `sweep_viz.py`
-Visualises per-feature relative-error distributions from a sweep JSONL file produced by `sweep_collect.py`. Supports box and violin plots; can list available features.
+Visualises per-feature relative-error distributions from a sweep JSONL file produced by `sweep_collect.py`. Supports box and violin plots; can list available features. With no `--features`, all non-NaN features are plotted. A final `mean |rel err|` panel aggregates the shown features — per (config, seed) it averages the absolute relative error across all shown features, then box-plots those per-seed means across seeds in the same style — giving one overall error level per config (also printed in the console mean ± std table).
 
 ```
+python scripts/sweep_viz.py experiments/fb237_v4_ind.jsonl  # all features
 python scripts/sweep_viz.py experiments/fb237_v4_ind.jsonl --features triangle_count four_cycle_count
 python scripts/sweep_viz.py experiments/fb237_v4_ind.jsonl --kind violin --out fig.png
 python scripts/sweep_viz.py experiments/fb237_v4_ind.jsonl --list-features
+```
+
+### `swap_delta_viz.py`
+Analyses a Stage-3 swap-proposal log (from `signature_roundtrip.py --swap-log` / `refine(swap_log=…)`). Writes five outputs next to the CSV: `<csv>.png` — per-motif histograms of nonzero deltas (accepted vs rejected overlaid, a grey Δ=0 bar, zero-delta fraction in each panel title); `<csv>_leverage.png` — per-motif |delta| vs max endpoint degree scatters plus a cumulative-leverage curve (share of total |delta| carried by the top-x% of proposals); `<csv>_metrics.csv` — per-motif summary (zero-delta %, |delta| percentiles, top-1 %/10 % leverage shares, accept rates); `<csv>_loss.png` — swap *usefulness*: the signed loss-Δ distribution (accepted vs rejected; mass left of 0 is useful since loss is minimised) and a cumulative-usefulness curve; `<csv>_loss_metrics.csv` — useful % (accepted & Δloss<0), improving/neutral/harmful %, accept rates per class, and improvement concentration. Metrics also print to the console. Guard-dropped delta cells are excluded from stats and counted in the panel titles. Built to assess whether an approximate hub delta is viable and how many attempted swaps actually help.
+
+```
+python scripts/swap_delta_viz.py experiments/swap_delta_logs/swaps_wn18rr_v4_seed42_rb5000.csv
+python scripts/swap_delta_viz.py <csv> --motifs d_c4 d_c6 --out fig.png
 ```
 
 ### `plot_signature_distributions.py`

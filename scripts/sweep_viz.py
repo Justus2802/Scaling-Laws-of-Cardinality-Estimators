@@ -1,10 +1,19 @@
 """Visualise per-feature relative error distributions from a sweep JSONL file.
 
-Error is defined as |target - synth| / max(|target|, 1e-9) per feature.
+Error is defined as (synth - target) / max(|target|, 1e-9) per feature (signed).
 Features with a NaN target value are skipped.
+
+With no --features, every non-NaN feature is plotted.
+
+Two final aggregate boxes summarise the shown features. Per (config, seed) the
+absolute relative errors across all shown features are collected, then that
+per-seed set is reduced to its mean ("mean |rel err|" — overall error level) and
+its population variance ("var |rel err|" — how unevenly the error is spread across
+features); each is box-plotted across seeds in the same style.
 
 Usage
 -----
+    python scripts/sweep_viz.py experiments/fb237_v4_ind.jsonl  # all features
     python scripts/sweep_viz.py experiments/fb237_v4_ind.jsonl \\
         --features triangle_count clustering_coefficient four_cycle_count
     python scripts/sweep_viz.py experiments/fb237_v4_ind.jsonl \\
@@ -52,19 +61,27 @@ def _all_feature_names(sig_dict: dict) -> list[str]:
     return names
 
 
-def _stage1_caps(target_dict: dict) -> tuple[int, int]:
-    """Return (max_out_degree, max_in_degree) as computed by Stage 1 for a target.
+def _stage1_degree_targets(target_dict: dict) -> tuple[int, int, int, int]:
+    """Return (max_out, p90_out, max_in, p90_in) of Stage 1's sampled degree targets.
 
-    Runs sample_schema with a fixed seed; the caps are deterministic (no randomness).
-    Returns (0, 0) if block A or B are unavailable.
+    Runs sample_schema with a fixed seed (the sampled sequence is seed-dependent,
+    but its max/p90 are stable summaries). Returns zeros when unavailable.
     """
+    import numpy as np
+
     a = _reconstruct_block("a", target_dict.get("a"))
     b = _reconstruct_block("b", target_dict.get("b"))
     c = _reconstruct_block("c", target_dict.get("c"))
     if a is None or c is None:
-        return 0, 0
+        return 0, 0, 0, 0
     schema = sample_schema(a, c, b=b, seed=0)
-    return schema.max_out_degree, schema.max_in_degree
+    t_out, t_in = schema.target_out_degrees, schema.target_in_degrees
+    return (
+        int(t_out.max()) if t_out is not None else 0,
+        int(np.percentile(t_out, 90)) if t_out is not None else 0,
+        int(t_in.max()) if t_in is not None else 0,
+        int(np.percentile(t_in, 90)) if t_in is not None else 0,
+    )
 
 
 def _degree_stats(synth_dict: dict) -> dict:
@@ -107,7 +124,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("jsonl", type=Path, help="JSONL file produced by sweep_collect.py")
     parser.add_argument("--features", nargs="+", metavar="NAME",
-                        help="Feature names to plot (from feature_names() of each block)")
+                        help="Feature names to plot (from feature_names() of each "
+                             "block); default: all non-NaN features")
     parser.add_argument("--target", type=Path, default=None,
                         help="Target JSON file (default: <graph>_target.json next to JSONL)")
     parser.add_argument("--kind", choices=["box", "violin"], default="box",
@@ -147,10 +165,11 @@ def main() -> None:
         blk = _reconstruct_block(letter, target_dict.get(letter))
         target_features.update(_block_feature_map(blk))
 
-    # Compute stage-1 degree caps (deterministic from the target).
-    cap_out, cap_in = _stage1_caps(target_dict)
+    # Stage-1 sampled degree targets (summary of what Stage 2 steers toward).
+    t_max_out, t_p90_out, t_max_in, t_p90_in = _stage1_degree_targets(target_dict)
     cap_str = (
-        f"stage-2 caps: max_out={cap_out or 'none'}  max_in={cap_in or 'none'}"
+        f"stage-2 degree targets: out(max={t_max_out or 'none'}, p90={t_p90_out or '—'})  "
+        f"in(max={t_max_in or 'none'}, p90={t_p90_in or '—'})"
     )
 
     # Print per-record degree stats before any feature filtering.
@@ -179,8 +198,13 @@ def main() -> None:
             print(f"  {name:<45}  target={tval:.4g}{nan_note}")
         return
 
+    # Default to every non-NaN feature when none are requested (NaN targets are
+    # skipped in the error metric, so they would render empty).
     if not args.features:
-        sys.exit("Specify --features or use --list-features to see available names.")
+        args.features = [n for n, v in target_features.items() if not math.isnan(v)]
+        if not args.features:
+            sys.exit("No non-NaN features available to plot.")
+        print(f"No --features given; plotting all {len(args.features)} non-NaN features.")
 
     # Validate requested feature names
     unknown = [f for f in args.features if f not in target_features]
@@ -230,6 +254,34 @@ def main() -> None:
             if err is not None and not math.isnan(sval):
                 groups[label][feat].append((sidx, err))
 
+    # Derived aggregate columns: for each (config, seed) collect the absolute
+    # relative errors across the shown features, then summarise that per-seed set
+    # by its mean and its (population) variance. Both are box-plotted across seeds
+    # in the same style — the mean is the overall error level, the variance is how
+    # unevenly that error is spread across features (0 = every feature equally off).
+    # Uses |signed error| so over- and under-estimates don't cancel.
+    from collections import defaultdict as _defaultdict
+    _MEAN_KEY = "mean |rel err|"
+    _VAR_KEY = "var |rel err|"
+
+    def _pop_var(vals: list[float]) -> float:
+        m = sum(vals) / len(vals)
+        return sum((v - m) ** 2 for v in vals) / len(vals)
+
+    for lbl in groups:
+        per_seed: dict[int, list[float]] = _defaultdict(list)
+        for feat in args.features:
+            for sidx, err in groups[lbl][feat]:
+                per_seed[sidx].append(abs(err))
+        groups[lbl][_MEAN_KEY] = [
+            (sidx, sum(vals) / len(vals)) for sidx, vals in per_seed.items()
+        ]
+        groups[lbl][_VAR_KEY] = [
+            (sidx, _pop_var(vals)) for sidx, vals in per_seed.items()
+        ]
+    # Real features first, then the aggregate boxes on the right.
+    plot_features = list(args.features) + [_MEAN_KEY, _VAR_KEY]
+
     # Sort config labels by budget then interval for a natural left-to-right order
     def _label_sort_key(lbl: str):
         # format: "B{budget}" or "B{budget}/I{interval}"
@@ -238,10 +290,30 @@ def main() -> None:
 
     config_labels = sorted(groups.keys(), key=_label_sort_key)
 
+    # Per-config, per-feature summary: mean signed relative error across seeds and
+    # its standard deviation (spread of the per-seed errors around that mean).
+    import numpy as np
+
+    print(f"\nsigned relative error — mean ± std across seeds ({graph_name})")
+    print(f"{'config':>12}  {'feature':<40}  {'n':>3}  {'mean':>10}  {'std':>10}")
+    print("-" * 82)
+    for lbl in config_labels:
+        for feat in plot_features:
+            errs = [v for _, v in groups[lbl][feat]]
+            if not errs:
+                print(f"{lbl:>12}  {feat:<40}  {0:>3}  {'n/a':>10}  {'n/a':>10}")
+                continue
+            arr = np.asarray(errs, dtype=float)
+            # ddof=0 for a single seed avoids a NaN std.
+            std = float(arr.std(ddof=1)) if arr.size > 1 else 0.0
+            print(f"{lbl:>12}  {feat:<40}  {arr.size:>3}  "
+                  f"{arr.mean():>+10.4f}  {std:>10.4f}")
+    print()
+
     import matplotlib.pyplot as plt
     import matplotlib.cm as cm
 
-    n_feat = len(args.features)
+    n_feat = len(plot_features)
     fig, axes = plt.subplots(1, n_feat, figsize=(max(6, 4 * n_feat), 5), squeeze=False)
     fig.suptitle(f"Signed relative error by config — {graph_name}", fontsize=12)
 
@@ -249,7 +321,7 @@ def main() -> None:
     cmap = cm.get_cmap("tab10" if n_seeds <= 10 else "tab20", max(n_seeds, 1))
     seed_colors = {i: cmap(i) for i in range(n_seeds)}
 
-    for col, feat in enumerate(args.features):
+    for col, feat in enumerate(plot_features):
         ax = axes[0][col]
         # Strip seed index for boxplot/violin (they just need raw values)
         raw_per_config = [[v for _, v in groups[lbl][feat]] for lbl in config_labels]
@@ -274,8 +346,15 @@ def main() -> None:
             ax.set_xticklabels(config_labels, rotation=30, ha="right", fontsize=8)
 
         ax.axhline(0, color="gray", linewidth=0.8, linestyle="--")
-        ax.set_title(feat, fontsize=9)
-        ax.set_ylabel("signed relative error" if col == 0 else "")
+        if feat == _MEAN_KEY:
+            ax.set_title(f"mean |rel err|\n({len(args.features)} features)", fontsize=9)
+            ax.set_ylabel("mean absolute relative error")
+        elif feat == _VAR_KEY:
+            ax.set_title(f"var |rel err|\n({len(args.features)} features)", fontsize=9)
+            ax.set_ylabel("variance of |rel err| across features")
+        else:
+            ax.set_title(feat, fontsize=9)
+            ax.set_ylabel("signed relative error" if col == 0 else "")
 
     # Add a shared seed legend on the last axis
     if n_seeds > 0:

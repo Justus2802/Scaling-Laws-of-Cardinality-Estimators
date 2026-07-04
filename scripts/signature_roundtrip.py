@@ -21,6 +21,7 @@ import argparse
 import json
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -53,25 +54,42 @@ _DEFAULT_SEARCH_DIRS: list[Path] = [
     _REPO / "data" / "test_graphs",
 ]
 
-# Where auto-named Stage 3 convergence CSVs are written.
+# Where auto-named Stage 3 convergence / swap-proposal CSVs are written.
 _CONVERGENCE_LOG_DIR = _REPO / "experiments" / "convergence_logs"
+_SWAP_LOG_DIR = _REPO / "experiments" / "swap_delta_logs"
 
 
-def _auto_convergence_log_path(graph_label: str, args) -> Path:
-    """Build a convergence-log path under ``experiments/convergence_logs/``.
+def _auto_log_path(log_dir: Path, prefix: str, graph_label: str, args,
+                   run_ts: str) -> Path:
+    """Build an auto-named Stage-3 log path under ``log_dir``.
 
-    The filename encodes the graph name and the run options (seed, rewire
-    budget, and the skip-templates flag) so distinct runs don't overwrite each
-    other.
+    The filename encodes the graph name, the run options (seed, rewire budget,
+    and the skip-templates flag) and the run timestamp so distinct runs — even
+    with identical options — don't overwrite each other.
 
+    :param log_dir: Destination directory (e.g. ``experiments/convergence_logs``).
+    :param prefix: Filename prefix (``conv`` or ``swaps``).
     :param graph_label: Name of the source graph (corpus name or file stem).
     :param args: Parsed CLI namespace supplying the run options.
-    :returns: Destination path for the convergence CSV.
+    :param run_ts: Run timestamp string (``YYYYmmdd_HHMMSS``).
+    :returns: Destination path for the CSV.
     """
     parts = [graph_label, f"seed{args.seed}", f"rb{args.rewire_budget}"]
     if args.skip_templates:
         parts.append("skiptmpl")
-    return _CONVERGENCE_LOG_DIR / ("conv_" + "_".join(parts) + ".csv")
+    parts.append(run_ts)
+    return log_dir / (f"{prefix}_" + "_".join(parts) + ".csv")
+
+
+def _resolve_log_path(value: "str | None", log_dir: Path, prefix: str,
+                      graph_label: str, args, run_ts: str) -> "Path | None":
+    """Resolve a log CLI value: ``"AUTO"`` → auto-named path (dir created),
+    explicit string → that path, ``None`` → no log."""
+    if value == "AUTO":
+        path = _auto_log_path(log_dir, prefix, graph_label, args, run_ts)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+    return Path(value) if value else None
 
 
 def _load_block(cls, path: Path):
@@ -207,7 +225,7 @@ def main():
     parser.add_argument(
         "--out", default=None,
         help="Where to save the synthetic graph (.ttl or .nt). "
-             "Default: <graph>_synth.ttl next to the source.",
+             "Default: <graph>_synth_<timestamp>.ttl next to the source.",
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--rewire-budget", type=int, default=5_000)
@@ -216,37 +234,45 @@ def main():
                              "is auto-named from the graph name and run options and "
                              "written to experiments/convergence_logs/. Pass an "
                              "explicit path to override.")
+    parser.add_argument("--swap-log", nargs="?", const="AUTO", default=None,
+                        help="Write a Stage 3 swap-proposal CSV (one row per evaluated "
+                             "proposal: per-motif deltas, Δloss, accepted). With no "
+                             "value, auto-named into experiments/swap_delta_logs/. "
+                             "Pass an explicit path to override. Plot with "
+                             "scripts/swap_delta_viz.py.")
     parser.add_argument("--skip-templates", action="store_true",
                         help="Skip path/tree template and star measurement on both "
                              "target and synthetic (saves ~8 min on medium graphs).")
     args = parser.parse_args()
 
+    # Single per-run timestamp stamped into every auto-named output (graph,
+    # synthetic signature dir, convergence/swap logs) so repeated runs — even
+    # with identical options — don't overwrite each other.
+    run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
     # ── Step 1: obtain the target signature ──────────────────────────────────
     if args.kg_file:
         kg_path = Path(args.kg_file)
         target_sig, tblocks = _measure_target_from_file(kg_path, skip_templates=args.skip_templates)
-        default_out = kg_path.with_name(kg_path.stem + "_synth.ttl")
+        default_out = kg_path.with_name(f"{kg_path.stem}_synth_{run_ts}.ttl")
         graph_label = kg_path.stem
         graph_dir = kg_path.parent
     elif args.graph:
         search_dirs = [Path(args.graphs_dir)] if args.graphs_dir else _DEFAULT_SEARCH_DIRS
         print(f"Loading   : cached target signature for '{args.graph}' from {[str(d) for d in search_dirs]}")
         target_sig, tblocks, found_graph_dir = _load_target_from_corpus(args.graph, search_dirs)
-        default_out = found_graph_dir / f"{args.graph}_synth.ttl"
+        default_out = found_graph_dir / f"{args.graph}_synth_{run_ts}.ttl"
         graph_label = args.graph
         graph_dir = found_graph_dir
     else:
         parser.error("provide a corpus graph name or --kg-file")
 
-    # Resolve the convergence-log destination: AUTO → generated path under the
-    # experiments dir; an explicit value → that path; absent → no log.
-    if args.convergence_log == "AUTO":
-        conv_log_path = _auto_convergence_log_path(graph_label, args)
-        conv_log_path.parent.mkdir(parents=True, exist_ok=True)
-    elif args.convergence_log:
-        conv_log_path = Path(args.convergence_log)
-    else:
-        conv_log_path = None
+    # Resolve the log destinations: AUTO → generated path under the experiments
+    # dir; an explicit value → that path; absent → no log.
+    conv_log_path = _resolve_log_path(
+        args.convergence_log, _CONVERGENCE_LOG_DIR, "conv", graph_label, args, run_ts)
+    swap_log_path = _resolve_log_path(
+        args.swap_log, _SWAP_LOG_DIR, "swaps", graph_label, args, run_ts)
 
     ta, tb, tc, td, te, tf = (
         tblocks["a"], tblocks["b"], tblocks["c"], tblocks["d"], tblocks["e"], tblocks["f"],
@@ -259,10 +285,13 @@ def main():
         seed=args.seed,
         rewire_budget=args.rewire_budget,
         convergence_log=conv_log_path,
+        swap_log=swap_log_path,
     )
     print(f"  {g_synth.vcount():,} nodes  {g_synth.ecount():,} edges")
     if conv_log_path is not None:
         print(f"  convergence log → {conv_log_path}")
+    if swap_log_path is not None:
+        print(f"  swap log → {swap_log_path}")
     print(f"  best loss {g_synth['stage3_best_loss']:.6f} reached at accepted swap {g_synth['stage3_best_accepted']}")
 
     # ── Step 3: save synthetic graph ─────────────────────────────────────────
@@ -287,7 +316,7 @@ def main():
     # 'signature_synth/' dir next to the source graph, mirroring the measured
     # 'signature/' dir so the two are directly comparable / drop-in for readers.
     synth_sig = ReducedGraphSignature(a=sa, b=sb, c=sc, d=sd, e=se, f=sf)
-    synth_dir = graph_dir / "signature_synth"
+    synth_dir = graph_dir / f"signature_synth_{run_ts}"
     synth_written = write_signature_outputs(
         synth_sig, synth_dir, source=str(out_path)
     )

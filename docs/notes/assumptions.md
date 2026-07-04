@@ -181,11 +181,8 @@ path-template entropy statistics that are the primary Block E consumer for k = 6
 ### Deterministic graph sizes
 `instantiate` uses `schema.num_entities` and `schema.num_triples` directly — no Gaussian noise. Requesting 30 nodes produces exactly 30 nodes.
 
-### PA exponent is data-driven from Block B
-`schema.in_pa_exponent` is derived from `block_b.in_degree_fit.alpha` via the Dorogovtsev-Mendes PA↔power-law inversion `β = 1/(α−2)`, clamped to [0.1, 2.0]. When α ≤ 2 or Block B is absent the default 0.5 is used. For typical KG in-degree exponents (α ≈ 2.5–3.5) this gives β ≈ 0.4–2.0.
-
-### Max in-degree cap from Block B
-`schema.max_in_degree = max(10, n^(1/(α−1)) × 3)` caps the in-degree of any single node during Stage 2. This limits pathological hub formation (PA with β>1 can otherwise concentrate all in-edges on one node) and reduces object co-occurrence density. Set to 0 (uncapped) when Block B is absent.
+### Degree steering targets sampled sequences, not PA + caps
+`schema.target_out_degrees` / `target_in_degrees` are per-entity target degree sequences sampled purely from signature-vector components — degree power-law α, the `p90`/`max` degree scalars, and mean degree `E/V` — never Block B's raw retained arrays (Stage 2 must work from the fit alone). Construction: top 10% of nodes from a power law truncated to `[p90, max]`, remaining 90% from a Poisson body clipped at p90 with mean solved for edge conservation. Stage 2 weights allocation by remaining quota `(target − placed)⁺` with a per-node hard quota (`degree_mechanism = "capacity"`), replacing the old `in_degree^pa` preferential attachment plus extreme-value max-degree caps. When the p90/max scalars are missing (stale signatures) the targets are `None` and Stage 2 applies no degree factor at all — re-measure or patch the signature to get degree steering.
 
 ### Inverse functionality cap on (predicate, object) pairs
 The cap is only active when `mean_inv_functionality < 0.7` **and** `⌈1/mean_inv_func⌉ ≥ 2`. Previous formula `round(1/x)` collapsed to 1 for any x > 0.5, blocking all sharing and causing a ~35% edge deficit. Now uses `ceil` and requires the cap to be at least 2 so that some sharing is always permitted.

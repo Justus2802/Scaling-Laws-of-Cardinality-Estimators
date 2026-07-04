@@ -25,6 +25,7 @@ from ._adapters import (
     _functionality_from_alpha,
     _reconstruct_singular_values,
     _quantile_mean,
+    sample_degree_sequence,
 )
 from ._logging import get_logger
 from .schema import Schema, _NAN_Q
@@ -33,11 +34,6 @@ log = get_logger(__name__)
 
 # ── Tuning constants (Stage-1 schema) — adjust here ─────────────────────────────
 DEFAULT_ZIPF_EXPONENT = 2.0        # fallback for relation- / CS-frequency Zipf exponents
-PA_EXPONENT_BOUNDS = (0.1, 2.0)    # clamp on the in-degree PA exponent (Dorogovtsev–Mendes)
-PA_EXPONENT_DEFAULT = 0.5          # fallback PA exponent when in-degree α is unusable
-MIN_ALPHA_FOR_PA = 2.0             # α_in must exceed this for a finite-mean power-law tail
-MIN_ALPHA_FOR_MAX_DEGREE = 1.1     # α_in threshold for the extreme-value max-in-degree estimate
-MAX_IN_DEGREE_FLOOR = 10           # floor on the expected max in-degree
 FUNCTIONALITY_FLOOR = 0.1          # clamp floor for mean_functionality (out-side)
 # Connectivity fallbacks when Block F is absent (fully-connected behaviour).
 DEFAULT_NUM_COMPONENTS = 1
@@ -311,55 +307,48 @@ def sample_schema(
             float(d.cs_freq_fit.alpha)
             if not math.isnan(d.cs_freq_fit.alpha) else DEFAULT_ZIPF_EXPONENT
         )
+        # Truncate Stage-2 reuse draws at the measured max recurrence: the fitted
+        # α covers the full bounded range, so unbounded draws would over-skew.
+        cs_template_vmax = float(d.cs_freq_fit.v_max)
     else:
         cs_size_mean = 0.0   # signal instantiate to derive from E/V budget
         cs_num_templates = 0
         cs_template_zipf = DEFAULT_ZIPF_EXPONENT
+        cs_template_vmax = float("nan")
 
-    # --- Edge multiplicity, PA exponent, inverse functionality from Block B ---
+    # --- Edge multiplicity, degree targets, inverse functionality from Block B ---
     if b is not None:
         mean_functionality = _functionality_from_alpha(b.obj_alpha_q, floor=FUNCTIONALITY_FLOOR)
     else:
         mean_functionality = 1.0
 
     if b is not None:
-        alpha_in = b.in_degree_fit.alpha
-        # Dorogovtsev-Mendes relation: α = 2 + 1/β → β = 1/(α−2)
-        # α must be > MIN_ALPHA_FOR_PA for a finite-mean power law; clamp β to PA_EXPONENT_BOUNDS.
-        if not math.isnan(alpha_in) and alpha_in > MIN_ALPHA_FOR_PA:
-            in_pa_exponent = float(np.clip(1.0 / (alpha_in - 2.0), *PA_EXPONENT_BOUNDS))
-        else:
-            in_pa_exponent = PA_EXPONENT_DEFAULT
-        # Expected maximum in-degree / out-degree: n^(1/(α−1)) (extreme-value statistic)
+        # Target degree sequences (replace the old extreme-value max-degree caps):
+        # one target degree per entity, sampled purely from signature-vector
+        # components — the degree power-law α, the p90/max degree scalars and the
+        # mean degree — never Block B's raw retained arrays.  Stage 2 steers
+        # wiring toward these, so the whole distribution (body, p90, max) is
+        # targeted rather than a single hard cap.  NaN p90/max (old signatures)
+        # → None → no degree steering in Stage 2.
         n_ent = a.num_entities
-        if not math.isnan(alpha_in) and alpha_in > MIN_ALPHA_FOR_MAX_DEGREE and n_ent > 0:
-            max_in_degree = max(MAX_IN_DEGREE_FLOOR, int(round(n_ent ** (1.0 / (alpha_in - 1.0)))))
-        else:
-            max_in_degree = 0
-        # Out-degree cap: out-degree is bounded by object-multiplicity, not driven by
-        # unbounded PA, so the extreme-value formula n^(1/(α-1)) overshoots badly.
-        # Instead, derive max_out from max_in scaled by the steepness ratio α_in/α_out:
-        # heavier out-degree tail (lower α_out) → relatively larger max_out_degree.
-        alpha_out = b.out_degree_fit.alpha
-        if (not math.isnan(alpha_out) and alpha_out > MIN_ALPHA_FOR_MAX_DEGREE
-                and max_in_degree > 0):
-            alpha_ratio = alpha_in / max(alpha_out, 1.0)
-            max_out_degree = max(MAX_IN_DEGREE_FLOOR, int(round(max_in_degree / alpha_ratio)))
-        else:
-            max_out_degree = 0
-        # Out-side PA exponent: same Dorogovtsev-Mendes inversion as the in-side.
-        # Makes nodes that already have high out-degree attract more stubs in later
-        # relation passes, concentrating out-degree onto fewer hubs and sharpening
-        # the heavy tail that drives star counts.
-        if not math.isnan(alpha_out) and alpha_out > MIN_ALPHA_FOR_PA:
-            out_pa_exponent = float(np.clip(1.0 / (alpha_out - 2.0), *PA_EXPONENT_BOUNDS))
-        else:
-            out_pa_exponent = 0.0
+        mean_deg = num_triples / n_ent if n_ent > 0 else float("nan")
+
+        def _safe(fn) -> float:
+            """Value of a Block B property, NaN when absent from stale data."""
+            try:
+                return float(fn())
+            except RuntimeError:
+                return float("nan")
+
+        target_out_degrees = sample_degree_sequence(
+            b.out_degree_fit.alpha, _safe(lambda: b.out_degree_p90),
+            _safe(lambda: b.out_degree_max), mean_deg, n_ent, rng)
+        target_in_degrees = sample_degree_sequence(
+            b.in_degree_fit.alpha, _safe(lambda: b.in_degree_p90),
+            _safe(lambda: b.in_degree_max), mean_deg, n_ent, rng)
     else:
-        in_pa_exponent = PA_EXPONENT_DEFAULT
-        out_pa_exponent = 0.0
-        max_in_degree = 0
-        max_out_degree = 0
+        target_out_degrees = None
+        target_in_degrees = None
 
     # --- Per-relation multiplicity shape (G2) + CS-size offset (G2b) + CS-size shape ---
     # Stored as plain quantile tuples; Stage 2 samples a per-relation α from obj_alpha_q
@@ -378,11 +367,17 @@ def sample_schema(
         float(d.inv_cs_freq_fit.alpha)
         if (d is not None and not math.isnan(d.inv_cs_freq_fit.alpha)) else DEFAULT_ZIPF_EXPONENT
     )
+    inv_cs_template_vmax = float(d.inv_cs_freq_fit.v_max) if d is not None else float("nan")
 
     log.info(
-        "Stage 1: schema ready — mean_functionality=%.3f, in_pa_exponent=%.3f, out_pa_exponent=%.3f, "
-        "max_in_degree=%d, max_out_degree=%d, cs_num_templates=%d, a_obj=%.3f, obj_alpha_qmin=%.3f",
-        mean_functionality, in_pa_exponent, out_pa_exponent, max_in_degree, max_out_degree,
+        "Stage 1: schema ready — mean_functionality=%.3f, "
+        "degree targets out(max=%s, p90=%s) in(max=%s, p90=%s), "
+        "cs_num_templates=%d, a_obj=%.3f, obj_alpha_qmin=%.3f",
+        mean_functionality,
+        int(target_out_degrees.max()) if target_out_degrees is not None else "—",
+        int(np.percentile(target_out_degrees, 90)) if target_out_degrees is not None else "—",
+        int(target_in_degrees.max()) if target_in_degrees is not None else "—",
+        int(np.percentile(target_in_degrees, 90)) if target_in_degrees is not None else "—",
         cs_num_templates, a_obj, obj_alpha_q[0],
     )
     target_num_components = int(f.num_components) if f is not None else DEFAULT_NUM_COMPONENTS
@@ -408,11 +403,10 @@ def sample_schema(
         cs_size_mean=cs_size_mean,
         cs_num_templates=cs_num_templates,
         cs_template_zipf=cs_template_zipf,
+        cs_template_vmax=cs_template_vmax,
         mean_functionality=mean_functionality,
-        in_pa_exponent=in_pa_exponent,
-        out_pa_exponent=out_pa_exponent,
-        max_in_degree=max_in_degree,
-        max_out_degree=max_out_degree,
+        target_out_degrees=target_out_degrees,
+        target_in_degrees=target_in_degrees,
         obj_alpha_q=obj_alpha_q,
         a_obj=a_obj,
         subj_alpha_q=subj_alpha_q,
@@ -421,6 +415,7 @@ def sample_schema(
         inv_cs_size_q=inv_cs_size_q,
         inv_cs_num_templates=inv_cs_num_templates,
         inv_cs_template_zipf=inv_cs_template_zipf,
+        inv_cs_template_vmax=inv_cs_template_vmax,
         subj_group_probs=subj_group_probs,
         subj_group_weights=subj_group_weights,
         obj_group_probs=obj_group_probs,

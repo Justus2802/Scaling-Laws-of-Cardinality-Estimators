@@ -176,8 +176,11 @@ where most of the fidelity fixes live.
    (+1e-3 smoothing so saturated pools still accept soft overflow) — edge conservation always
    wins. Subject/object pools are filtered to non-satellite nodes first; a relation left with an
    empty pool on either side is skipped for that attempt.
-7b. **Path-length steering** (`_steer_path_lengths`) — runs only when `path_mean_target` or
-    `path_hi_target` are set. Builds a temporary undirected igraph entity graph (igraph C backend)
+7b. **Path-length steering** (`_steer_path_lengths`) — gated by the module constant
+    `PATH_STEERING_ENABLED` (currently `False`; logs a warning and no-ops when disabled but a
+    Block F path target is set) and otherwise runs only when `path_mean_target` or
+    `path_hi_target` are set. Because it can only *add* shortcut edges, it can only shorten paths,
+    never lengthen them — hence disabled for now. Builds a temporary undirected igraph entity graph (igraph C backend)
     and runs up to 4 rounds of estimate → inject shortcuts, with all BFS-source and
     shortcut-endpoint sampling restricted to non-satellite nodes:
     - *Diameter (hi):* find farthest-pair from a random BFS; add
@@ -211,17 +214,47 @@ live adjacency dict (not an `igraph.Graph`) so each swap is cheap.
   under degree-preserving swaps, so only per-node `Δt_v` (from the triangle delta) drives it.
 - **4-node motifs** (C4, diamond, K4, paw) — exact, incremental `_motif4_delta`: enumerates the
   motif 4-sets touching the four swap endpoints before and after, and diffs per-type counts
-  (O(Δ³) per swap).
+  (O(Δ³) per swap). Guarded by `MOTIF4_DELTA_MAX_DEGREE` on the **max endpoint degree** — unlike
+  the cycle DFS, motif4 candidates come from the endpoint neighbourhoods `N(a)∪N(b)`, so the
+  endpoint degree bounds the cost exactly (no interior explosion). Swaps above the guard skip
+  the delta and carry the motif4 counts over (loss terms cancel in the accept test); `refine()`
+  logs the computed/dropped tally. Profiled on fb237_v4: unguarded ~57 ms mean per proposal
+  (1.2 s max on hub swaps) — the dominant per-swap cost once the cycle guard is active; at
+  guard 200, 88 % of proposals still steer motif4 with a ~47 ms worst case.
 - **5-/6-cycles** — these are **induced (chordless)** cycles (degree sequences `(2,2,2,2,2)` /
   `(2,2,2,2,2,2)`), matching the motif counters. Exact, incremental `_cycle_delta`: counts induced
   cycles through the swap endpoints before and after and diffs them (O(Δ⁴)/O(Δ⁵) per swap — best
   left off for hub-heavy graphs). A swap changes the count both by adding/removing a cycle edge
   **and** by adding a chord (destroys an induced cycle) or removing one (can create an induced
   cycle). Only active when a Block-E cycle target is > 0.
-  Swaps that touch a node with simple degree > `CYCLE_DELTA_MAX_DEGREE` (default 50) **skip** the
-  delta — on such hubs the O(Δ⁴)/O(Δ⁵) enumeration can stall the walk for minutes — and carry the
-  cycle counts over unchanged, so the cycle loss terms cancel in the accept test and neither favour
-  nor penalise the hub swap.
+  The per-pair arc enumeration behind the delta is selected by the module-level
+  `_cycles_through_pair` switch in `local_updates.py`. The default is
+  `_induced_cycles_through_pair_mitm`, an **anchored meet-in-the-middle** scan that generates each
+  arc's interior vertices by intersecting the two endpoints' neighbourhoods (C-speed `set` ops)
+  instead of a recursive induced-path DFS; it returns identical cycle sets (parity-tested against
+  the recursive DFS `_induced_cycles_through_pair` and the brute-force oracle in
+  `tests/_brute_motifs.py`) and is **~2.1–3.2× faster** on random neighbourhoods (measured: sparse
+  n20/p.15 2.1×, medium n30/p.25 2.4–2.8×, dense n40/p.40 2.6–3.2×, very dense n50/p.55 3.1×). The
+  win is a **constant factor** — both remain O(Δ^(k-2)) worst case, so the degree guard below is
+  still required on hub-heavy graphs. Point `_cycles_through_pair` at
+  `_induced_cycles_through_pair` to fall back to the DFS.
+  The delta is guarded by `CYCLE_DELTA_MAX_DEGREE` (a tuning constant at the top of `stage3.py`),
+  applied to **every node the
+  enumerator is about to branch over** — swap endpoints and arc-adjacent interiors alike (the MITM
+  scan branches over fewer interior nodes than the DFS, so at a given guard it drops *slightly*
+  less often; both still return exact counts whenever they compute). On the first
+  node whose simple degree exceeds the guard, the whole delta for that swap is dropped
+  (`_cycle_delta` returns `None`) and the cycle counts carry over unchanged, so the cycle loss
+  terms cancel in the accept test and neither favour nor penalise the swap. Interior guarding
+  matters because endpoint filtering alone is not enough: profiling on fb237_v4
+  (`experiments/stage3_delta_profiling/`, `scripts/profile_stage3_deltas.py`) shows that with the
+  guard off the 6-cycle delta alone is ≥ 94 % of per-swap delta time (median ≥ 2.6 s per
+  proposal), and the DFS branches through high-degree *interior* vertices — even swaps whose
+  endpoints all have degree < 50 average ~2 s. The tradeoff is that most searches encounter
+  *some* node above the guard, so most swaps drop the delta and cycle steering is largely frozen —
+  measured at guard 20: 100 % of fb237_v4 proposals dropped, and even sparse wn18rr_v4 (where the
+  unguarded delta costs ~1 ms) drops 92 %. Speed over c5/c6 fidelity; raise the guard (or set
+  `float("inf")`) on graphs whose unguarded delta is already cheap.
 - **Degree assortativity** — exact, incremental (only the cross-product sum `Q` changes).
 - **Depth-2 tree template entropy** — exact, incremental `_tree_entropy_delta` (O(Δ) per swap).
   Maintains a live `(r1, r2)` pair-frequency dict across the SA walk; on each candidate swap the
@@ -252,19 +285,41 @@ live adjacency dict (not an `igraph.Graph`) so each swap is cheap.
   clustering terms (triangles/CC/diamond/K4/paw), so keep the probability modest.
 
 The SA loss is a weighted sum of relative errors. Both the loss and the convergence log derive
-from a single `_error_terms(state)` helper (returning one relative error per active target), so each
-term is defined once: the loss is the weighted sum, the log is the unweighted dump. The best graph
-seen is returned, then components are re-bridged. When a `convergence_log` is given, each active
-term writes a relative-error column every `CONVERGENCE_LOG_INTERVAL` accepted swaps (`tri_err`,
+from a single `_error_terms(state)` helper, so each term is defined once: the loss is the weighted
+sum of the unsigned magnitudes, the log is the unweighted dump of the **signed** errors
+(`_error_terms(state, signed=True)`, i.e. `(current − target) / |target|`, negative = under target,
+positive = over) so the direction of each miss is visible against the 0 reference line. The best
+graph seen is returned, then components are re-bridged. When a `convergence_log` is given, each
+active term writes a relative-error column every `CONVERGENCE_LOG_INTERVAL` *proposals* (accepted or
+rejected — the `step` column is the proposal index and forms the plot x-axis; `accepted` is the
+accepted-swap count so far): `tri_err`,
 motif4 `*_err`, `c5/c6_err`, `cc_err`, `assort_err`, `tree_entropy_err`, `path_entropy_k3_err`, and
 `star_k{k}_err` per tracked k). Setting `CONVERGENCE_LOG_GLOBAL_REMEASURE = True` additionally
 re-measures the full graph each logged row and appends ground-truth `sig_*_err` columns (validates
 the incremental deltas; expensive).
 
+When a `swap_log` is given, `refine()` additionally writes one CSV row per *evaluated* swap
+proposal (proposals discarded by the self-loop guard produce no row): context columns `step`,
+`targeted`, `deg_s1`/`deg_o1`/`deg_s2`/`deg_o2`/`deg_max4` (pre-swap simple degrees), the per-motif
+deltas `d_tri`, `d_c4`/`d_diamond`/`d_k4`/`d_paw` (only for active motif4 targets) and
+`d_c5`/`d_c6` (only when steered), plus `d_loss` and `accepted`. Delta cells are left **empty**
+when a degree guard dropped that delta (guards are respected, never force-computed for the log).
+The log exists to measure per-swap motif *leverage* — how many proposals move each motif and by
+how much, and whether the leverage concentrates in hub swaps — to assess whether an approximate
+hub delta would be viable. Analyse with `scripts/swap_delta_viz.py`.
+
 > **Runtime note.** The incremental deltas are O(Δᵏ⁻¹) per *attempted* swap, so they dominate
 > Stage-3 cost on hub-heavy graphs. Lower `--rewire-budget` or disable a steering term (set its
-> `LOSS_WEIGHT_*` to 0). The costliest cycle/star deltas also honour the `CYCLE_DELTA_MAX_DEGREE`
-> and `STAR_CENTER_MAX_DEGREE` hub guards.
+> `LOSS_WEIGHT_*` to 0). The two costliest deltas honour degree guards and log their
+> computed/dropped tallies: the 5/6-cycle update via `CYCLE_DELTA_MAX_DEGREE` (node-level —
+> checks every DFS-expanded node and drops the delta on the first hub encountered) and the
+> 4-node motif update via `MOTIF4_DELTA_MAX_DEGREE` (endpoint-level, which is exact for its
+> cost).
+> Measured magnitudes (`experiments/stage3_delta_profiling/summary.md`): with the cycle guard off,
+> fb237_v4's Stage-2 graph (deg max ≈ 1 383, mean ≈ 14) averages ≥ 2.9 s of delta work per
+> proposal — ≥ 4 h for a 5 000-swap budget — while wn18rr_v4 (deg max 73, mean ≈ 5) averages
+> ~1 ms, a ≳ 2 700× gap. The node-level guard bounds the cycle work to milliseconds per proposal,
+> at the cost of freezing cycle steering on the (many) dropped proposals of dense graphs.
 
 ---
 
@@ -452,8 +507,14 @@ near-zero-target features). The synthetic re-measurement runs Block E at a reduc
 `_FINAL_SAMPLE_BUDGET = 20_000` (CC motif/star sampling + path/tree walks) instead of the 100k
 Block-E default, to keep the round-trip fast — the cached target side is unaffected.
 
-The re-measured synthetic signature is also dumped to a `signature_synth/` directory next to the
-source graph (`data/graphs/<name>/signature_synth/`, `data/test_graphs/<name>/signature_synth/`),
+Every auto-named output of a round-trip run is stamped with a single per-run timestamp
+(`YYYYmmdd_HHMMSS`) so repeated runs — even with identical options — don't overwrite each other:
+the synthetic graph (`<graph>_synth_<timestamp>.ttl`), the synthetic signature directory
+(`signature_synth_<timestamp>/`), and the auto-named convergence / swap logs. An explicit `--out`
+is used verbatim.
+
+The re-measured synthetic signature is also dumped to a `signature_synth_<timestamp>/` directory
+next to the source graph (`data/graphs/<name>/`, `data/test_graphs/<name>/`),
 using the same layout as the measured `signature/` dir — per-block `block_<x>.png` plots and
 `block_<x>.json` state, plus `summary.txt` and combined `signature.json`. This mirrors what
 `measure_signature.py` writes for real graphs (both now share
@@ -464,3 +525,8 @@ Pass `--convergence-log` with no value to record the Stage 3 convergence CSV; th
 auto-named from the graph name and run options (e.g. `conv_<graph>_seed42_rb5000.csv`) and written
 to `experiments/convergence_logs/`. An explicit `--convergence-log <path>` overrides both the name
 and location. Plot the result with `scripts/convergence_plot.py`.
+
+`--swap-log` works the same way for the Stage 3 swap-proposal log (one row per evaluated proposal
+with per-motif deltas, Δloss and the accept decision): no value auto-names
+`swaps_<graph>_seed<seed>_rb<budget>.csv` into `experiments/swap_delta_logs/`; an explicit path
+overrides. Plot with `scripts/swap_delta_viz.py`.

@@ -11,7 +11,7 @@ tracked target is updated *incrementally* per swap via an exact O(Δ^k) delta:
   C(k_v, 2) denominators are invariant under degree-preserving swaps
 * degree_assortativity         — exact, incremental; only the cross-product
   sum Q changes (degree sequence is invariant)
-* tree/path template entropy and induced k-star counts — exact, incremental
+* tree/path template entropy — exact, incremental
 
 After the SA walk, the best-seen snapshot is returned and component
 connectivity is restored to match the Block F targets.
@@ -34,11 +34,7 @@ from .stage2 import _connect_components
 
 # ── Tuning constants (Stage-3 refinement) — adjust here ─────────────────────────
 MAX_TARGETED_SWAP_PROB = 0.5   # cap on the probability of attempting a triangle-closing swap
-MAX_STAR_TARGETED_PROB = 0  # cap on the probability of attempting a triangle-breaking swap for stars; 0 = disabled
 TEMP_FLOOR = 1e-10             # numerical floor on the SA temperature in the accept test
-# k values tracked for induced star counts in the SA loss.
-# Smaller sets are cheaper (O(Δ²) per swap per k); k=2..4 covers the most sensitive range.
-STAR_K_TRACKED: tuple[int, ...] = (2, 3, 4, 5)
 
 # ── Loss function weights — one per component ────────────────────────────────
 # Triangle and motif terms are normalised by target value (relative error in [0,∞]).
@@ -56,7 +52,6 @@ LOSS_WEIGHT_ASSORTATIVITY: float = 1.0
 LOSS_WEIGHT_CC_AVG:        float = 1.0
 LOSS_WEIGHT_TREE_ENTROPY:  float = 1.0
 LOSS_WEIGHT_PATH_ENTROPY:  float = 1.0
-LOSS_WEIGHT_STARS:         float = 0   # applied per k (k=2..STAR_K_TRACKED[-1]); 0 = disabled (stars are structurally set by Stage 2 degree distribution)
 
 # Lookup table used by _loss; keeps the function body concise.
 _MOTIF4_WEIGHTS: dict[tuple, float] = {
@@ -76,22 +71,29 @@ _DS_STEM: dict[tuple, str] = {
 # the optional ground-truth convergence remeasure.  Fewer samples than the 4-node
 # budget because cycle estimation is higher-variance and only a direction is needed.
 CC_CYCLE_SAMPLES = 5_000
-# Degree guard for the incremental cycle delta: when a proposed swap touches any
-# node whose simple degree exceeds this, the O(Δ^(k-2)) cycle delta explodes (a
-# single hub swap can stall the SA walk for minutes).  Such swaps skip the delta
-# entirely — the 5/6-cycle counts carry over unchanged, so the cycle loss terms
-# are identical before and after and neither favour nor penalise the swap.
+# Degree guard for the incremental cycle delta, applied to **every node the
+# induced-path DFS expands** — swap endpoints and path interiors alike (an
+# interior hub explodes the O(Δ^(k-2)) search even when all four endpoints are
+# small; see experiments/stage3_delta_profiling/).  On the first node whose
+# simple degree exceeds this, the delta is dropped for that swap and the
+# 5/6-cycle counts carry over unchanged, so the cycle loss terms are identical
+# before and after and neither favour nor penalise the swap.
 # Set to float("inf") to disable the guard (always compute the exact delta).
 CYCLE_DELTA_MAX_DEGREE = float("inf")
-# Degree guard for the incremental induced-star delta: the per-centre
-# inclusion-exclusion is O(2^(inner edges)) and stalls on clustered hubs.  Centres
-# with simple degree above this are skipped in the delta (degree is swap-invariant,
-# so they are excluded consistently and contribute 0 — hub star changes neither
-# favour nor penalise a swap).  The CC-sampled baseline still includes them.
+# Degree guard for the incremental 4-node motif delta, applied to the four swap
+# endpoints only — unlike the cycle DFS, _motif4_delta's cost is fully determined
+# by the endpoint neighbourhoods (candidates come from N(a)∪N(b), so a max
+# endpoint degree D bounds the work at O(D²) per pair; no interior explosion).
+# Swaps whose max endpoint degree exceeds this skip the delta and carry the
+# motif4 counts over unchanged (loss terms cancel in the accept test).
+# Profiled on fb237_v4 (experiments/stage3_delta_profiling/): unguarded mean
+# ~57 ms/proposal (max 1.2 s on hub swaps); at 200, 88 % of proposals still
+# compute the delta with a ~47 ms worst case (~11× less total motif4 work).
 # Set to float("inf") to disable the guard (always compute the exact delta).
-STAR_CENTER_MAX_DEGREE = float("inf")
-# Accepted-swap interval between convergence CSV rows; 0 disables logging entirely.
-CONVERGENCE_LOG_INTERVAL: int = 1000
+MOTIF4_DELTA_MAX_DEGREE = float("inf")
+# Proposal-swap interval between convergence CSV rows; 0 disables logging entirely.
+# Counts every evaluated proposal (accepted or rejected), not just accepted swaps.
+CONVERGENCE_LOG_INTERVAL: int = 100
 # True = also log ground-truth errors (sig_* columns) by remeasuring the full graph
 # via the measure counter on every convergence row. False = log only the locally
 # updated (incrementally tracked) errors, avoiding the expensive global remeasurement.
@@ -103,7 +105,7 @@ CONVERGENCE_LOG_GLOBAL_REMEASURE: bool = False
 
 
 def _make_initial_motif_counter(seed: int) -> MotifCounter:
-    """Counter for the initial triangle/motif4/star baseline at the start of the walk."""
+    """Counter for the initial triangle/motif4 baseline at the start of the walk."""
     # return CCMotifCounter(n_samples=CC_CYCLE_SAMPLES, seed=seed)  # CC-only alternative
     return HybridMotifCounter(seed=seed)
 
@@ -137,7 +139,6 @@ class _SAState:
     c6: int
     tree_h: float
     path_h: float
-    stars: dict
 
 
 def refine(
@@ -146,10 +147,11 @@ def refine(
     *,
     target_f: "BlockF | None" = None,
     budget: int = 10_000,
-    initial_temp: float = 1.0,
-    cooling_rate: float = 0.999,
+    initial_temp: float = 0.05,
+    cooling_rate: float = 0.99993,
     seed: int = 0,
     convergence_log: "Path | str | None" = None,
+    swap_log: "Path | str | None" = None,
 ) -> igraph.Graph:
     """Stage 3: Maslov-Sneppen rewiring + simulated annealing.
 
@@ -164,7 +166,7 @@ def refine(
     * 5-cycle and 6-cycle counts (via _cycle_delta; only when target > 0)
     * Degree assortativity (degree sequence is invariant under double-edge
       swaps, so only the cross-product sum Q changes)
-    * Tree/path template entropy and induced k-star counts
+    * Tree/path template entropy
 
     Parameters
     ----------
@@ -179,15 +181,31 @@ def refine(
     budget : int
         Maximum number of rewiring attempts.
     initial_temp : float
-        Starting SA temperature.
+        Starting SA temperature. Default 0.05 ≈ a few× the typical per-swap
+        |Δloss| (~0.008 on wn18rr_v4), giving ~85% initial uphill acceptance.
+        Re-derive per graph when the loss scale differs (fb237's is larger).
     cooling_rate : float
-        Geometric decay per accepted swap.
+        Geometric decay per accepted swap. Default 0.99993 sweeps the temperature
+        from ~0.05 to ~0.001 over ~55k accepted swaps (≈ a 100k-attempt budget),
+        so the final ~20% of the walk is effectively greedy. For a much smaller
+        budget, cool faster (e.g. ~0.998 for a 5k budget) or the walk never cools.
     seed : int
         RNG seed.
     convergence_log : Path or str, optional
         If given, write a CSV with per-metric relative errors every
-        ``CONVERGENCE_LOG_INTERVAL`` accepted swaps.  Columns are determined
-        by which targets are active (unsteered motifs produce no columns).
+        ``CONVERGENCE_LOG_INTERVAL`` *proposals* (accepted or rejected).  The
+        ``step`` column is the proposal index (x-axis) and ``accepted`` the
+        accepted-swap count so far.  Columns are otherwise determined by which
+        targets are active (unsteered motifs produce no columns).
+    swap_log : Path or str, optional
+        If given, write one CSV row per *evaluated* swap proposal with its
+        per-motif deltas and accept decision: proposal context (``step``,
+        ``targeted``, endpoint simple degrees, ``deg_max4``), ``d_tri``,
+        ``d_c4``/``d_diamond``/``d_k4``/``d_paw`` (only for active motif4
+        targets), ``d_c5``/``d_c6`` (only when steered), ``d_loss`` and
+        ``accepted``.  Delta cells are empty when a degree guard dropped the
+        delta for that proposal.  Proposals discarded before any delta is
+        computed (self-loop guard) produce no row.
 
     Returns
     -------
@@ -394,59 +412,42 @@ def refine(
 
     path_entropy_current = _entropy_from_freq(_path_freqs.get(3, {})) if use_path_entropy else 0.0
 
-    # ------------------------------------------------- induced k-star targets
-    # star_targets[k] = target count from Block E; only for k in STAR_K_TRACKED.
-    _star_targets: dict[int, int] = {}
-    if LOSS_WEIGHT_STARS > 0:
-        _star_counts_attr = getattr(target_e, "star_counts", None)
-        for k in STAR_K_TRACKED:
-            val = None
-            if isinstance(_star_counts_attr, dict):
-                val = _star_counts_attr.get(k)
-            if val is not None and val > 0:
-                _star_targets[k] = int(val)
-
-    use_stars = bool(_star_targets)
-    _star_max_k = max(STAR_K_TRACKED) if _star_targets else 2
-
-    # Initial star counts via the CC sampler (initial_motif_counter.count_stars).
-    # The exact inclusion-exclusion baseline is O(2^(inner edges)) per centre and
-    # stalls on clustered hubs; the CC star estimator is bounded regardless of
-    # degree, so it is used for the baseline measurement instead.
-    current_stars: dict[int, int] = (
-        initial_motif_counter.count_stars(_build_und_graph()) if use_stars else {}
-    )
-
     # ------------------------------------------------------- error terms & loss
-    def _error_terms(st: _SAState) -> dict[str, float]:
-        """Per-target relative error |current − target| / |target| for every active
-        target, keyed by convergence-column stem (``tri`` → ``tri_err``).
+    def _error_terms(st: _SAState, *, signed: bool = False) -> dict[str, float]:
+        """Per-target relative error for every active target, keyed by convergence-
+        column stem (``tri`` → ``tri_err``).
 
-        Single source of truth: the SA loss is the weighted sum over this dict and
-        the convergence CSV is its rounded, unweighted dump.  A floor of 1e-9 guards
-        divisions where the absolute target can approach 0.  Insertion order matches
-        the loss summation order.
+        By default returns the unsigned magnitude ``|current − target| / |target|``.
+        With ``signed=True`` the same quantity keeps its sign
+        ``(current − target) / |target|`` (negative = under target, positive = over)
+        — used for the convergence CSV so the direction of each miss is visible.
+
+        Single source of truth: the SA loss is the weighted sum over the unsigned
+        dict and the convergence CSV is the rounded, unweighted signed dump.  A floor
+        of 1e-9 guards divisions where the absolute target can approach 0.  Insertion
+        order matches the loss summation order.
         """
+        def _rel(cur: float, tgt: float, denom: float) -> float:
+            d = (cur - tgt) / denom
+            return d if signed else abs(d)
+
         terms: dict[str, float] = {
-            "tri": abs(st.tri - target_tri) / max(1, target_tri),
+            "tri": _rel(st.tri, target_tri, max(1, target_tri)),
         }
         for ds, tgt in _motif4_targets.items():
-            terms[_DS_STEM[ds]] = abs(st.motifs4.get(ds, 0) - tgt) / tgt
+            terms[_DS_STEM[ds]] = _rel(st.motifs4.get(ds, 0), tgt, tgt)
         if use_c5:
-            terms["c5"] = abs(st.c5 - _target_c5) / _target_c5
+            terms["c5"] = _rel(st.c5, _target_c5, _target_c5)
         if use_c6:
-            terms["c6"] = abs(st.c6 - _target_c6) / _target_c6
+            terms["c6"] = _rel(st.c6, _target_c6, _target_c6)
         if use_assort:
-            terms["assort"] = abs(_assort_from_Q(st.Q) - target_r) / max(1e-9, abs(target_r))
+            terms["assort"] = _rel(_assort_from_Q(st.Q), target_r, max(1e-9, abs(target_r)))
         if use_cc:
-            terms["cc"] = abs(st.cc - target_cc) / max(1e-9, target_cc)
+            terms["cc"] = _rel(st.cc, target_cc, max(1e-9, target_cc))
         if use_tree_entropy:
-            terms["tree_entropy"] = abs(st.tree_h - _target_tree_entropy) / max(1e-9, _target_tree_entropy)
+            terms["tree_entropy"] = _rel(st.tree_h, _target_tree_entropy, max(1e-9, _target_tree_entropy))
         if use_path_entropy:
-            terms["path_entropy_k3"] = abs(st.path_h - _target_path_entropy_k3) / max(1e-9, _target_path_entropy_k3)
-        if use_stars:
-            for k, tgt in _star_targets.items():
-                terms[f"star_k{k}"] = abs(st.stars.get(k, 0) - tgt) / tgt
+            terms["path_entropy_k3"] = _rel(st.path_h, _target_path_entropy_k3, max(1e-9, _target_path_entropy_k3))
         return terms
 
     # Weight per active error-term stem; parallels _error_terms so the loss is a
@@ -466,9 +467,6 @@ def refine(
         _term_weights["tree_entropy"] = LOSS_WEIGHT_TREE_ENTROPY
     if use_path_entropy:
         _term_weights["path_entropy_k3"] = LOSS_WEIGHT_PATH_ENTROPY
-    if use_stars:
-        for k in _star_targets:
-            _term_weights[f"star_k{k}"] = LOSS_WEIGHT_STARS
 
     def _loss(st: _SAState) -> float:
         """SA objective: weighted sum of the shared per-target relative errors."""
@@ -477,7 +475,7 @@ def refine(
     current = _SAState(
         tri=current_tri, motifs4=current_motifs4, Q=Q_deg, cc=cc_current,
         c5=current_c5, c6=current_c6, tree_h=tree_entropy_current,
-        path_h=path_entropy_current, stars=current_stars,
+        path_h=path_entropy_current,
     )
     current_loss = _loss(current)
     best_loss = current_loss
@@ -497,7 +495,8 @@ def refine(
     ]
 
     # Error columns mirror the active terms exactly (one per _error_terms key).
-    _conv_fields = ["accepted", "loss"] + [f"{name}_err" for name in _error_terms(current)]
+    # ``step`` = proposals evaluated so far (x-axis); ``accepted`` = accepted swaps so far.
+    _conv_fields = ["step", "accepted", "loss"] + [f"{name}_err" for name in _error_terms(current)]
     # sig_ columns are only logged when the global remeasurement is enabled; they
     # hold ground-truth errors from remeasuring the full graph (see _write_conv_row).
     if CONVERGENCE_LOG_GLOBAL_REMEASURE:
@@ -516,35 +515,54 @@ def refine(
     if _conv_writer:
         _conv_writer.writeheader()
 
-    def _write_conv_row() -> None:
+    def _write_conv_row(step: int) -> None:
         if not _conv_writer:
             return
-        # Locally tracked errors: the same terms that drive the loss (single source).
-        row: dict = {"accepted": accepted, "loss": round(current_loss, 6)}
-        for name, err in _error_terms(current).items():
+        # Locally tracked errors: the same terms that drive the loss (single source),
+        # dumped signed so each miss's direction (under/over target) is visible.
+        row: dict = {"step": step, "accepted": accepted, "loss": round(current_loss, 6)}
+        for name, err in _error_terms(current, signed=True).items():
             row[f"{name}_err"] = round(err, 6)
 
         # Ground-truth errors via a full-graph remeasurement (expensive); only when
         # enabled. Otherwise the row carries just the locally tracked errors above.
         if CONVERGENCE_LOG_GLOBAL_REMEASURE:
+            # Signed relative errors, matching the locally tracked columns above.
             _g_sig = _build_und_graph()
             tri_sig = measure_counter.count_triangles(_g_sig)
-            row["sig_tri_err"] = round(abs(tri_sig - target_tri) / max(1, target_tri), 6)
+            row["sig_tri_err"] = round((tri_sig - target_tri) / max(1, target_tri), 6)
             if any(col in _conv_fields for _, _, col in _SIG_ATTRS[1:]):
                 _sig_motifs4 = measure_counter.count_motifs4(_g_sig)
                 for _, ds, col in _SIG_ATTRS[1:]:
                     if col in _conv_fields:
                         tgt = _motif4_targets[ds]
-                        row[col] = round(abs(_sig_motifs4.get(ds, 0) - tgt) / max(1, tgt), 6)
+                        row[col] = round((_sig_motifs4.get(ds, 0) - tgt) / max(1, tgt), 6)
 
             # Ground-truth 5-cycle relative error: global (induced/chordless) count
             # measured via the hybrid counter vs target (raw count when target is 0).
             c5_sig = measure_counter.count_cycles(_g_sig, k5=True, k6=False)[0]
-            row["sig_c5_err"] = round(abs(c5_sig - _target_c5) / max(1, _target_c5), 6)
+            row["sig_c5_err"] = round((c5_sig - _target_c5) / max(1, _target_c5), 6)
 
         _conv_writer.writerow(row)
 
-    _write_conv_row()  # row 0: baseline before any swap
+    _write_conv_row(0)  # row 0: baseline before any swap
+
+    # ------------------------------------------------- swap-proposal CSV setup
+    # One row per evaluated proposal: context, per-motif deltas (columns only for
+    # actively steered motifs, mirroring the convergence log), Δloss and the
+    # accept decision.  Guard-dropped deltas leave their cells empty.
+    _swap_fields = ["step", "targeted", "deg_s1", "deg_o1", "deg_s2", "deg_o2",
+                    "deg_max4", "d_tri"]
+    _swap_fields += [f"d_{_DS_STEM[ds]}" for ds in _motif4_targets]
+    if use_c5:
+        _swap_fields.append("d_c5")
+    if use_c6:
+        _swap_fields.append("d_c6")
+    _swap_fields += ["d_loss", "accepted"]
+    _swap_fh = open(swap_log, "w", newline="") if swap_log else None  # noqa: SIM115
+    _swap_writer = csv.DictWriter(_swap_fh, fieldnames=_swap_fields) if _swap_fh else None
+    if _swap_writer:
+        _swap_writer.writeheader()
 
     log.info(
         "Stage 3: refining (seed=%d, budget=%d) — target triangles=%d, motif4 targets=%s, "
@@ -604,8 +622,9 @@ def refine(
         return i1, i2, s1, o1, s2, o2, p1
 
     # hub_nodes: nodes with undirected degree ≥ min star k, sorted by degree descending.
-    # Used by _targeted_star_swap to find triangle-rich centers to de-cluster.
-    _min_star_k = min(_star_targets.keys()) if _star_targets else 2
+    # Used by _targeted_star_swap (unused now that star steering is disabled; kept
+    # as a helper for future use) to find triangle-rich centers to de-cluster.
+    _min_star_k = 2
     _hub_nodes = sorted(
         [v for v in range(n) if len(adj[v]) >= _min_star_k],
         key=lambda v: -len(adj[v]),
@@ -692,12 +711,27 @@ def refine(
             return i1, i2, s1, o1, s2, o2, p1
         return None
 
+    # Guard bookkeeping: per delta family, proposals whose delta was computed vs
+    # dropped because a degree guard fired (cycles: any DFS-expanded node above
+    # CYCLE_DELTA_MAX_DEGREE; motif4: max endpoint degree above MOTIF4_DELTA_MAX_DEGREE).
+    cycle_delta_computed = 0
+    cycle_delta_dropped = 0
+    motif4_delta_computed = 0
+    motif4_delta_dropped = 0
+
     for step in range(budget):
         if step > 0 and step % 5_000 == 0:
             log.info(
-                "Stage 3: step %d/%d — loss=%.4f, tri=%d (target %d), accepted=%d",
+                "Stage 3: step %d/%d — loss=%.4f, tri=%d (target %d), accepted=%d, "
+                "deltas computed/dropped (degree guards) — motif4 %d/%d, cycles %d/%d",
                 step, budget, current_loss, current.tri, target_tri, accepted,
+                motif4_delta_computed, motif4_delta_dropped,
+                cycle_delta_computed, cycle_delta_dropped,
             )
+        # Log convergence state every N *proposals* (accepted or not); step 0 is the
+        # pre-loop baseline written above.
+        if CONVERGENCE_LOG_INTERVAL > 0 and step > 0 and step % CONVERGENCE_LOG_INTERVAL == 0:
+            _write_conv_row(step)
         # Attempt targeted triangle-creating swap when triangles are below target.
         # The probability scales with how large the deficit is (max 50%).
         tri_deficit = target_tri - current.tri
@@ -707,18 +741,6 @@ def refine(
             result = _targeted_swap()
             if result is None:
                 targeted = False
-        # Attempt targeted triangle-breaking swap when stars are below target.
-        # Only attempted when not already doing a triangle-targeting swap.
-        if not targeted and use_stars:
-            star_deficit = sum(
-                max(0, tgt - current.stars.get(k, 0)) / tgt
-                for k, tgt in _star_targets.items()
-            ) / max(1, len(_star_targets))
-            p_star = float(min(MAX_STAR_TARGETED_PROB, star_deficit))
-            if rng.random() < p_star:
-                result = _targeted_star_swap()
-                if result is not None:
-                    targeted = True
         if not targeted:
             rel = swappable_rels[int(rng.integers(len(swappable_rels)))]
             pool = rel_to_idxs[rel]
@@ -740,24 +762,39 @@ def refine(
                    - und_deg[s1] * und_deg[o1] - und_deg[s2] * und_deg[o2])
         new_Q = current.Q + dQ
         if _motif4_targets:
-            _m4d = _motif4_delta(adj, s1, o1, s2, o2, types=_m4_types)
-            new_motifs4 = {k: current.motifs4.get(k, 0) + _m4d.get(k, 0) for k in _motif4_targets}
+            # Endpoint-degree guard: _motif4_delta enumerates candidate pairs from
+            # the endpoints' neighbourhoods (O(Δ²) per pair), so hub endpoints make
+            # it the dominant per-swap cost on dense graphs.  Skipped swaps carry
+            # the motif4 counts over unchanged — the motif4 loss terms cancel in
+            # the accept test, as with the cycle guard.
+            if max(len(adj[s1]), len(adj[o1]), len(adj[s2]), len(adj[o2])) > MOTIF4_DELTA_MAX_DEGREE:
+                motif4_delta_dropped += 1
+                _m4d = None  # guard-dropped: swap log leaves the motif4 cells empty
+                new_motifs4 = current.motifs4
+            else:
+                motif4_delta_computed += 1
+                _m4d = _motif4_delta(adj, s1, o1, s2, o2, types=_m4_types)
+                new_motifs4 = {k: current.motifs4.get(k, 0) + _m4d.get(k, 0) for k in _motif4_targets}
         else:
+            _m4d = None
             new_motifs4 = current.motifs4
         # 5/6-cycle counts: exact incremental delta when steered.
         if use_c5 or use_c6:
-            # Skip the O(Δ^(k-2)) cycle delta on hub-touching swaps — the induced
-            # path enumeration branches on each endpoint's neighbourhood, so a
-            # high-degree node makes a single swap intractable.  Carrying the
-            # counts over unchanged leaves the cycle loss terms identical before
-            # and after, so they cancel in the accept test (no positive/negative
+            # The O(Δ^(k-2)) cycle delta guards every node its path DFS expands
+            # (endpoints and interiors — an interior hub explodes the search even
+            # between low-degree endpoints) against CYCLE_DELTA_MAX_DEGREE and
+            # returns None on the first hub encountered.  Carrying the counts
+            # over unchanged leaves the cycle loss terms identical before and
+            # after, so they cancel in the accept test (no positive/negative
             # contribution for these swaps).
-            if max(len(adj[s1]), len(adj[o1]), len(adj[s2]), len(adj[o2])) > CYCLE_DELTA_MAX_DEGREE:
+            _dc = _cycle_delta(adj, s1, o1, s2, o2, k5=use_c5, k6=use_c6,
+                               max_degree=CYCLE_DELTA_MAX_DEGREE)
+            if _dc is None:
+                cycle_delta_dropped += 1
                 new_c5, new_c6 = current.c5, current.c6
             else:
-                _dc5, _dc6 = _cycle_delta(adj, s1, o1, s2, o2, k5=use_c5, k6=use_c6)
-                new_c5 = current.c5 + _dc5
-                new_c6 = current.c6 + _dc6
+                cycle_delta_computed += 1
+                new_c5, new_c6 = current.c5 + _dc[0], current.c6 + _dc[1]
         else:
             new_c5, new_c6 = current.c5, current.c6
         # Tree template entropy: exact incremental update via _tree_entropy_delta.
@@ -778,17 +815,10 @@ def refine(
         else:
             _new_path_ents, _new_path_freqs = {}, _path_freqs
             new_path_h = current.path_h
-        # Induced k-star delta: exact O(Δ²) per swap; only computed when stars are steered.
-        if use_stars:
-            _star_d = _star_count_delta(adj, s1, o1, s2, o2, max_k=_star_max_k,
-                                        max_center_degree=STAR_CENTER_MAX_DEGREE)
-            new_stars = {k: current.stars.get(k, 0) + _star_d.get(k, 0) for k in _star_targets}
-        else:
-            new_stars = current.stars
 
         candidate = _SAState(
             tri=new_tri, motifs4=new_motifs4, Q=new_Q, cc=new_cc,
-            c5=new_c5, c6=new_c6, tree_h=new_tree_h, path_h=new_path_h, stars=new_stars,
+            c5=new_c5, c6=new_c6, tree_h=new_tree_h, path_h=new_path_h,
         )
         new_loss = _loss(candidate)
 
@@ -797,6 +827,27 @@ def refine(
         else:
             diff = new_loss - current_loss
             accept = bool(rng.random() < math.exp(-diff / max(temp, TEMP_FLOOR)))
+
+        if _swap_writer:
+            # Degrees are read pre-swap (adj is only mutated below on accept),
+            # matching what the guards saw for this proposal.
+            _degs = (len(adj[s1]), len(adj[o1]), len(adj[s2]), len(adj[o2]))
+            _row = {
+                "step": step, "targeted": int(targeted),
+                "deg_s1": _degs[0], "deg_o1": _degs[1],
+                "deg_s2": _degs[2], "deg_o2": _degs[3],
+                "deg_max4": max(_degs), "d_tri": tri_delta,
+                "d_loss": round(new_loss - current_loss, 6), "accepted": int(accept),
+            }
+            if _m4d is not None:
+                for ds in _motif4_targets:
+                    _row[f"d_{_DS_STEM[ds]}"] = _m4d.get(ds, 0)
+            if (use_c5 or use_c6) and _dc is not None:
+                if use_c5:
+                    _row["d_c5"] = _dc[0]
+                if use_c6:
+                    _row["d_c6"] = _dc[1]
+            _swap_writer.writerow(_row)
 
         if accept:
             content_edge_data[i1] = (s1, o2, p1)
@@ -842,9 +893,6 @@ def refine(
             temp *= cooling_rate
             accepted += 1
 
-            if CONVERGENCE_LOG_INTERVAL > 0 and accepted % CONVERGENCE_LOG_INTERVAL == 0:
-                _write_conv_row()
-
             if current_loss < best_loss:
                 best_loss = current_loss
                 best_content = list(content_edge_data)
@@ -852,6 +900,8 @@ def refine(
 
     if _conv_fh:
         _conv_fh.close()
+    if _swap_fh:
+        _swap_fh.close()
 
     log.info(
         "Stage 3: done — accepted %d/%d swaps, best loss=%.4f at accepted=%d, "
@@ -859,6 +909,24 @@ def refine(
         accepted, budget, best_loss, best_accepted, current.tri, target_tri,
         current.cc, f"{target_cc:.4f}" if use_cc else "off",
     )
+    if use_c5 or use_c6:
+        _n_cyc = cycle_delta_computed + cycle_delta_dropped
+        log.info(
+            "Stage 3: 5/6-cycle deltas — computed %d, dropped %d of %d proposals (%.1f%%) "
+            "by the degree guard (CYCLE_DELTA_MAX_DEGREE=%s); dropped swaps carried their "
+            "cycle counts over unchanged",
+            cycle_delta_computed, cycle_delta_dropped, _n_cyc,
+            100.0 * cycle_delta_dropped / max(1, _n_cyc), CYCLE_DELTA_MAX_DEGREE,
+        )
+    if _motif4_targets:
+        _n_m4 = motif4_delta_computed + motif4_delta_dropped
+        log.info(
+            "Stage 3: motif4 deltas — computed %d, dropped %d of %d proposals (%.1f%%) "
+            "by the endpoint-degree guard (MOTIF4_DELTA_MAX_DEGREE=%s); dropped swaps "
+            "carried their motif4 counts over unchanged",
+            motif4_delta_computed, motif4_delta_dropped, _n_m4,
+            100.0 * motif4_delta_dropped / max(1, _n_m4), MOTIF4_DELTA_MAX_DEGREE,
+        )
 
     # Re-connect any components that SA swaps may have disconnected
     seen_best: set[tuple[int, int, str]] = set(best_content)

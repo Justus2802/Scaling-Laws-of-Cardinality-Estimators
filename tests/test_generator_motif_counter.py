@@ -1,5 +1,6 @@
 """Tests for generator.motif_counter — ExactMotifCounter and helpers."""
 
+import itertools
 import os
 import sys
 import unittest
@@ -22,6 +23,7 @@ from generator.local_updates import (
     _motif4_delta,
     _triangle_node_delta,
     _induced_cycles_through_pair,
+    _induced_cycles_through_pair_mitm,
     _cycle_delta,
 )
 
@@ -397,6 +399,41 @@ class TestInducedCyclesThroughPair(unittest.TestCase):
         # C5 on {0..4} plus isolated edge 6-7; no induced 5-cycle through (6,7)
         a = _adj(8, [(0,1),(1,2),(2,3),(3,4),(0,4),(6,7)])
         self.assertEqual(_induced_cycles_through_pair(a, 6, 7, 5), set())
+
+    def test_mitm_matches_dfs_and_oracle(self):
+        # The anchored meet-in-the-middle enumerator (the default behind
+        # _cycle_delta) must return exactly the same induced-cycle sets as the
+        # recursive DFS, and both must match the brute-force oracle filtered to
+        # subsets containing the pair.
+        rng = np.random.default_rng(2024)
+        from _brute_motifs import _subset_connected
+
+        def _oracle_pair(a, x, y, k):
+            n = len(a)
+            out = set()
+            for verts in itertools.combinations(range(n), k):
+                vs = set(verts)
+                if x not in vs or y not in vs:
+                    continue
+                if any(sum(1 for u in vs if u != v and u in a[v]) != 2 for v in vs):
+                    continue
+                if _subset_connected(a, verts, vs):
+                    out.add(frozenset(vs))
+            return out
+
+        for _ in range(200):
+            n = int(rng.integers(6, 12))
+            a = _adj(n, [(u, v) for u in range(n) for v in range(u + 1, n)
+                         if rng.random() < 0.35])
+            x, y = int(rng.integers(0, n)), int(rng.integers(0, n))
+            if x == y:
+                continue
+            for k in (5, 6):
+                dfs = _induced_cycles_through_pair(a, x, y, k)
+                mitm = _induced_cycles_through_pair_mitm(a, x, y, k)
+                self.assertEqual(mitm, dfs, f"MITM≠DFS n={n} k={k} pair=({x},{y})")
+                self.assertEqual(mitm, _oracle_pair(a, x, y, k),
+                                 f"MITM≠oracle n={n} k={k} pair=({x},{y})")
 
 
 class TestCycleDelta(unittest.TestCase):

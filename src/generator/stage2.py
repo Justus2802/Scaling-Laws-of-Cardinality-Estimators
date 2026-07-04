@@ -30,6 +30,8 @@ SIZE_ESCAPE_FAILS = 32         # consecutive template collisions before growing 
 TEMPLATE_ATTEMPT_FLOOR = 64    # floor on rejection-sampling attempts per template pool
 TEMPLATE_ATTEMPT_FACTOR = 20   # rejection-sampling attempts per requested distinct template
 FALLBACK_CS_MEAN_FLOOR = 0.5   # floor on the budget-derived CS-size Poisson mean (no Block D)
+PATH_STEERING_ENABLED = False  # Stage-2 path-length steering (shortcut injection); can only
+                               # shorten paths, so disabled for now — see _steer_path_lengths
 
 
 def _connect_components(
@@ -171,6 +173,13 @@ def _steer_path_lengths(
     has_mean = not math.isnan(path_mean_target)
     has_hi = path_hi_target > 0
 
+    if not PATH_STEERING_ENABLED:
+        if has_mean or has_hi:
+            log.warning("Stage 2: path steering disabled (PATH_STEERING_ENABLED=False); "
+                        "Block F path targets (mean=%s, diameter=%s) will not be steered",
+                        f"{path_mean_target:.2f}" if has_mean else "—",
+                        str(path_hi_target) if has_hi else "—")
+        return
     if (not has_mean and not has_hi) or actual_V < 3:
         return
 

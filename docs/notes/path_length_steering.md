@@ -20,9 +20,10 @@ path steering — diameter 7→7 (target 9), mean 2.73→2.77 (target 4.07)
 
 The structural reasons:
 
-1. **Hub formation via PA.** `in_pa_exponent` gives high-degree nodes a disproportionate
-   share of incoming edges. Hubs act as relay points: any two nodes can reach each other in
-   2–3 hops via a hub. This compresses paths regardless of global density.
+1. **Hub formation.** Degree steering (historically `in_pa_exponent` preferential
+   attachment, since replaced by per-entity target degree sequences) gives high-degree nodes a
+   disproportionate share of incoming edges. Hubs act as relay points: any two nodes can reach
+   each other in 2–3 hops via a hub. This compresses paths regardless of global density.
 
 2. **Large CS sizes.** Many entities having large characteristic sets means many entities
    share many relations → dense cross-connections between "neighbourhoods" → short paths.
@@ -164,7 +165,7 @@ Expected outcome: Stage 3 can close maybe 30–40% of the observed gap.
 **Structural fix (Stage 1/2, harder):**
 The remaining gap requires one or more of:
 - Reducing `cs_size_mean` (smaller CS → sparser connections)
-- Reducing `in_pa_exponent` (flatter degree tail → fewer strong hubs)
+- Flattening the target degree sequences (fewer strong hubs; was `in_pa_exponent` before degree-sequence targeting)
 - A feedback loop that adjusts these parameters based on the observed path overshoot
 
 Neither has a direct Block F input signal; they would need to be inferred from the path

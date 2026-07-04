@@ -90,9 +90,10 @@ class Generator:
         seed: int = 0,
         relation_zipf_exponent: float = 2.0,
         rewire_budget: int = 50_000,
-        initial_temp: float = 1.0,
-        cooling_rate: float = 0.9999,
+        initial_temp: float = 0.05,
+        cooling_rate: float = 0.99993,
         convergence_log: "Path | str | None" = None,
+        swap_log: "Path | str | None" = None,
     ) -> igraph.Graph:
         """Generate one synthetic KG from the target signature.
 
@@ -106,10 +107,16 @@ class Generator:
         rewire_budget : int
             Number of rewiring attempts in Stage 3.
         initial_temp, cooling_rate : float
-            Simulated-annealing parameters for Stage 3.
+            Simulated-annealing parameters for Stage 3. Defaults (0.05, 0.99993)
+            are tuned for a ~100k ``rewire_budget`` — the temperature sweeps
+            ~0.05 → ~0.001 over the run. For a much smaller budget, raise the
+            cooling (e.g. ~0.998 for 5k) so the walk actually reaches cold.
         convergence_log : Path or str, optional
             If given, write per-metric error CSV during Stage 3 rewiring
             (see ``stage3.CONVERGENCE_LOG_INTERVAL`` for the row interval).
+        swap_log : Path or str, optional
+            If given, write one CSV row per evaluated Stage-3 swap proposal
+            (per-motif deltas, Δloss, accept decision — see ``stage3.refine``).
 
         Returns
         -------
@@ -137,6 +144,7 @@ class Generator:
             cooling_rate=cooling_rate,
             seed=seed + 2,
             convergence_log=convergence_log,
+            swap_log=swap_log,
         )
         log.info("Generator: done — synthetic KG V=%d, E=%d", g_refined.vcount(), g_refined.ecount())
         return g_refined

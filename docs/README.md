@@ -66,3 +66,12 @@ corpus `data/test_graphs/` (use `--graphs <name>...` to restrict to specific gra
   population draws, split by the two sub-goals they serve — the type-block gate (needs
   rich-typed sources) vs the non-type spread of 58 features (any real KG, typed or not).
   Tiered verdict + acquisition order; Bio2RDF is the top typed-gate source.
+- **[notes/stage3_steering_analysis.md](notes/stage3_steering_analysis.md)** — why Stage 3
+  is slow on hub-heavy graphs (`fb237_v4`) and why per-swap motif steering barely moves the
+  loss. Delta-cost profiling (6-cycle delta ≥94 %), the node-level/endpoint degree guards and
+  MITM cycle enumerator, the SA-schedule retune (was a random walk; now anneals) and its
+  per-graph caveat, per-proposal swap logging + hub leverage, the rejected "approximate hub
+  delta" idea, and the central finding: small `|d_loss|` is **both** scale (million-size
+  targets cap the move at ~3e-4) **and** cancellation (Stage-2 overshoots paw/c5 ~2× while
+  undershooting c4/k4, so correlated motif deltas oppose; median alignment 0.48). Points to
+  the Stage-2 paw/c5 overshoot as the highest-value upstream lever.
