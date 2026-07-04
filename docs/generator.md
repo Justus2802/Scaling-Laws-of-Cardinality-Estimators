@@ -328,7 +328,6 @@ In roughly the order they were made:
    `geometric(mean_functionality)` + global-throttle wiring with the per-relation `multinomial`
    allocation — wiring per-relation α (out-side) and the G2b `a_obj` offset, hitting the relation
    budget exactly.
-   
 5. **Faithful in-side allocation.** Replaced the hard inverse-functionality cap (which collapsed
    subject-multiplicity to `{1,2}`) with a per-relation **subject-multiplicity** allocation from
    `subj_alpha` × PA. The old cap is gone.

@@ -33,11 +33,6 @@ log = get_logger(__name__)
 
 # ── Tuning constants (Stage-1 schema) — adjust here ─────────────────────────────
 DEFAULT_ZIPF_EXPONENT = 2.0        # fallback for relation- / CS-frequency Zipf exponents
-PA_EXPONENT_BOUNDS = (0.1, 2.0)    # clamp on the in-degree PA exponent (Dorogovtsev–Mendes)
-PA_EXPONENT_DEFAULT = 0.5          # fallback PA exponent when in-degree α is unusable
-MIN_ALPHA_FOR_PA = 2.0             # α_in must exceed this for a finite-mean power-law tail
-MIN_ALPHA_FOR_MAX_DEGREE = 1.1     # α_in threshold for the extreme-value max-in-degree estimate
-MAX_IN_DEGREE_FLOOR = 10           # floor on the expected max in-degree
 FUNCTIONALITY_FLOOR = 0.1          # clamp floor for mean_functionality (out-side)
 # Connectivity fallbacks when Block F is absent (fully-connected behaviour).
 DEFAULT_NUM_COMPONENTS = 1
@@ -167,6 +162,57 @@ def _build_type_rel_probs_from_measured(
     row_sums[row_sums == 0] = 1.0
     P /= row_sums
     return P
+
+
+def _sample_degree_sequence(
+    rng: np.random.Generator,
+    n: int,
+    total_edges: int,
+    alpha: float,
+    p90: float,
+    d_max: int,
+) -> "np.ndarray | None":
+    """Sample a per-entity target degree sequence from Block B power-law scalars.
+
+    Top 10% of nodes draw from a truncated power law in [p90, d_max]; the
+    remaining 90% draw from a Poisson body whose mean is calibrated so the
+    overall mean matches total_edges / n.  Returns None when the fit scalars
+    are unusable (NaN, non-positive, or n == 0).
+    """
+    if n <= 0 or total_edges <= 0:
+        return None
+    try:
+        alpha_f = float(alpha)
+        p90_f = float(p90)
+        dmax_i = int(d_max)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(alpha_f) or math.isnan(p90_f) or alpha_f <= 1.0 or p90_f <= 0 or dmax_i <= 0:
+        return None
+
+    mean_deg = total_edges / n
+    n_tail = max(1, int(round(0.1 * n)))
+    n_body = n - n_tail
+
+    # Tail: inverse-CDF sampling from truncated power law on [p90_f, dmax_i]
+    lo, hi = max(1.0, p90_f), float(dmax_i)
+    if hi <= lo:
+        hi = lo + 1.0
+    u = rng.random(n_tail)
+    exp = 1.0 - alpha_f
+    tail_samples = (lo ** exp + u * (hi ** exp - lo ** exp)) ** (1.0 / exp)
+    tail_samples = np.clip(np.round(tail_samples), lo, hi).astype(np.int64)
+
+    # Body: Poisson with mean calibrated so E[total] ≈ total_edges
+    tail_sum = float(tail_samples.sum())
+    body_mean = max(1.0, (total_edges - tail_sum) / max(n_body, 1))
+    body_mean = min(body_mean, p90_f)   # body shouldn't exceed the tail threshold
+    body_samples = rng.poisson(body_mean, size=n_body).astype(np.int64)
+    body_samples = np.clip(body_samples, 1, int(p90_f))
+
+    seq = np.concatenate([tail_samples, body_samples])
+    rng.shuffle(seq)
+    return seq
 
 
 # ---------------------------------------------------------------------------
@@ -317,50 +363,28 @@ def sample_schema(
         cs_num_templates = 0
         cs_template_zipf = DEFAULT_ZIPF_EXPONENT
 
-    # --- Edge multiplicity, PA exponent, inverse functionality from Block B ---
+    # --- Edge multiplicity and target degree sequences from Block B ---
     if b is not None:
         mean_functionality = _functionality_from_alpha(b.obj_alpha_q, floor=FUNCTIONALITY_FLOOR)
     else:
         mean_functionality = 1.0
 
+    # Sample per-entity target degree sequences from the Block B power-law fits.
+    # The top 10% of nodes draw from a truncated power law pinned to [p90, max];
+    # the remaining 90% draw from a Poisson body whose mean is solved so the
+    # overall mean matches E/V.  None → Stage 2 falls back to PA-free wiring.
+    target_out_degrees: "np.ndarray | None" = None
+    target_in_degrees: "np.ndarray | None" = None
     if b is not None:
-        alpha_in = b.in_degree_fit.alpha
-        # Dorogovtsev-Mendes relation: α = 2 + 1/β → β = 1/(α−2)
-        # α must be > MIN_ALPHA_FOR_PA for a finite-mean power law; clamp β to PA_EXPONENT_BOUNDS.
-        if not math.isnan(alpha_in) and alpha_in > MIN_ALPHA_FOR_PA:
-            in_pa_exponent = float(np.clip(1.0 / (alpha_in - 2.0), *PA_EXPONENT_BOUNDS))
-        else:
-            in_pa_exponent = PA_EXPONENT_DEFAULT
-        # Expected maximum in-degree / out-degree: n^(1/(α−1)) (extreme-value statistic)
         n_ent = a.num_entities
-        if not math.isnan(alpha_in) and alpha_in > MIN_ALPHA_FOR_MAX_DEGREE and n_ent > 0:
-            max_in_degree = max(MAX_IN_DEGREE_FLOOR, int(round(n_ent ** (1.0 / (alpha_in - 1.0)))))
-        else:
-            max_in_degree = 0
-        # Out-degree cap: out-degree is bounded by object-multiplicity, not driven by
-        # unbounded PA, so the extreme-value formula n^(1/(α-1)) overshoots badly.
-        # Instead, derive max_out from max_in scaled by the steepness ratio α_in/α_out:
-        # heavier out-degree tail (lower α_out) → relatively larger max_out_degree.
-        alpha_out = b.out_degree_fit.alpha
-        if (not math.isnan(alpha_out) and alpha_out > MIN_ALPHA_FOR_MAX_DEGREE
-                and max_in_degree > 0):
-            alpha_ratio = alpha_in / max(alpha_out, 1.0)
-            max_out_degree = max(MAX_IN_DEGREE_FLOOR, int(round(max_in_degree / alpha_ratio)))
-        else:
-            max_out_degree = 0
-        # Out-side PA exponent: same Dorogovtsev-Mendes inversion as the in-side.
-        # Makes nodes that already have high out-degree attract more stubs in later
-        # relation passes, concentrating out-degree onto fewer hubs and sharpening
-        # the heavy tail that drives star counts.
-        if not math.isnan(alpha_out) and alpha_out > MIN_ALPHA_FOR_PA:
-            out_pa_exponent = float(np.clip(1.0 / (alpha_out - 2.0), *PA_EXPONENT_BOUNDS))
-        else:
-            out_pa_exponent = 0.0
-    else:
-        in_pa_exponent = PA_EXPONENT_DEFAULT
-        out_pa_exponent = 0.0
-        max_in_degree = 0
-        max_out_degree = 0
+        target_out_degrees = _sample_degree_sequence(
+            rng, n_ent, num_triples,
+            b.out_degree_fit.alpha, b.out_degree_p90, b.out_degree_max,
+        )
+        target_in_degrees = _sample_degree_sequence(
+            rng, n_ent, num_triples,
+            b.in_degree_fit.alpha, b.in_degree_p90, b.in_degree_max,
+        )
 
     # --- Per-relation multiplicity shape (G2) + CS-size offset (G2b) + CS-size shape ---
     # Stored as plain quantile tuples; Stage 2 samples a per-relation α from obj_alpha_q
@@ -379,12 +403,21 @@ def sample_schema(
         float(d.inv_cs_freq_fit.alpha)
         if (d is not None and not math.isnan(d.inv_cs_freq_fit.alpha)) else DEFAULT_ZIPF_EXPONENT
     )
+    # CS-frequency reuse truncation (Block D truncated power-law v_max).
+    cs_template_vmax = (
+        float(d.cs_freq_fit.v_max)
+        if (d is not None and not math.isnan(d.cs_freq_fit.v_max)) else float("nan")
+    )
+    inv_cs_template_vmax = (
+        float(d.inv_cs_freq_fit.v_max)
+        if (d is not None and not math.isnan(d.inv_cs_freq_fit.v_max)) else float("nan")
+    )
 
     log.info(
-        "Stage 1: schema ready — mean_functionality=%.3f, in_pa_exponent=%.3f, out_pa_exponent=%.3f, "
-        "max_in_degree=%d, max_out_degree=%d, cs_num_templates=%d, a_obj=%.3f, obj_alpha_qmin=%.3f",
-        mean_functionality, in_pa_exponent, out_pa_exponent, max_in_degree, max_out_degree,
-        cs_num_templates, a_obj, obj_alpha_q[0],
+        "Stage 1: schema ready — mean_functionality=%.3f, cs_num_templates=%d, "
+        "a_obj=%.3f, obj_alpha_qmin=%.3f, target_degrees=%s",
+        mean_functionality, cs_num_templates, a_obj, obj_alpha_q[0],
+        "sampled" if target_out_degrees is not None else "None",
     )
     target_num_components = int(f.num_components) if f is not None else DEFAULT_NUM_COMPONENTS
     target_lcc = float(f.largest_component_fraction) if f is not None else DEFAULT_LCC
@@ -409,11 +442,10 @@ def sample_schema(
         cs_size_mean=cs_size_mean,
         cs_num_templates=cs_num_templates,
         cs_template_zipf=cs_template_zipf,
+        cs_template_vmax=cs_template_vmax,
         mean_functionality=mean_functionality,
-        in_pa_exponent=in_pa_exponent,
-        out_pa_exponent=out_pa_exponent,
-        max_in_degree=max_in_degree,
-        max_out_degree=max_out_degree,
+        target_out_degrees=target_out_degrees,
+        target_in_degrees=target_in_degrees,
         obj_alpha_q=obj_alpha_q,
         a_obj=a_obj,
         subj_alpha_q=subj_alpha_q,
@@ -422,6 +454,7 @@ def sample_schema(
         inv_cs_size_q=inv_cs_size_q,
         inv_cs_num_templates=inv_cs_num_templates,
         inv_cs_template_zipf=inv_cs_template_zipf,
+        inv_cs_template_vmax=inv_cs_template_vmax,
         subj_group_probs=subj_group_probs,
         subj_group_weights=subj_group_weights,
         obj_group_probs=obj_group_probs,
