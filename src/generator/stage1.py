@@ -19,7 +19,7 @@ import math
 
 import numpy as np
 
-from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
+from signature import BlockA, BlockB, BlockC, BlockD, BlockF
 
 from ._adapters import (
     _functionality_from_alpha,
@@ -226,7 +226,6 @@ def sample_schema(
     *,
     d: BlockD = None,
     b: BlockB = None,
-    e: BlockE = None,
     f: BlockF = None,
     relation_zipf_exponent: float = DEFAULT_ZIPF_EXPONENT,
     seed: int = 0,
@@ -463,5 +462,4 @@ def sample_schema(
         target_lcc=target_lcc,
         path_mean_target=path_mean_target,
         path_hi_target=path_hi_target,
-        rel_pair_affinity=e.rel_pair_affinity if e is not None else None,
     )

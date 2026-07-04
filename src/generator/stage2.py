@@ -703,21 +703,6 @@ def instantiate(
 
     all_objs = np.arange(actual_V)
 
-    # Precompute relation-pair affinity boost scores: aff_boost[r, v] = sum of
-    # affinity[r, r2] for all r2 in entity_cs[v].  Shape (R, actual_V), float32.
-    # Built once via sparse matrix multiply so the per-relation inner loop is O(1).
-    _aff_boost_rv: np.ndarray | None = None
-    if schema.rel_pair_affinity is not None:
-        R_aff = schema.rel_pair_affinity.shape[0]
-        # cs_bin[r2, v] = 1 if r2 ∈ entity_cs[v], for r2 < R_aff
-        cs_bin = np.zeros((R_aff, actual_V), dtype=np.float32)
-        for v, cs in enumerate(entity_cs):
-            for r2 in cs:
-                if r2 < R_aff:
-                    cs_bin[r2, v] = 1.0
-        # (R, R_aff) @ (R_aff, V) → (R, V)
-        _aff_boost_rv = schema.rel_pair_affinity @ cs_bin  # shape (R, V)
-
     def _relation_alpha(alpha_q) -> float:
         """One per-relation exponent drawn from a multiplicity-α quantile fit (NaN → flat)."""
         vals = sample_quantiles_trunc(alpha_q, 1, rng)
@@ -783,11 +768,6 @@ def instantiate(
         if O_r is not None and schema.a_subj != 0.0:
             inv_sizes = np.array([len(entity_inv_cs[o]) for o in O_r], dtype=float)
             w_in = w_in * np.power(np.maximum(inv_sizes, 1.0), schema.a_subj)
-        # Relation-pair affinity boost: prefer objects whose outgoing CS relations
-        # commonly follow rel_idx in the source KG (idea 3).
-        if _aff_boost_rv is not None and rel_idx < _aff_boost_rv.shape[0]:
-            boosts = _aff_boost_rv[rel_idx, obj_ids]  # (n_or,), precomputed
-            w_in = w_in * np.exp(3.0 * boosts)
         sw_in = w_in.sum()
         if sw_in <= 0.0:
             continue
