@@ -91,3 +91,8 @@ class Schema:
     subj_group_weights: np.ndarray | None = None  # (COOC_NUM_GROUPS,) Zipf weights from subj spectrum
     obj_group_probs: np.ndarray | None = None     # (COOC_NUM_GROUPS, |R|) inverse group prototypes
     obj_group_weights: np.ndarray | None = None   # (COOC_NUM_GROUPS,) Zipf weights from obj spectrum
+    # Relation-pair affinity (Block E idea 3): P(r2 | r1) — (|R|×|R|) row-stochastic
+    # matrix derived from the source KG.  Used in Stage 2 in-side PA weight to favour
+    # object nodes whose outgoing relations complement the current edge's relation.
+    # None → feature disabled (no affinity boost applied).
+    rel_pair_affinity: np.ndarray | None = None

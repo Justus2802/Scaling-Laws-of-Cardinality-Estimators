@@ -47,6 +47,7 @@ from one integer: Stage 1 `seed`, Stage 2 `seed+1`, Stage 3 `seed+2`.
 | D | `cs_size_q`, `num_distinct_cs`, `cs_freq_fit.alpha`/`.v_max` | forward CS templates: size (quantile function), count, reuse skew + truncation |
 | D | `inv_cs_size_q`, `inv_num_distinct_cs`, `inv_cs_freq_fit.alpha`/`.v_max` | inverse CS templates (object side): size (quantile function), count, reuse skew + truncation |
 | E | motif counts | Stage-3 targets (triangles, 4-cycle, diamond, k4, tailed) |
+| E | `rel_pair_affinity` | Stage-2 in-side affinity boost (see §Relation-pair affinity) |
 | F | `degree_assortativity` | Stage-3 target |
 | F | `num_components`, `largest_component_fraction` | Stage-2 connectivity target (nc, LCC fraction) |
 | F | `shortest_path_max` | Stage-2 diameter cap (`path_hi_target = int(max)`) |
@@ -158,10 +159,12 @@ where most of the fidelity fixes live.
      by `multinomial`, then **cap at `|O_r|`** + redistribute; in capacity mode a per-subject hard
      quota (`target − placed`) is enforced via `_cap_redistribute`.
    - **In-side** (per object over `O_r`): weight `power-law(α_subj_r) · degree-target factor ·
-     inv_cs_size^a_subj` (subject-multiplicity tail × quota/expected-degree × **G2b in-side
-     offset**); allocate by `multinomial`, then **cap at `|S_r|`** + redistribute, plus the
-     per-object hard quota in capacity mode. When no degree targets exist, no degree factor
-     is applied (allocation follows the multiplicity tail and G2b offsets alone).
+     inv_cs_size^a_subj · exp(λ·affinity_boost)` (subject-multiplicity tail × quota/expected-degree
+     × **G2b in-side offset** × **relation-pair affinity boost**); allocate by `multinomial`, then
+     **cap at `|S_r|`** + redistribute, plus the per-object hard quota in capacity mode. When no
+     degree targets exist, no degree factor is applied. The affinity boost
+     `exp(λ · Σ_{r2 ∈ CS(o)} affinity[r, r2])` favours objects whose forward CS relations commonly
+     follow relation `r` in the source KG — see §Relation-pair affinity.
    - **Pair** subject-stubs with object-stubs within `S_r × O_r` (configuration model); on a
      self-loop or duplicate `(s,o)` **retry** by swapping in another pending object stub.
 7. **Connect components** — bridge isolated components into the giant, *selectively*: keeps up
@@ -193,6 +196,32 @@ where most of the fidelity fixes live.
 The `_cap_redistribute` helper implements the symmetric cap (object ≤ `|S_r|`, subject ≤ `|O_r|`).
 Stage-2 tuning constants (`MAX_PAIR_RETRY`, `CAP_REDISTRIBUTE_PASSES`, `SIZE_ESCAPE_FAILS`,
 `TEMPLATE_ATTEMPT_*`, `FALLBACK_CS_MEAN_FLOOR`) are module-level at the top of `stage2.py`.
+
+### Relation-pair affinity
+
+When the source KG's Block E is computed from a live graph (not loaded from cache), it also
+measures an **(R × R) row-stochastic affinity matrix** `P(r2 | r1)` where entry `[r1, r2]`
+is the conditional probability that a path through a relation-`r1` edge continues with a
+relation-`r2` edge at the object node.
+
+This matrix is stored as `Schema.rel_pair_affinity` and used in Stage 2's **in-side weight**
+for each relation `r`:
+
+```
+affinity_boost[o] = Σ_{r2 ∈ CS(o)} affinity[r, r2]
+w_in[o] ×= exp(λ · affinity_boost[o])   (λ = 3.0)
+```
+
+Objects whose forward CS (outgoing relations) commonly follow relation `r` in the source KG
+receive a multiplicative boost of up to ~20×, biasing the configuration model to wire
+relation-`r1` edges into nodes that will serve as sources for relation-`r2` edges.
+This directly addresses path/tree entropy errors by building the local two-step
+relation-pair co-occurrence structure into the wiring rather than relying on Stage 3 rewiring.
+
+**Availability:** the affinity matrix is computed only when `BlockE.calculate(g, ...)` is
+called with a live graph (e.g. `--kg-file` mode in `signature_roundtrip.py`). When Block E
+is loaded from a cached `block_e.json` (standard corpus mode), `rel_pair_affinity` is `None`
+and the boost is skipped (no effect on wiring).
 
 ---
 
@@ -299,6 +328,7 @@ In roughly the order they were made:
    `geometric(mean_functionality)` + global-throttle wiring with the per-relation `multinomial`
    allocation — wiring per-relation α (out-side) and the G2b `a_obj` offset, hitting the relation
    budget exactly.
+   
 5. **Faithful in-side allocation.** Replaced the hard inverse-functionality cap (which collapsed
    subject-multiplicity to `{1,2}`) with a per-relation **subject-multiplicity** allocation from
    `subj_alpha` × PA. The old cap is gone.

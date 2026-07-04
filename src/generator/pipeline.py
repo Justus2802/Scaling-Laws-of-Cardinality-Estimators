@@ -123,6 +123,7 @@ class Generator:
             self.target.c,
             d=self.target.d,
             b=self.target.b,
+            e=self.target.e,
             f=self.target.f,
             relation_zipf_exponent=relation_zipf_exponent,
             seed=seed,

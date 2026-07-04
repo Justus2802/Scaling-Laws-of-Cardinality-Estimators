@@ -55,6 +55,7 @@ class BlockE(SignatureBlock):
         self._path_template_entropy = _NOT_CALCULATED
         self._tree_template_zipf = _NOT_CALCULATED
         self._tree_template_entropy = _NOT_CALCULATED
+        self._rel_pair_affinity = None
 
     # ── properties ────────────────────────────────────────────────────────────
 
@@ -101,6 +102,11 @@ class BlockE(SignatureBlock):
     @property
     def tree_template_entropy(self) -> float:
         return self._require("tree_template_entropy", self._tree_template_entropy)
+
+    @property
+    def rel_pair_affinity(self):
+        """R×R row-stochastic matrix P(r2|r1); None if no edges."""
+        return self._rel_pair_affinity
 
     # ── core ──────────────────────────────────────────────────────────────────
 
@@ -217,6 +223,30 @@ class BlockE(SignatureBlock):
                 "Block E: computed tree_template stats (zipf_alpha=%.4f, entropy=%.4f)",
                 self._tree_template_zipf, self._tree_template_entropy,
             )
+        # Relation-pair affinity: P(r2 | r1) from source KG directed edges.
+        # For each edge s→o with relation r1, count which relations r2 appear on o's
+        # outgoing edges; normalize rows → row-stochastic (R×R) matrix.
+        preds = list({e["predicate"] for e in g.es})
+        if preds:
+            pred_idx = {p: i for i, p in enumerate(preds)}
+            R = len(preds)
+            counts = np.zeros((R, R), dtype=np.float64)
+            out_rels: list[set[int]] = [set() for _ in range(g.vcount())]
+            for e in g.es:
+                ri = pred_idx.get(e["predicate"])
+                if ri is not None:
+                    out_rels[e.source].add(ri)
+            for e in g.es:
+                r1 = pred_idx.get(e["predicate"])
+                if r1 is None:
+                    continue
+                for r2 in out_rels[e.target]:
+                    counts[r1, r2] += 1
+            row_sums = counts.sum(axis=1, keepdims=True)
+            row_sums[row_sums == 0] = 1.0
+            self._rel_pair_affinity = (counts / row_sums).astype(np.float32)
+        else:
+            self._rel_pair_affinity = None
         return self
 
     def as_vector(self) -> list[float]:
