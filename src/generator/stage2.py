@@ -370,6 +370,28 @@ def instantiate(
     #    Sample each entity's CS independently (original behaviour).
     # ------------------------------------------------------------------
 
+    def _allocate_quotas(weights: np.ndarray, total: int) -> list[int]:
+        """Largest-remainder integer allocation: distribute ``total`` slots among groups
+        proportional to ``weights``, with a floor of 1 per group, summing exactly to
+        ``max(total, len(weights))``.  Prevents the old max(1,round(total*w_g)) per-group
+        pattern from inflating the total when many groups have small weights.
+        """
+        n = len(weights)
+        if n == 0:
+            return []
+        budget = max(total, n)  # at least 1 per group
+        # Start with floor(budget * w_g) per group, then give leftover slots to the
+        # groups with the largest fractional parts (largest-remainder method).
+        raw = np.asarray(weights, dtype=float) * budget
+        floors = np.maximum(1, np.floor(raw).astype(int))
+        leftover = budget - int(floors.sum())
+        if leftover > 0:
+            fracs = raw - np.floor(raw)
+            order = np.argsort(fracs)[::-1]
+            for i in range(min(leftover, n)):
+                floors[order[i]] += 1
+        return floors.tolist()
+
     def _cs_probs(t: int) -> tuple[np.ndarray, int]:
         """Return (normalised relation probabilities, #nonzero) for type t (-1 = untyped).
 
@@ -461,12 +483,15 @@ def instantiate(
 
         if schema.cs_num_templates > 0:
             # One template pool per group, sized ∝ group weight.
+            # Use largest-remainder allocation so the per-group counts sum exactly to
+            # cs_num_templates (previously max(1,round(...)) inflated the total, causing
+            # more distinct CSes than the target).
+            _fwd_quotas = _allocate_quotas(schema.subj_group_weights, schema.cs_num_templates)
             group_fwd_pools: list[list[np.ndarray]] = []
             for g in range(n_sg):
                 probs_g = schema.subj_group_probs[g].copy()
                 nz_g = int((probs_g > 0).sum())
-                n_t_g = max(1, round(schema.cs_num_templates * float(schema.subj_group_weights[g])))
-                group_fwd_pools.append(_build_distinct(probs_g, nz_g, schema.cs_size_q, n_t_g))
+                group_fwd_pools.append(_build_distinct(probs_g, nz_g, schema.cs_size_q, _fwd_quotas[g]))
             buckets_sg: dict[int, list[int]] = {}
             for v in range(actual_V):
                 buckets_sg.setdefault(int(entity_subj_group[v]), []).append(v)
@@ -539,12 +564,12 @@ def instantiate(
 
         entity_inv_cs = [None] * actual_V
         if schema.inv_cs_num_templates > 0:
+            _inv_quotas = _allocate_quotas(schema.obj_group_weights, schema.inv_cs_num_templates)
             group_inv_pools: list[list[np.ndarray]] = []
             for g in range(n_og):
                 probs_g = schema.obj_group_probs[g].copy()
                 nz_g = int((probs_g > 0).sum())
-                n_t_g = max(1, round(schema.inv_cs_num_templates * float(schema.obj_group_weights[g])))
-                group_inv_pools.append(_build_distinct(probs_g, nz_g, schema.inv_cs_size_q, n_t_g))
+                group_inv_pools.append(_build_distinct(probs_g, nz_g, schema.inv_cs_size_q, _inv_quotas[g]))
             buckets_og: dict[int, list[int]] = {}
             for v in range(actual_V):
                 buckets_og.setdefault(int(entity_obj_group[v]), []).append(v)
@@ -809,6 +834,68 @@ def instantiate(
             # else: no valid object found within retries → drop this stub (rare)
 
     log.info("Stage 2: wired %d content edges", len(content_edges))
+
+    # ------------------------------------------------------------------
+    # 4b. Inverse-CS template completion: redirect edges so every object
+    #     node receives at least one in-edge per predicate in its assigned
+    #     template.  Without this, sparse wiring produces only a subset of
+    #     template predicates per node, exploding the distinct inverse-CS
+    #     count.  We REDIRECT existing edges (no net edge-count change):
+    #     for a node o missing predicate r, find an edge (s', o', r) where
+    #     o' already has r satisfied elsewhere, remove that edge, and add
+    #     (s', o, r) instead.  Only runs when entity_inv_cs is assigned.
+    # ------------------------------------------------------------------
+    if entity_inv_cs is not None and subjects_by_rel:
+        pred_to_idx = {r: i for i, r in enumerate(schema.relations)}
+        # Build per-node actual in-predicate sets.
+        actual_in_preds: list[set[int]] = [set() for _ in range(actual_V)]
+        for s, o, pred in content_edges:
+            if o < actual_V and pred in pred_to_idx:
+                actual_in_preds[o].add(pred_to_idx[pred])
+
+        # Build per-relation edge index list and per-(node,rel) in-edge count.
+        edges_by_rel: dict[int, list[int]] = {}
+        in_count: dict[tuple[int,int], int] = {}  # (node, rel_idx) -> count
+        for ei, (s, o, pred) in enumerate(content_edges):
+            if pred in pred_to_idx:
+                ri = pred_to_idx[pred]
+                edges_by_rel.setdefault(ri, []).append(ei)
+                in_count[(o, ri)] = in_count.get((o, ri), 0) + 1
+
+        redirected = 0
+        for o in range(actual_V):
+            tmpl = entity_inv_cs[o]
+            if tmpl is None or len(tmpl) == 0:
+                continue
+            for rel_idx in tmpl:
+                if rel_idx in actual_in_preds[o]:
+                    continue
+                pred = schema.relations[rel_idx]
+                candidates = edges_by_rel.get(rel_idx, [])
+                shuffled = list(candidates)
+                rng.shuffle(shuffled)
+                for ei in shuffled:
+                    s2, o2, _ = content_edges[ei]
+                    if o2 == o or s2 == o:
+                        continue
+                    # Only redirect if o2 has at least 2 in-edges for this
+                    # relation — one can be lost without breaking its template.
+                    if in_count.get((o2, rel_idx), 0) < 2:
+                        continue
+                    if (s2, o, pred) in seen:
+                        continue
+                    # Redirect the edge.
+                    seen.discard((s2, o2, pred))
+                    seen.add((s2, o, pred))
+                    content_edges[ei] = (s2, o, pred)
+                    in_count[(o2, rel_idx)] = in_count.get((o2, rel_idx), 1) - 1
+                    in_count[(o, rel_idx)] = in_count.get((o, rel_idx), 0) + 1
+                    actual_in_preds[o].add(rel_idx)
+                    redirected += 1
+                    break
+
+        if redirected:
+            log.info("Stage 2: inv-CS template completion redirected %d edges", redirected)
 
     # ------------------------------------------------------------------
     # 5. Connectivity guarantee: bridge isolated components to the giant,

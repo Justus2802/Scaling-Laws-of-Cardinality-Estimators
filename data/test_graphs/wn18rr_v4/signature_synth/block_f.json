@@ -1,8 +1,8 @@
 {
   "_num_components": 1,
   "_largest_component_fraction": 1.0,
-  "_clustering_coefficient": 0.04820636075412367,
-  "_degree_assortativity": -0.06128602939386453,
+  "_clustering_coefficient": 0.08904056326075199,
+  "_degree_assortativity": -0.09470096016752581,
   "_shortest_path_max": NaN,
   "_shortest_path_mean": NaN,
   "_shortest_path_var": NaN,
