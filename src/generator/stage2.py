@@ -43,6 +43,7 @@ def _connect_components(
     in_degrees: "np.ndarray",
     target_nc: int = 1,
     target_lcc: float = 1.0,
+    objects_by_rel: "dict | None" = None,
 ) -> "np.ndarray":
     """Bridge isolated entity components, targeting a specific component count and LCC fraction.
 
@@ -132,7 +133,16 @@ def _connect_components(
             continue
         src = comp[0]
         bridge = giant[int(rng.integers(len(giant)))]
-        pred = schema.relations[int(rng.integers(len(schema.relations)))]
+        # Respect inv-CS: only use a relation that bridge is eligible to receive.
+        if objects_by_rel is not None:
+            eligible = [r for r in range(len(schema.relations))
+                        if bridge in (objects_by_rel.get(r) or [])]
+            if not eligible:
+                eligible = list(range(len(schema.relations)))
+            rel_idx = eligible[int(rng.integers(len(eligible)))]
+        else:
+            rel_idx = int(rng.integers(len(schema.relations)))
+        pred = schema.relations[rel_idx]
         triple = (src, bridge, pred)
         if triple not in seen:
             seen.add(triple)
@@ -379,6 +389,28 @@ def instantiate(
     #    Sample each entity's CS independently (original behaviour).
     # ------------------------------------------------------------------
 
+    def _allocate_quotas(weights: np.ndarray, total: int) -> list[int]:
+        """Largest-remainder integer allocation: distribute ``total`` slots among groups
+        proportional to ``weights``, with a floor of 1 per group, summing exactly to
+        ``max(total, len(weights))``.  Prevents the old max(1,round(total*w_g)) per-group
+        pattern from inflating the total when many groups have small weights.
+        """
+        n = len(weights)
+        if n == 0:
+            return []
+        budget = max(total, n)  # at least 1 per group
+        # Start with floor(budget * w_g) per group, then give leftover slots to the
+        # groups with the largest fractional parts (largest-remainder method).
+        raw = np.asarray(weights, dtype=float) * budget
+        floors = np.maximum(1, np.floor(raw).astype(int))
+        leftover = budget - int(floors.sum())
+        if leftover > 0:
+            fracs = raw - np.floor(raw)
+            order = np.argsort(fracs)[::-1]
+            for i in range(min(leftover, n)):
+                floors[order[i]] += 1
+        return floors.tolist()
+
     def _cs_probs(t: int) -> tuple[np.ndarray, int]:
         """Return (normalised relation probabilities, #nonzero) for type t (-1 = untyped).
 
@@ -470,12 +502,15 @@ def instantiate(
 
         if schema.cs_num_templates > 0:
             # One template pool per group, sized ∝ group weight.
+            # Use largest-remainder allocation so the per-group counts sum exactly to
+            # cs_num_templates (previously max(1,round(...)) inflated the total, causing
+            # more distinct CSes than the target).
+            _fwd_quotas = _allocate_quotas(schema.subj_group_weights, schema.cs_num_templates)
             group_fwd_pools: list[list[np.ndarray]] = []
             for g in range(n_sg):
                 probs_g = schema.subj_group_probs[g].copy()
                 nz_g = int((probs_g > 0).sum())
-                n_t_g = max(1, round(schema.cs_num_templates * float(schema.subj_group_weights[g])))
-                group_fwd_pools.append(_build_distinct(probs_g, nz_g, schema.cs_size_q, n_t_g))
+                group_fwd_pools.append(_build_distinct(probs_g, nz_g, schema.cs_size_q, _fwd_quotas[g]))
             buckets_sg: dict[int, list[int]] = {}
             for v in range(actual_V):
                 buckets_sg.setdefault(int(entity_subj_group[v]), []).append(v)
@@ -548,12 +583,12 @@ def instantiate(
 
         entity_inv_cs = [None] * actual_V
         if schema.inv_cs_num_templates > 0:
+            _inv_quotas = _allocate_quotas(schema.obj_group_weights, schema.inv_cs_num_templates)
             group_inv_pools: list[list[np.ndarray]] = []
             for g in range(n_og):
                 probs_g = schema.obj_group_probs[g].copy()
                 nz_g = int((probs_g > 0).sum())
-                n_t_g = max(1, round(schema.inv_cs_num_templates * float(schema.obj_group_weights[g])))
-                group_inv_pools.append(_build_distinct(probs_g, nz_g, schema.inv_cs_size_q, n_t_g))
+                group_inv_pools.append(_build_distinct(probs_g, nz_g, schema.inv_cs_size_q, _inv_quotas[g]))
             buckets_og: dict[int, list[int]] = {}
             for v in range(actual_V):
                 buckets_og.setdefault(int(entity_obj_group[v]), []).append(v)
@@ -820,6 +855,64 @@ def instantiate(
     log.info("Stage 2: wired %d content edges", len(content_edges))
 
     # ------------------------------------------------------------------
+    # 4b. Inv-CS template completion: redirect existing edges so every object
+    #     node receives at least one in-edge per predicate in its assigned
+    #     template.  Runs after main wiring but before deficit recovery /
+    #     bridging (which use objects_by_rel and therefore stay inv-CS-aware).
+    #     For each missing predicate r on node o, finds a donor edge (s',o',r)
+    #     where o' has r from ≥2 edges (can spare one) and redirects to
+    #     (s',o,r).  No net edge-count change.
+    #     Limitation: in sparse graphs (mean degree ~2.5, 9 relations) only
+    #     ~44% of (node,rel) pairs have ≥2 in-edges, so not all gaps can be
+    #     filled — this is a structural density constraint, not a code issue.
+    # ------------------------------------------------------------------
+    if entity_inv_cs is not None and subjects_by_rel:
+        pred_to_idx = {r: i for i, r in enumerate(schema.relations)}
+        actual_in_preds: list[set[int]] = [set() for _ in range(actual_V)]
+        for s, o, pred in content_edges:
+            if o < actual_V and pred in pred_to_idx:
+                actual_in_preds[o].add(pred_to_idx[pred])
+
+        edges_by_rel: dict[int, list[int]] = {}
+        in_count: dict[tuple[int, int], int] = {}
+        for ei, (s, o, pred) in enumerate(content_edges):
+            if pred in pred_to_idx:
+                ri = pred_to_idx[pred]
+                edges_by_rel.setdefault(ri, []).append(ei)
+                in_count[(o, ri)] = in_count.get((o, ri), 0) + 1
+
+        redirected = 0
+        for o in range(actual_V):
+            tmpl = entity_inv_cs[o]
+            if tmpl is None or len(tmpl) == 0:
+                continue
+            for rel_idx in tmpl:
+                if rel_idx in actual_in_preds[o]:
+                    continue
+                pred = schema.relations[rel_idx]
+                candidates = list(edges_by_rel.get(rel_idx, []))
+                rng.shuffle(candidates)
+                for ei in candidates:
+                    s2, o2, _ = content_edges[ei]
+                    if o2 == o or s2 == o:
+                        continue
+                    if in_count.get((o2, rel_idx), 0) < 2:
+                        continue
+                    if (s2, o, pred) in seen:
+                        continue
+                    seen.discard((s2, o2, pred))
+                    seen.add((s2, o, pred))
+                    content_edges[ei] = (s2, o, pred)
+                    in_count[(o2, rel_idx)] = in_count.get((o2, rel_idx), 1) - 1
+                    in_count[(o, rel_idx)] = in_count.get((o, rel_idx), 0) + 1
+                    actual_in_preds[o].add(rel_idx)
+                    redirected += 1
+                    break
+
+        if redirected:
+            log.info("Stage 2: inv-CS template completion redirected %d edges", redirected)
+
+    # ------------------------------------------------------------------
     # 5. Connectivity guarantee: bridge isolated components to the giant,
     #     selectively — keeps up to (target_nc - 1) satellite components
     #     unbridged to hit target_lcc, bridges the rest.  Runs *first* among
@@ -827,25 +920,21 @@ def instantiate(
     #     sample edge endpoints freely and would otherwise reconnect a
     #     deliberately-kept-isolated satellite) can be told which nodes to
     #     avoid via the returned mask.  See _connect_components.
+    #     objects_by_rel is passed so bridging edges respect inv-CS templates.
     # ------------------------------------------------------------------
     is_satellite = _connect_components(
         content_edges, actual_V, schema, rng, seen, in_degrees,
         target_nc=schema.target_num_components,
         target_lcc=schema.target_lcc,
+        objects_by_rel=objects_by_rel,
     )
     non_satellite = ~is_satellite
 
     # ------------------------------------------------------------------
-    # 5a. Deficit recovery: per-relation budget vs degree-quota misalignment can
-    #     leave part of the edge budget unplaced (capacity mode drops overflow
-    #     rather than exceeding a node's sampled target, and skips relations
-    #     whose object pool is fully saturated).  Places the remainder by
-    #     sampling (subject, object) pairs weighted by remaining quota — the
-    #     +1e-3 smoothing lets fully saturated pools still accept edges (soft
-    #     overflow spread evenly) so edge conservation always wins.  Pools are
-    #     restricted to non-satellite nodes so this can't undo step 5's
-    #     component selection; a relation with no non-satellite subjects/objects
-    #     is skipped for that attempt.
+    # 5a. Deficit recovery: per-relation budget vs degree-quota misalignment
+    #     can leave part of the edge budget unplaced.  Places the remainder
+    #     by sampling (subject, object) pairs weighted by remaining quota.
+    #     Uses objects_by_rel so only inv-CS-eligible objects are chosen.
     # ------------------------------------------------------------------
     deficit = content_E_target - len(content_edges)
     if deficit > 0 and present:

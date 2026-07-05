@@ -361,7 +361,7 @@ def main():
     sd = BlockD().calculate(g_synth)
     se = BlockE().calculate(g_synth, sample_budget=_FINAL_SAMPLE_BUDGET,
                             skip_stars_and_paths=args.skip_templates)
-    sf = BlockF().calculate(g_synth, skip_shortest_paths=True)
+    sf = BlockF().calculate(g_synth, skip_shortest_paths=False)
 
     # ── Step 4b: dump the synthetic signature (same layout as measured graphs) ─
     # Write plots, per-block JSON, summary and combined JSON to a

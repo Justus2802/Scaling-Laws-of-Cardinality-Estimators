@@ -118,7 +118,10 @@ where most of the fidelity fixes live.
 
    *Group path* (when `subj_group_probs` / `obj_group_probs` are set in Schema):
    - Assign each entity to a co-occurrence group drawn from the Zipf-weighted group distribution.
-   - Build one template pool per group, sized ∝ group weight (`_build_distinct` from the group prototype).
+   - Build one template pool per group, sized ∝ group weight via `_allocate_quotas` (largest-remainder
+     method: distributes `cs_num_templates` slots exactly, with floor 1 per group; the old
+     `max(1, round(w_g · total))` per-group formulation inflated the total when many groups had
+     small weights). Applied to both forward (`_fwd_quotas`) and inverse (`_inv_quotas`) pools.
    - Assign entities within each group to templates via `_assign_templates`.
    - (Inverse side mirrors this using `obj_group_probs`.)
 
@@ -161,9 +164,17 @@ where most of the fidelity fixes live.
      inv_cs_size^a_subj` (subject-multiplicity tail × quota/expected-degree × **G2b in-side
      offset**); allocate by `multinomial`, then **cap at `|S_r|`** + redistribute, plus the
      per-object hard quota in capacity mode. When no degree targets exist, no degree factor
-     is applied (allocation follows the multiplicity tail and G2b offsets alone).
+     is applied.
    - **Pair** subject-stubs with object-stubs within `S_r × O_r` (configuration model); on a
      self-loop or duplicate `(s,o)` **retry** by swapping in another pending object stub.
+6b. **Inv-CS template completion** (step 4b, when `entity_inv_cs` is assigned): after the main
+   wiring loop, detects object nodes whose actual in-predicate set is a strict subset of their
+   assigned inverse-CS template. For each missing predicate `r`, finds an existing edge
+   `(s', o', r)` where `o'` already receives `r` from ≥2 edges (so removing one doesn't break
+   its template), and **redirects** it to `(s', o, r)`. No net edge-count change. This enforces
+   that every template predicate is realised on each object, reducing `inv_num_distinct_cs`
+   from ~63 to ~32 (target) before Stage 3. Stage 3 degree-preserving swaps partially undo this
+   (ending around 55), but Stage 3 initial loss improves (49.6 vs 56.2 without this pass).
 7. **Connect components** — bridge isolated components into the giant, *selectively*: keeps up
    to `target_nc − 1` satellite components unbridged (chosen so their combined size is closest to
    `(1 − target_lcc) · V`), bridges the rest. Runs **first** among the connectivity-affecting
@@ -479,10 +490,12 @@ Each round:
 - **Co-occurrence density and row-entropy not analytically pinned.** These emerge from
   group prototype concentration and CS size but have no independent control knob. Remaining
   deviations require either softmax temperature tuning per group or Stage-3 obj-side steering.
-- **Inverse `num_distinct_cs` partially hit.** The inverse-CS templates fix `a_subj` and improve the
-  inverse count, but the *realised* `inv_num_distinct_cs` undershoots the target (an object's realised
-  inverse CS ⊆ its assigned template, since the in-side allocation can give 0 edges for some of its
-  relations — there is no symmetric in-side floor). Forward side is closer (it has the out-side floor).
+- **Inverse `num_distinct_cs` after Stage 3.** The Stage 2 inv-CS template completion (step 6b)
+  achieves the target `inv_num_distinct_cs` (e.g. 32) before Stage 3. Stage 3's degree-preserving
+  swaps undo this (~55 after 200k swaps for WN18RR) because swaps that change in-edge endpoints
+  freely modify each node's in-predicate set. Adding an inv-CS loss term to Stage 3 would require
+  O(1) per-swap updates to a `frozenset` index — non-trivial but feasible. Until then, the path
+  and tree template entropy errors remain ~47–60%.
 - **Aggregate vs per-relation in-degree.** The in-side prioritises per-relation `subj_alpha`;
   aggregate `in_degree.alpha` emerges (best-effort). Superlinear PA from `1/(α_in−2)` for
   `2<α_in<3` is condensation-prone — clamping `in_pa≤1` is the lever if it drifts.

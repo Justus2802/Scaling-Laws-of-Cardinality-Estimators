@@ -55,7 +55,6 @@ class BlockE(SignatureBlock):
         self._path_template_entropy = _NOT_CALCULATED
         self._tree_template_zipf = _NOT_CALCULATED
         self._tree_template_entropy = _NOT_CALCULATED
-
     # ── properties ────────────────────────────────────────────────────────────
 
     @property
