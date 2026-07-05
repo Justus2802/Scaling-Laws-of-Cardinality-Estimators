@@ -75,8 +75,16 @@ def _auto_log_path(log_dir: Path, prefix: str, graph_label: str, args,
     :returns: Destination path for the CSV.
     """
     parts = [graph_label, f"seed{args.seed}", f"rb{args.rewire_budget}"]
+    # Encode a non-default starting temperature so cooled runs don't collide with
+    # (or get mistaken for) the default-temp logs of the same graph/budget.
+    if args.initial_temp != 0.05:
+        parts.append(f"t{args.initial_temp:g}")
     if args.skip_templates:
         parts.append("skiptmpl")
+    if args.skip_c5:
+        parts.append("skipc5")
+    if args.skip_c6:
+        parts.append("skipc6")
     parts.append(run_ts)
     return log_dir / (f"{prefix}_" + "_".join(parts) + ".csv")
 
@@ -90,6 +98,23 @@ def _resolve_log_path(value: "str | None", log_dir: Path, prefix: str,
         path.parent.mkdir(parents=True, exist_ok=True)
         return path
     return Path(value) if value else None
+
+
+def _rename_to_executed_budget(path: "Path | None", planned_budget: int,
+                                executed_steps: int) -> "Path | None":
+    """Rename an auto-named log's ``rb<planned>`` filename token to ``rb<executed>``.
+
+    Stage 3 may stop before ``rewire_budget`` attempts if a manual escape (ESC/q)
+    breaks the rewiring loop early; the auto-named log filename is otherwise
+    written with the *planned* budget, which would then overstate what the run
+    actually did. No-op if ``path`` is None or the run wasn't cut short.
+    """
+    if path is None or executed_steps >= planned_budget:
+        return path
+    new_path = path.with_name(path.name.replace(f"rb{planned_budget}", f"rb{executed_steps}"))
+    if new_path != path:
+        path.rename(new_path)
+    return new_path
 
 
 def _load_block(cls, path: Path):
@@ -229,6 +254,15 @@ def main():
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--rewire-budget", type=int, default=5_000)
+    parser.add_argument("--initial-temp", type=float, default=0.05,
+                        help="Stage 3 SA starting temperature. Default 0.05 suits "
+                             "no-hub graphs (wn18rr); hub-heavy graphs have a much "
+                             "smaller per-swap |Δloss| and need a far lower value "
+                             "(fb237 ≈ 0.002) or the walk never cools "
+                             "(docs/notes/stage3_steering_analysis.md §2).")
+    parser.add_argument("--cooling-rate", type=float, default=0.99993,
+                        help="Stage 3 geometric cooling per accepted swap "
+                             "(default 0.99993, tuned for a ~100k budget).")
     parser.add_argument("--convergence-log", nargs="?", const="AUTO", default=None,
                         help="Write Stage 3 convergence CSV. With no value, the file "
                              "is auto-named from the graph name and run options and "
@@ -243,6 +277,12 @@ def main():
     parser.add_argument("--skip-templates", action="store_true",
                         help="Skip path/tree template and star measurement on both "
                              "target and synthetic (saves ~8 min on medium graphs).")
+    parser.add_argument("--skip-c5", action="store_true",
+                        help="Disable 5-cycle steering in Stage 3 (sets use_c5=False), "
+                             "dropping its per-swap delta and loss term.")
+    parser.add_argument("--skip-c6", action="store_true",
+                        help="Disable 6-cycle steering in Stage 3 (sets use_c6=False), "
+                             "dropping its per-swap delta and loss term.")
     args = parser.parse_args()
 
     # Single per-run timestamp stamped into every auto-named output (graph,
@@ -284,10 +324,22 @@ def main():
     g_synth = Generator(target_sig).sample(
         seed=args.seed,
         rewire_budget=args.rewire_budget,
+        initial_temp=args.initial_temp,
+        cooling_rate=args.cooling_rate,
+        skip_c5=args.skip_c5,
+        skip_c6=args.skip_c6,
         convergence_log=conv_log_path,
         swap_log=swap_log_path,
     )
     print(f"  {g_synth.vcount():,} nodes  {g_synth.ecount():,} edges")
+    executed_steps = int(g_synth["stage3_executed_steps"])
+    if executed_steps < args.rewire_budget:
+        print(f"  Stage 3 stopped early via manual escape: "
+              f"{executed_steps}/{args.rewire_budget} steps executed")
+        # Auto-named logs encode the planned budget (rb<N>); relabel to what
+        # actually ran so the filename doesn't overstate the run.
+        conv_log_path = _rename_to_executed_budget(conv_log_path, args.rewire_budget, executed_steps)
+        swap_log_path = _rename_to_executed_budget(swap_log_path, args.rewire_budget, executed_steps)
     if conv_log_path is not None:
         print(f"  convergence log → {conv_log_path}")
     if swap_log_path is not None:

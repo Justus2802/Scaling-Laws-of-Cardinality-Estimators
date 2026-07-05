@@ -54,12 +54,13 @@ python scripts/sample_signature.py --out sampled.json
 ```
 
 ### `signature_roundtrip.py`
-Full pipeline test: loads a target reduced signature for a named graph, runs Stage 3 to generate a synthetic graph, re-measures it, and compares the result to the target. Useful for end-to-end validation. `--convergence-log` records the Stage-3 convergence CSV (auto-named into `experiments/convergence_logs/`; plot with `convergence_plot.py`); `--swap-log` records one row per evaluated Stage-3 swap proposal — per-motif deltas, Δloss, accepted — auto-named into `experiments/swap_delta_logs/` (plot with `swap_delta_viz.py`).
+Full pipeline test: loads a target reduced signature for a named graph, runs Stage 3 to generate a synthetic graph, re-measures it, and compares the result to the target. Useful for end-to-end validation. `--convergence-log` records the Stage-3 convergence CSV (auto-named into `experiments/convergence_logs/`; plot with `convergence_plot.py`); `--swap-log` records one row per evaluated Stage-3 swap proposal — per-motif deltas, Δloss, accepted — auto-named into `experiments/swap_delta_logs/` (plot with `swap_delta_viz.py`). `--skip-c5` / `--skip-c6` force 5-/6-cycle steering off in Stage 3 (`use_c5` / `use_c6` = False), dropping that cycle size's per-swap delta and loss term regardless of the target count. During the Stage-3 rewiring loop, pressing **ESC** or **`q`** (checked every 10 steps) breaks out early and returns the best graph found so far — useful for cutting a long run short without losing progress (no-op when stdout isn't an interactive terminal). On early escape, auto-named `--convergence-log` / `--swap-log` filenames — which otherwise encode the planned `--rewire-budget` as `rb<N>` — are renamed to the number of steps actually executed, so the filename reflects the real run, not the requested one.
 
 ```
 python scripts/signature_roundtrip.py aids
 python scripts/signature_roundtrip.py wn18rr_v4 --seed 7 --rewire-budget 5000
 python scripts/signature_roundtrip.py wn18rr_v4 --swap-log
+python scripts/signature_roundtrip.py wn18rr_v4 --skip-c5 --skip-c6
 python scripts/signature_roundtrip.py --kg-file path/to/graph.ttl
 ```
 
@@ -101,6 +102,15 @@ Profiles the **per-swap incremental delta cost** of Stage 3 on a graph's Stage-2
 ```
 python scripts/profile_stage3_deltas.py fb237_v4 wn18rr_v4
 python scripts/profile_stage3_deltas.py fb237_v4 --proposals 300 --timeout 5
+```
+
+### `estimator_variance.py`
+Characterises the **variance of the Horvitz–Thompson neighbour-subsampling estimator** for the induced 5-/6-cycle count (the "approximate hub delta" idea) as a function of endpoint node degree, for several sample counts `K`, and fits a power law `rel_std = a·deg^b` per `K`. For each hub swap it computes the exact cycle set through the four changed pairs and Monte-Carlo simulates the estimator over it (the estimator is unbiased, so relative std is what decides usability). `--metric count` (default) measures the count estimator; `--metric delta` the far noisier after−before delta. Writes per-(proposal, K) CSVs and a log-log rel-std-vs-degree scatter with fitted curves (one per `K`) to `experiments/estimator_variance/`, and prints the fit parameters. Conclusion from the fb237 run is recorded in `docs/notes/stage3_steering_analysis.md` §4 (variance grows steeply with degree — the estimator is unusable on the hubs where it would be needed).
+
+```
+python scripts/estimator_variance.py fb237_v4
+python scripts/estimator_variance.py fb237_v4 --k 5 6 --samples 8 16 32 64 --per-bin 18
+python scripts/estimator_variance.py fb237_v4 --metric delta --bins 20 50 100 200 450
 ```
 
 ## Visualisation

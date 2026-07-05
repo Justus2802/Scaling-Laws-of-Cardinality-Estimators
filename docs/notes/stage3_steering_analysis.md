@@ -109,23 +109,63 @@ On fb237 (300-swap diagnostic run, guards off):
 
 ---
 
-## 4. The "approximate hub delta" idea — investigated and rejected
+## 4. The "approximate hub delta" idea — tested and rejected (variance)
 
 **Idea:** rather than *drop* expensive hub deltas (the guard), compute an
 *approximate* (sampled) delta so hub swaps stay in the steering signal at bounded
-cost.
+cost — c5/c6 first (biggest deltas, most expensive), motif4 at a higher threshold.
 
-**Verdict: not worth building**, for two reasons that only became clear from the
-loss decomposition (§5):
+**Estimator tested.** A Horvitz–Thompson neighbour-subsampling estimator for the
+induced-cycle delta: for each swap-endpoint hub `h` (deg > K), sample K of its
+neighbours `S_h`; a cycle through the changed pairs is *observed* iff both of `h`'s
+two in-cycle neighbours land in `S_h`; reweight each observed cycle by
+`deg_h(deg_h−1)/(K(K−1))` per subsampled hub. `E[estimate] = true count` by
+construction. Validated by Monte-Carlo over the **exact** cycle sets on 47 fb237
+hub swaps (endpoint degrees 20–600, exact sets materialisable), K ∈ {8,16,32}.
 
-1. With a *perfect* delta the per-swap loss move is capped at ~3×10⁻⁴ by scale
-   (§5), so exact-vs-approximate barely matters — per-swap motif steering is
-   intrinsically weak here regardless of delta accuracy. The hub-delta *cost*
-   question is largely moot.
-2. Cancellation (§5) makes the net `Δloss` a residual of opposing terms, so a
-   noisy delta can flip the accept sign — though median alignment 0.48 means it
-   takes a fairly large per-term error (~50 %) to do so, i.e. approximation is
-   *risky*, not catastrophic.
+**Verdict: not viable for cycles — killed by the estimator's own variance, not by
+bias or by the §5 cancellation.**
+
+- **Unbiased — confirmed.** At K=32 the count-estimator bias is ~0 (within ±8 %,
+  the residual being MC noise on the bias estimate). So the H-T formula is correct.
+- **But catastrophic variance on the count, growing with degree.** Relative std of
+  the *count* at K=32: **14 %** (deg 20–50) → **80 %** (50–100) → **~176 %**
+  (100–200) → **~228 %** (200–600). To observe a cycle you need *both* of `h`'s
+  in-cycle neighbours in the sample (prob ~`(K/deg)²` ≈ 2.6 % at deg 200, K 32), so
+  you see a tiny, noisy fraction and scale it up ~38×. It gets worse exactly where
+  it is needed (high degree); taming it needs K ≈ deg, which defeats the point.
+- **The delta is far worse** — it is a difference of two large, near-equal noisy
+  counts, so its relative std explodes: at K=32, **45 %** (deg 20–50) → **~900 %**
+  (50–100) → **~1470 %** (100–200) → **9 000–28 000 %** (200–600). The estimated
+  delta frequently has the **wrong sign**.
+- **Downstream: it corrupts the accept decision.** Feeding one estimated c5/c6 draw
+  into the loss while keeping tri + motif4 **exact**, the net-loss sign flips on
+  **8 % / 33 % / 25 % / 27 %** of proposals across the four degree bins (K=32), and
+  the net-`Δloss` magnitude is off by a median of **3–4.5×** for deg ≥ 50. So a
+  quarter-to-a-third of the highest-leverage hub decisions would be wrong.
+
+The earlier worry was §5 cancellation flipping the sign; the real killer is one
+level up — the sampled cycle count is so high-variance on hubs that the *delta*
+(a small residual of two large counts) is essentially unusable. Cancellation never
+gets a chance to matter. Only *mild* hubs (deg 20–50) are estimable (14 % count
+std, 100 % delta sign-agreement) — but those are the cheap swaps, not the ones
+worth approximating.
+
+**Variance scaling (reusable characterisation).** `scripts/estimator_variance.py`
+sweeps the sample count `K`, fits the count-estimator's relative std vs endpoint
+degree as a power law per `K`, and plots it (`experiments/estimator_variance/`).
+Fitted on fb237 (k=6): for K ≥ 32 the relative std scales ≈ **`deg^0.9`** with a
+prefactor that roughly **halves as K doubles** — i.e. `rel_std ≈ C·deg/K`. Below
+K≈32 the fit flattens (R²≈0) because the estimate is uniformly saturated-noisy at
+all degrees. Extrapolating: keeping the count std under ~20 % at deg 200 needs
+K ≳ 230 — i.e. sampling essentially the whole neighbourhood, which removes the
+speedup entirely. This is the quantitative confirmation that "K ≈ deg" is required.
+(One-off downstream loss-flip check: scratch `estimator_test.py`.)
+
+**motif4 not separately tested,** but the case is weak regardless: motif4 counts
+are denser (more 4-sets per neighbourhood → more observations → lower variance than
+cycles), *and* the exact motif4 delta is endpoint-bounded and cheap, so there is
+little to gain from approximating it.
 
 **Better routes if hub steering is ever needed:** keep hub deltas **exact** (guards
 off/high) and attack *cost* instead — ration hub swaps (draw only a budgeted

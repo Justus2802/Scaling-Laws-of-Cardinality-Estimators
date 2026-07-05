@@ -92,6 +92,8 @@ class Generator:
         rewire_budget: int = 50_000,
         initial_temp: float = 0.05,
         cooling_rate: float = 0.99993,
+        skip_c5: bool = False,
+        skip_c6: bool = False,
         convergence_log: "Path | str | None" = None,
         swap_log: "Path | str | None" = None,
     ) -> igraph.Graph:
@@ -111,6 +113,9 @@ class Generator:
             are tuned for a ~100k ``rewire_budget`` — the temperature sweeps
             ~0.05 → ~0.001 over the run. For a much smaller budget, raise the
             cooling (e.g. ~0.998 for 5k) so the walk actually reaches cold.
+        skip_c5, skip_c6 : bool
+            Force 5-/6-cycle steering off in Stage 3 regardless of the target
+            count, dropping that cycle size's per-swap delta and loss term.
         convergence_log : Path or str, optional
             If given, write per-metric error CSV during Stage 3 rewiring
             (see ``stage3.CONVERGENCE_LOG_INTERVAL`` for the row interval).
@@ -143,6 +148,8 @@ class Generator:
             initial_temp=initial_temp,
             cooling_rate=cooling_rate,
             seed=seed + 2,
+            skip_c5=skip_c5,
+            skip_c6=skip_c6,
             convergence_log=convergence_log,
             swap_log=swap_log,
         )

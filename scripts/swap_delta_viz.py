@@ -29,6 +29,11 @@ Outputs (next to the CSV unless ``--out`` overrides the first figure):
 * ``<csv>_loss_metrics.csv`` — graph-level usefulness metrics (also printed):
   useful % (accepted & Δloss<0), improving/neutral/harmful %, accept rates per
   class, achieved-improvement magnitude, top-1 %/10 % improvement concentration.
+* ``<csv>_targeted.png`` / ``<csv>_targeted_metrics.csv`` — triangle-steering
+  attribution: the share of accepted triangle-up steers (``d_tri>0``) and of the
+  total +Δtri gain that came from the biased ``_targeted_swap`` proposals vs the
+  random swaps, plus per-type accept rates.  Skipped when the log has no
+  ``targeted`` column.
 
 Usage
 -----
@@ -50,12 +55,13 @@ _COLORS = ["#4477AA", "#EE6677", "#228833", "#CCBB44", "#66CCEE", "#AA3377", "#B
 _ACCEPTED_C, _REJECTED_C, _ZERO_C = _COLORS[0], _COLORS[1], "#999999"
 
 
-def _load(path: Path) -> tuple[list[str], dict[str, np.ndarray], np.ndarray]:
+def _load(path: Path) -> tuple[list[str], dict[str, np.ndarray], np.ndarray, np.ndarray, np.ndarray, "np.ndarray | None"]:
     """Read the swap log.
 
     :returns: (motif column names, {motif: float array with NaN for guard-dropped
-        cells}, accepted bool array, deg_max4 array, d_loss array).  Arrays share
-        the row order of the CSV.
+        cells}, accepted bool array, deg_max4 array, d_loss array, targeted bool
+        array or ``None`` when the log predates the ``targeted`` column).  Arrays
+        share the row order of the CSV.
     """
     with open(path) as fh:
         rows = list(csv.DictReader(fh))
@@ -69,7 +75,9 @@ def _load(path: Path) -> tuple[list[str], dict[str, np.ndarray], np.ndarray]:
     accepted = np.array([r["accepted"] == "1" for r in rows])
     deg_max4 = np.array([float(r["deg_max4"]) for r in rows])
     d_loss = np.array([float(r["d_loss"]) for r in rows])
-    return motifs, deltas, accepted, deg_max4, d_loss
+    targeted = (np.array([r["targeted"] == "1" for r in rows])
+                if "targeted" in rows[0] else None)
+    return motifs, deltas, accepted, deg_max4, d_loss, targeted
 
 
 def _hist_bins(vals: np.ndarray) -> np.ndarray:
@@ -182,6 +190,45 @@ def _loss_metrics(d_loss: np.ndarray, accepted: np.ndarray) -> dict:
     }
 
 
+def _targeted_metrics(deltas, accepted, targeted) -> "dict | None":
+    """Triangle-steering attribution: biased ``_targeted_swap`` proposals vs random.
+
+    A *triangle steer* is an accepted proposal that raised the triangle count
+    (``d_tri > 0``) — targeting only fires below target, so upward moves are the
+    steering signal.  Reports what fraction of the steers and of the total
+    triangle gain came from targeted proposals, plus per-type accept rates.
+    Returns ``None`` when the log lacks a ``targeted`` column or the ``d_tri``
+    delta (nothing to attribute).
+    """
+    if targeted is None or "d_tri" not in deltas:
+        return None
+    d = deltas["d_tri"]
+    comp = ~np.isnan(d)                        # d_tri is never guard-dropped, but be safe
+    tgt = targeted & comp
+    up = comp & accepted & (d > 0)             # accepted triangle-increasing swaps = steers
+    up_t = up & targeted
+    gain_t = float(d[up_t].sum())
+    gain_all = float(d[up].sum())
+    n_up = int(up.sum())
+
+    def _rate(sel) -> float:
+        return round(float(accepted[sel].mean()), 4) if sel.any() else float("nan")
+
+    return {
+        "proposals": int(comp.sum()),
+        "targeted_proposals": int(tgt.sum()),
+        "targeted_frac": round(float(tgt.mean()), 4) if comp.any() else float("nan"),
+        "accept_rate_targeted": _rate(tgt),
+        "accept_rate_random": _rate((~targeted) & comp),
+        "tri_up_steers": n_up,
+        "tri_up_from_targeted": int(up_t.sum()),
+        "tri_up_targeted_share": round(float(up_t.sum() / n_up), 4) if n_up else float("nan"),
+        "tri_gain_total": round(gain_all, 1),
+        "tri_gain_from_targeted": round(gain_t, 1),
+        "tri_gain_targeted_share": round(gain_t / gain_all, 4) if gain_all > 0 else float("nan"),
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("csv", type=Path, help="swap-log CSV from refine(swap_log=…)")
@@ -195,7 +242,7 @@ def main():
 
     import matplotlib.pyplot as plt
 
-    motifs, deltas, accepted, deg_max4, d_loss = _load(args.csv)
+    motifs, deltas, accepted, deg_max4, d_loss, targeted = _load(args.csv)
     if args.motifs:
         missing = [m for m in args.motifs if m not in motifs]
         if missing:
@@ -227,6 +274,21 @@ def main():
     for k, v in loss_m.items():
         print(f"    {k:<28} {v}")
     print(f"loss metrics → {loss_metrics_path}")
+
+    # ── triangle-steering attribution (console + CSV) ────────────────────────
+    tgt_m = _targeted_metrics(deltas, accepted, targeted)
+    if tgt_m is None:
+        print("\n  triangle steering: no `targeted` column in this log — skipped")
+    else:
+        tgt_metrics_path = args.csv.with_name(args.csv.stem + "_targeted_metrics.csv")
+        with open(tgt_metrics_path, "w", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=list(tgt_m))
+            w.writeheader()
+            w.writerow(tgt_m)
+        print("\n  triangle steering (targeted vs random proposals):")
+        for k, v in tgt_m.items():
+            print(f"    {k:<26} {v}")
+        print(f"targeted metrics → {tgt_metrics_path}")
 
     # ── figure 1: per-motif delta distributions, accepted vs rejected ────────
     nrows, ncols = _grid(len(motifs))
@@ -380,6 +442,40 @@ def main():
     loss_png = dist_png.with_name(dist_png.stem + "_loss.png")
     fig3.savefig(loss_png, dpi=150, bbox_inches="tight")
     print(f"loss → {loss_png}")
+
+    # ── figure 4: triangle-steering attribution (targeted vs random) ─────────
+    # Two 100%-stacked bars — the targeted share of the accepted triangle-up
+    # steers, and of the total +Δtri gain they carried.  A large targeted share
+    # means the biased proposal is doing the steering work; a small one means the
+    # random swaps deliver the triangles anyway.
+    if tgt_m is not None:
+        fig4, ax4 = plt.subplots(figsize=(5.5, 4))
+        cats = ["tri-up steers\n(count)", "+Δtri gain\n(magnitude)"]
+        t = [tgt_m["tri_up_targeted_share"], tgt_m["tri_gain_targeted_share"]]
+        t = [0.0 if (v is None or v != v) else float(v) for v in t]  # NaN→0
+        tp = [v * 100 for v in t]
+        rp = [(1 - v) * 100 for v in t]
+        x = np.arange(len(cats))
+        ax4.bar(x, tp, 0.55, color=_COLORS[2], label="targeted")
+        ax4.bar(x, rp, 0.55, bottom=tp, color=_COLORS[3], label="random")
+        for xi, tv in zip(x, tp):
+            ax4.annotate(f"{tv:.0f}%", (xi, tv / 2), ha="center", va="center",
+                         fontsize=9, color="white", weight="bold")
+        ax4.set_xticks(x)
+        ax4.set_xticklabels(cats)
+        ax4.set_ylabel("share (%)")
+        ax4.set_ylim(0, 100)
+        ax4.set_title(
+            f"Triangle steering — {tgt_m['targeted_frac'] * 100:.0f}% of proposals targeted; "
+            f"accept {tgt_m['accept_rate_targeted']} vs {tgt_m['accept_rate_random']} random",
+            fontsize=9)
+        ax4.legend(fontsize=8, loc="upper right")
+        ax4.grid(True, axis="y", alpha=0.25)
+        fig4.suptitle(f"Targeted-proposal contribution — {args.csv.stem}", fontsize=12)
+        fig4.tight_layout(rect=(0, 0, 1, 0.95))
+        tgt_png = dist_png.with_name(dist_png.stem + "_targeted.png")
+        fig4.savefig(tgt_png, dpi=150, bbox_inches="tight")
+        print(f"targeted → {tgt_png}")
 
 
 if __name__ == "__main__":

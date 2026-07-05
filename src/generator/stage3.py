@@ -19,9 +19,18 @@ connectivity is restored to match the Block F targets.
 
 import csv
 import math
+import select
+import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
+
+try:                       # POSIX-only: single-key stdin reads for manual early-exit
+    import termios
+    import tty
+except ImportError:        # non-POSIX (e.g. Windows) — escape watcher becomes a no-op
+    termios = None
+    tty = None
 
 import igraph
 import numpy as np
@@ -35,6 +44,54 @@ from .stage2 import _connect_components
 # ── Tuning constants (Stage-3 refinement) — adjust here ─────────────────────────
 MAX_TARGETED_SWAP_PROB = 0.5   # cap on the probability of attempting a triangle-closing swap
 TEMP_FLOOR = 1e-10             # numerical floor on the SA temperature in the accept test
+ESCAPE_CHECK_INTERVAL = 10     # poll stdin for a manual-exit keypress every N rewiring steps
+
+
+class _EscapeWatcher:
+    """Non-blocking stdin watcher for manual early-exit of the rewiring loop.
+
+    On entry it puts an interactive TTY into cbreak mode so single keypresses
+    register without Enter; :meth:`pressed` then reports (without blocking)
+    whether ESC or ``q`` is waiting on stdin.  A no-op when stdin is not an
+    interactive TTY (piped input, non-POSIX platform) so batch/CI runs are
+    unaffected.  Use as a context manager to guarantee the terminal is restored.
+    """
+
+    def __init__(self):
+        self._enabled = False
+        self._fd = None
+        self._old_attrs = None
+
+    def __enter__(self) -> "_EscapeWatcher":
+        if termios is None or not (sys.stdin and sys.stdin.isatty()):
+            return self
+        try:
+            self._fd = sys.stdin.fileno()
+            self._old_attrs = termios.tcgetattr(self._fd)
+            tty.setcbreak(self._fd)
+            self._enabled = True
+        except (termios.error, ValueError, OSError):
+            self._enabled = False  # e.g. not a real terminal — stay a no-op
+        return self
+
+    def pressed(self) -> bool:
+        """Return True if ESC or ``q`` is waiting on stdin (drains the buffer)."""
+        if not self._enabled:
+            return False
+        hit = False
+        # Drain everything currently buffered so held/enter keys don't accumulate.
+        while select.select([self._fd], [], [], 0)[0]:
+            ch = sys.stdin.read(1)
+            if not ch:
+                break
+            if ch in ("\x1b", "q", "Q"):
+                hit = True
+        return hit
+
+    def __exit__(self, *exc) -> bool:
+        if self._enabled and self._old_attrs is not None:
+            termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old_attrs)
+        return False
 
 # ── Loss function weights — one per component ────────────────────────────────
 # Triangle and motif terms are normalised by target value (relative error in [0,∞]).
@@ -150,6 +207,8 @@ def refine(
     initial_temp: float = 0.05,
     cooling_rate: float = 0.99993,
     seed: int = 0,
+    skip_c5: bool = False,
+    skip_c6: bool = False,
     convergence_log: "Path | str | None" = None,
     swap_log: "Path | str | None" = None,
 ) -> igraph.Graph:
@@ -191,6 +250,10 @@ def refine(
         budget, cool faster (e.g. ~0.998 for a 5k budget) or the walk never cools.
     seed : int
         RNG seed.
+    skip_c5, skip_c6 : bool
+        Force 5-/6-cycle steering off regardless of the target count and loss
+        weight. Suppresses the (costly) per-swap cycle delta for that size so
+        its contribution to the loss is dropped entirely.
     convergence_log : Path or str, optional
         If given, write a CSV with per-metric relative errors every
         ``CONVERGENCE_LOG_INTERVAL`` *proposals* (accepted or rejected).  The
@@ -210,7 +273,10 @@ def refine(
     Returns
     -------
     igraph.Graph
-        Best graph encountered during the annealing walk.
+        Best graph encountered during the annealing walk. Carries
+        ``stage3_best_accepted``, ``stage3_best_loss``, and
+        ``stage3_executed_steps`` (< ``budget`` if a manual escape stopped the
+        loop early) as graph attributes.
     """
     rng = np.random.default_rng(seed)
     # Measurement counters follow the same run seed as the rewiring RNG.
@@ -313,8 +379,8 @@ def refine(
     # nonzero — the cycle delta is the costliest per-swap update (O(Δ⁴)/O(Δ⁵)).
     _target_c5 = int(getattr(target_e, "five_cycle_count", 0) or 0)
     _target_c6 = int(getattr(target_e, "six_cycle_count", 0) or 0)
-    use_c5 = _target_c5 > 0 and LOSS_WEIGHT_C5 > 0
-    use_c6 = _target_c6 > 0 and LOSS_WEIGHT_C6 > 0
+    use_c5 = _target_c5 > 0 and LOSS_WEIGHT_C5 > 0 and not skip_c5
+    use_c6 = _target_c6 > 0 and LOSS_WEIGHT_C6 > 0 and not skip_c6
 
     def _measure_cycles(g_und: igraph.Graph) -> tuple[int, int]:
         """Estimate 5- and 6-cycle counts via the full-graph measure counter."""
@@ -719,184 +785,225 @@ def refine(
     motif4_delta_computed = 0
     motif4_delta_dropped = 0
 
-    for step in range(budget):
-        if step > 0 and step % 5_000 == 0:
-            log.info(
-                "Stage 3: step %d/%d — loss=%.4f, tri=%d (target %d), accepted=%d, "
-                "deltas computed/dropped (degree guards) — motif4 %d/%d, cycles %d/%d",
-                step, budget, current_loss, current.tri, target_tri, accepted,
-                motif4_delta_computed, motif4_delta_dropped,
-                cycle_delta_computed, cycle_delta_dropped,
-            )
-        # Log convergence state every N *proposals* (accepted or not); step 0 is the
-        # pre-loop baseline written above.
-        if CONVERGENCE_LOG_INTERVAL > 0 and step > 0 and step % CONVERGENCE_LOG_INTERVAL == 0:
-            _write_conv_row(step)
-        # Attempt targeted triangle-creating swap when triangles are below target.
-        # The probability scales with how large the deficit is (max 50%).
-        tri_deficit = target_tri - current.tri
-        p_targeted = float(min(MAX_TARGETED_SWAP_PROB, tri_deficit / max(1, target_tri)))
-        targeted = tri_deficit > 0 and rng.random() < p_targeted
-        if targeted:
-            result = _targeted_swap()
-            if result is None:
-                targeted = False
-        if not targeted:
-            rel = swappable_rels[int(rng.integers(len(swappable_rels)))]
-            pool = rel_to_idxs[rel]
-            pi1, pi2 = rng.choice(len(pool), size=2, replace=False)
-            i1, i2 = pool[pi1], pool[pi2]
-            s1, o1, p1 = content_edge_data[i1]
-            s2, o2, _  = content_edge_data[i2]
-            if s1 == o2 or s2 == o1:
-                continue
-        else:
-            i1, i2, s1, o1, s2, o2, p1 = result
+    # Triangle-steering attribution: how much of the accepted triangle *increase*
+    # comes from the biased _targeted_swap proposals vs the random swaps.  A
+    # "triangle steer" = an accepted proposal with tri_delta > 0 (targeting only
+    # fires below target, so upward moves are the steering signal).  Counted over
+    # evaluated proposals only (those that reach the accept test), matching the
+    # swap-log rows.
+    evaluated_proposals = 0       # proposals reaching the accept test (swap-log rows)
+    targeted_proposals = 0        # of those, from a biased _targeted_swap
+    targeted_accepted = 0         # of the targeted, accepted
+    tri_up_targeted = 0           # accepted tri-up swaps from targeted proposals
+    tri_up_untargeted = 0         # accepted tri-up swaps from random proposals
+    tri_gain_targeted = 0         # Σ tri_delta of the targeted tri-up swaps
+    tri_gain_untargeted = 0       # Σ tri_delta of the random  tri-up swaps
 
-        tri_delta, node_delta = _triangle_node_delta(adj, s1, o1, s2, o2)
-        new_tri = current.tri + tri_delta
-        # CC_avg delta: weighted sum of per-node triangle changes (denom fixed)
-        new_cc = current.cc + sum(dt / denom[v] for v, dt in node_delta.items()) / n
-        # Assortativity delta: only Q changes (degrees are invariant)
-        dQ = float(und_deg[s1] * und_deg[o2] + und_deg[s2] * und_deg[o1]
-                   - und_deg[s1] * und_deg[o1] - und_deg[s2] * und_deg[o2])
-        new_Q = current.Q + dQ
-        if _motif4_targets:
-            # Endpoint-degree guard: _motif4_delta enumerates candidate pairs from
-            # the endpoints' neighbourhoods (O(Δ²) per pair), so hub endpoints make
-            # it the dominant per-swap cost on dense graphs.  Skipped swaps carry
-            # the motif4 counts over unchanged — the motif4 loss terms cancel in
-            # the accept test, as with the cycle guard.
-            if max(len(adj[s1]), len(adj[o1]), len(adj[s2]), len(adj[o2])) > MOTIF4_DELTA_MAX_DEGREE:
-                motif4_delta_dropped += 1
-                _m4d = None  # guard-dropped: swap log leaves the motif4 cells empty
+    # Steps actually attempted — equals `budget` unless a manual escape (below)
+    # breaks out early; exposed on the returned graph so callers (e.g. the
+    # auto-named log filenames in signature_roundtrip.py) can reflect what
+    # actually ran instead of what was requested.
+    executed_steps = 0
+
+    with _EscapeWatcher() as _esc_watch:
+        for step in range(budget):
+            executed_steps = step + 1
+            # Poll stdin every ESCAPE_CHECK_INTERVAL steps so the rewiring can be
+            # aborted manually (ESC or 'q') without killing the process — the
+            # best-so-far graph found up to here is still returned below.
+            if step % ESCAPE_CHECK_INTERVAL == 0 and _esc_watch.pressed():
+                log.info("Stage 3: manual escape at step %d/%d — stopping rewiring "
+                         "early (best loss=%.4f at accepted=%d)",
+                         step, budget, best_loss, best_accepted)
+                break
+            if step > 0 and step % 5_000 == 0:
+                log.info(
+                    "Stage 3: step %d/%d — loss=%.4f, tri=%d (target %d), accepted=%d, "
+                    "deltas computed/dropped (degree guards) — motif4 %d/%d, cycles %d/%d",
+                    step, budget, current_loss, current.tri, target_tri, accepted,
+                    motif4_delta_computed, motif4_delta_dropped,
+                    cycle_delta_computed, cycle_delta_dropped,
+                )
+            # Log convergence state every N *proposals* (accepted or not); step 0 is the
+            # pre-loop baseline written above.
+            if CONVERGENCE_LOG_INTERVAL > 0 and step > 0 and step % CONVERGENCE_LOG_INTERVAL == 0:
+                _write_conv_row(step)
+            # Attempt targeted triangle-creating swap when triangles are below target.
+            # The probability scales with how large the deficit is (max 50%).
+            tri_deficit = target_tri - current.tri
+            p_targeted = float(min(MAX_TARGETED_SWAP_PROB, tri_deficit / max(1, target_tri)))
+            targeted = tri_deficit > 0 and rng.random() < p_targeted
+            if targeted:
+                result = _targeted_swap()
+                if result is None:
+                    targeted = False
+            if not targeted:
+                rel = swappable_rels[int(rng.integers(len(swappable_rels)))]
+                pool = rel_to_idxs[rel]
+                pi1, pi2 = rng.choice(len(pool), size=2, replace=False)
+                i1, i2 = pool[pi1], pool[pi2]
+                s1, o1, p1 = content_edge_data[i1]
+                s2, o2, _  = content_edge_data[i2]
+                if s1 == o2 or s2 == o1:
+                    continue
+            else:
+                i1, i2, s1, o1, s2, o2, p1 = result
+
+            evaluated_proposals += 1
+            targeted_proposals += int(targeted)
+            tri_delta, node_delta = _triangle_node_delta(adj, s1, o1, s2, o2)
+            new_tri = current.tri + tri_delta
+            # CC_avg delta: weighted sum of per-node triangle changes (denom fixed)
+            new_cc = current.cc + sum(dt / denom[v] for v, dt in node_delta.items()) / n
+            # Assortativity delta: only Q changes (degrees are invariant)
+            dQ = float(und_deg[s1] * und_deg[o2] + und_deg[s2] * und_deg[o1]
+                       - und_deg[s1] * und_deg[o1] - und_deg[s2] * und_deg[o2])
+            new_Q = current.Q + dQ
+            if _motif4_targets:
+                # Endpoint-degree guard: _motif4_delta enumerates candidate pairs from
+                # the endpoints' neighbourhoods (O(Δ²) per pair), so hub endpoints make
+                # it the dominant per-swap cost on dense graphs.  Skipped swaps carry
+                # the motif4 counts over unchanged — the motif4 loss terms cancel in
+                # the accept test, as with the cycle guard.
+                if max(len(adj[s1]), len(adj[o1]), len(adj[s2]), len(adj[o2])) > MOTIF4_DELTA_MAX_DEGREE:
+                    motif4_delta_dropped += 1
+                    _m4d = None  # guard-dropped: swap log leaves the motif4 cells empty
+                    new_motifs4 = current.motifs4
+                else:
+                    motif4_delta_computed += 1
+                    _m4d = _motif4_delta(adj, s1, o1, s2, o2, types=_m4_types)
+                    new_motifs4 = {k: current.motifs4.get(k, 0) + _m4d.get(k, 0) for k in _motif4_targets}
+            else:
+                _m4d = None
                 new_motifs4 = current.motifs4
+            # 5/6-cycle counts: exact incremental delta when steered.
+            if use_c5 or use_c6:
+                # The O(Δ^(k-2)) cycle delta guards every node its path DFS expands
+                # (endpoints and interiors — an interior hub explodes the search even
+                # between low-degree endpoints) against CYCLE_DELTA_MAX_DEGREE and
+                # returns None on the first hub encountered.  Carrying the counts
+                # over unchanged leaves the cycle loss terms identical before and
+                # after, so they cancel in the accept test (no positive/negative
+                # contribution for these swaps).
+                _dc = _cycle_delta(adj, s1, o1, s2, o2, k5=use_c5, k6=use_c6,
+                                   max_degree=CYCLE_DELTA_MAX_DEGREE)
+                if _dc is None:
+                    cycle_delta_dropped += 1
+                    new_c5, new_c6 = current.c5, current.c6
+                else:
+                    cycle_delta_computed += 1
+                    new_c5, new_c6 = current.c5 + _dc[0], current.c6 + _dc[1]
             else:
-                motif4_delta_computed += 1
-                _m4d = _motif4_delta(adj, s1, o1, s2, o2, types=_m4_types)
-                new_motifs4 = {k: current.motifs4.get(k, 0) + _m4d.get(k, 0) for k in _motif4_targets}
-        else:
-            _m4d = None
-            new_motifs4 = current.motifs4
-        # 5/6-cycle counts: exact incremental delta when steered.
-        if use_c5 or use_c6:
-            # The O(Δ^(k-2)) cycle delta guards every node its path DFS expands
-            # (endpoints and interiors — an interior hub explodes the search even
-            # between low-degree endpoints) against CYCLE_DELTA_MAX_DEGREE and
-            # returns None on the first hub encountered.  Carrying the counts
-            # over unchanged leaves the cycle loss terms identical before and
-            # after, so they cancel in the accept test (no positive/negative
-            # contribution for these swaps).
-            _dc = _cycle_delta(adj, s1, o1, s2, o2, k5=use_c5, k6=use_c6,
-                               max_degree=CYCLE_DELTA_MAX_DEGREE)
-            if _dc is None:
-                cycle_delta_dropped += 1
                 new_c5, new_c6 = current.c5, current.c6
-            else:
-                cycle_delta_computed += 1
-                new_c5, new_c6 = current.c5 + _dc[0], current.c6 + _dc[1]
-        else:
-            new_c5, new_c6 = current.c5, current.c6
-        # Tree template entropy: exact incremental update via _tree_entropy_delta.
-        # rel_out is kept in sync with content_edge_data on accept.
-        if use_tree_entropy:
-            new_tree_h, new_pair_freq = _tree_entropy_delta(
-                rel_out, _pair_freq, s1, o1, p1, s2, o2
-            )
-        else:
-            new_tree_h, new_pair_freq = current.tree_h, _pair_freq
-        # Path template entropy: exact incremental update via _path_entropy_delta.
-        # out_edges[v] = [(rel, target), ...]; updated on accept when targets change.
-        if use_path_entropy:
-            _new_path_ents, _new_path_freqs = _path_entropy_delta(
-                out_edges, _path_freqs, s1, o1, p1, s2, o2
-            )
-            new_path_h = _new_path_ents.get(3, 0.0)
-        else:
-            _new_path_ents, _new_path_freqs = {}, _path_freqs
-            new_path_h = current.path_h
-
-        candidate = _SAState(
-            tri=new_tri, motifs4=new_motifs4, Q=new_Q, cc=new_cc,
-            c5=new_c5, c6=new_c6, tree_h=new_tree_h, path_h=new_path_h,
-        )
-        new_loss = _loss(candidate)
-
-        if new_loss < current_loss:
-            accept = True
-        else:
-            diff = new_loss - current_loss
-            accept = bool(rng.random() < math.exp(-diff / max(temp, TEMP_FLOOR)))
-
-        if _swap_writer:
-            # Degrees are read pre-swap (adj is only mutated below on accept),
-            # matching what the guards saw for this proposal.
-            _degs = (len(adj[s1]), len(adj[o1]), len(adj[s2]), len(adj[o2]))
-            _row = {
-                "step": step, "targeted": int(targeted),
-                "deg_s1": _degs[0], "deg_o1": _degs[1],
-                "deg_s2": _degs[2], "deg_o2": _degs[3],
-                "deg_max4": max(_degs), "d_tri": tri_delta,
-                "d_loss": round(new_loss - current_loss, 6), "accepted": int(accept),
-            }
-            if _m4d is not None:
-                for ds in _motif4_targets:
-                    _row[f"d_{_DS_STEM[ds]}"] = _m4d.get(ds, 0)
-            if (use_c5 or use_c6) and _dc is not None:
-                if use_c5:
-                    _row["d_c5"] = _dc[0]
-                if use_c6:
-                    _row["d_c6"] = _dc[1]
-            _swap_writer.writerow(_row)
-
-        if accept:
-            content_edge_data[i1] = (s1, o2, p1)
-            content_edge_data[i2] = (s2, o1, p1)
-
-            # Update edge_tgt: target of i1 changes o1→o2; target of i2 changes o2→o1
-            edge_tgt.setdefault(o1, set()).discard(i1)
-            edge_tgt.setdefault(o2, set()).add(i1)
-            edge_tgt.setdefault(o2, set()).discard(i2)
-            edge_tgt.setdefault(o1, set()).add(i2)
-
-            _adj_dec(adj, s1, o1)
-            _adj_dec(adj, s2, o2)
-            _adj_inc(adj, s1, o2)
-            _adj_inc(adj, s2, o1)
-
-            for v, dt in node_delta.items():
-                t_node[v] += dt
-            # Recompute cc from t_node to prevent float drift from accumulated deltas;
-            # this drift-corrected value (not the incremental new_cc used in the loss)
-            # becomes the baseline for the next swap.
-            candidate.cc = float(np.sum(t_node / denom) / n)
-
+            # Tree template entropy: exact incremental update via _tree_entropy_delta.
+            # rel_out is kept in sync with content_edge_data on accept.
             if use_tree_entropy:
-                # A same-relation swap leaves source nodes' relation labels unchanged
-                # (s1 still has p1, just to a new object) — only _pair_freq changes.
-                _pair_freq = new_pair_freq
+                new_tree_h, new_pair_freq = _tree_entropy_delta(
+                    rel_out, _pair_freq, s1, o1, p1, s2, o2
+                )
+            else:
+                new_tree_h, new_pair_freq = current.tree_h, _pair_freq
+            # Path template entropy: exact incremental update via _path_entropy_delta.
+            # out_edges[v] = [(rel, target), ...]; updated on accept when targets change.
             if use_path_entropy:
-                # Update out_edges: s1 now points to o2 (was o1), s2 now points to o1 (was o2).
-                # The relation p1 stays the same; only the target changes.
-                for i, (r, t) in enumerate(out_edges[s1]):
-                    if r == p1 and t == o1:
-                        out_edges[s1][i] = (p1, o2)
-                        break
-                for i, (r, t) in enumerate(out_edges[s2]):
-                    if r == p1 and t == o2:
-                        out_edges[s2][i] = (p1, o1)
-                        break
-                _path_freqs = _new_path_freqs
+                _new_path_ents, _new_path_freqs = _path_entropy_delta(
+                    out_edges, _path_freqs, s1, o1, p1, s2, o2
+                )
+                new_path_h = _new_path_ents.get(3, 0.0)
+            else:
+                _new_path_ents, _new_path_freqs = {}, _path_freqs
+                new_path_h = current.path_h
 
-            current = candidate
-            current_loss = new_loss
-            temp *= cooling_rate
-            accepted += 1
+            candidate = _SAState(
+                tri=new_tri, motifs4=new_motifs4, Q=new_Q, cc=new_cc,
+                c5=new_c5, c6=new_c6, tree_h=new_tree_h, path_h=new_path_h,
+            )
+            new_loss = _loss(candidate)
 
-            if current_loss < best_loss:
-                best_loss = current_loss
-                best_content = list(content_edge_data)
-                best_accepted = accepted
+            if new_loss < current_loss:
+                accept = True
+            else:
+                diff = new_loss - current_loss
+                accept = bool(rng.random() < math.exp(-diff / max(temp, TEMP_FLOOR)))
+
+            if _swap_writer:
+                # Degrees are read pre-swap (adj is only mutated below on accept),
+                # matching what the guards saw for this proposal.
+                _degs = (len(adj[s1]), len(adj[o1]), len(adj[s2]), len(adj[o2]))
+                _row = {
+                    "step": step, "targeted": int(targeted),
+                    "deg_s1": _degs[0], "deg_o1": _degs[1],
+                    "deg_s2": _degs[2], "deg_o2": _degs[3],
+                    "deg_max4": max(_degs), "d_tri": tri_delta,
+                    "d_loss": round(new_loss - current_loss, 6), "accepted": int(accept),
+                }
+                if _m4d is not None:
+                    for ds in _motif4_targets:
+                        _row[f"d_{_DS_STEM[ds]}"] = _m4d.get(ds, 0)
+                if (use_c5 or use_c6) and _dc is not None:
+                    if use_c5:
+                        _row["d_c5"] = _dc[0]
+                    if use_c6:
+                        _row["d_c6"] = _dc[1]
+                _swap_writer.writerow(_row)
+
+            if accept:
+                targeted_accepted += int(targeted)
+                if tri_delta > 0:
+                    if targeted:
+                        tri_up_targeted += 1
+                        tri_gain_targeted += tri_delta
+                    else:
+                        tri_up_untargeted += 1
+                        tri_gain_untargeted += tri_delta
+
+                content_edge_data[i1] = (s1, o2, p1)
+                content_edge_data[i2] = (s2, o1, p1)
+
+                # Update edge_tgt: target of i1 changes o1→o2; target of i2 changes o2→o1
+                edge_tgt.setdefault(o1, set()).discard(i1)
+                edge_tgt.setdefault(o2, set()).add(i1)
+                edge_tgt.setdefault(o2, set()).discard(i2)
+                edge_tgt.setdefault(o1, set()).add(i2)
+
+                _adj_dec(adj, s1, o1)
+                _adj_dec(adj, s2, o2)
+                _adj_inc(adj, s1, o2)
+                _adj_inc(adj, s2, o1)
+
+                for v, dt in node_delta.items():
+                    t_node[v] += dt
+                # Recompute cc from t_node to prevent float drift from accumulated deltas;
+                # this drift-corrected value (not the incremental new_cc used in the loss)
+                # becomes the baseline for the next swap.
+                candidate.cc = float(np.sum(t_node / denom) / n)
+
+                if use_tree_entropy:
+                    # A same-relation swap leaves source nodes' relation labels unchanged
+                    # (s1 still has p1, just to a new object) — only _pair_freq changes.
+                    _pair_freq = new_pair_freq
+                if use_path_entropy:
+                    # Update out_edges: s1 now points to o2 (was o1), s2 now points to o1 (was o2).
+                    # The relation p1 stays the same; only the target changes.
+                    for i, (r, t) in enumerate(out_edges[s1]):
+                        if r == p1 and t == o1:
+                            out_edges[s1][i] = (p1, o2)
+                            break
+                    for i, (r, t) in enumerate(out_edges[s2]):
+                        if r == p1 and t == o2:
+                            out_edges[s2][i] = (p1, o1)
+                            break
+                    _path_freqs = _new_path_freqs
+
+                current = candidate
+                current_loss = new_loss
+                temp *= cooling_rate
+                accepted += 1
+
+                if current_loss < best_loss:
+                    best_loss = current_loss
+                    best_content = list(content_edge_data)
+                    best_accepted = accepted
 
     if _conv_fh:
         _conv_fh.close()
@@ -908,6 +1015,22 @@ def refine(
         "triangles=%d (target %d), cc_avg=%.4f (target %s)",
         accepted, budget, best_loss, best_accepted, current.tri, target_tri,
         current.cc, f"{target_cc:.4f}" if use_cc else "off",
+    )
+    # Triangle-steering attribution — what share of the accepted triangle increase
+    # the biased _targeted_swap proposals actually delivered vs the random swaps.
+    _tri_up = tri_up_targeted + tri_up_untargeted
+    _tri_gain = tri_gain_targeted + tri_gain_untargeted
+    log.info(
+        "Stage 3: triangle steering — %d targeted proposals (%.1f%% of all), accept rate "
+        "%.3f (vs %.3f random); of %d accepted triangle-up swaps %d (%.1f%%) were targeted, "
+        "contributing %d/%d (%.1f%%) of the total +%d triangle gain",
+        targeted_proposals,
+        100.0 * targeted_proposals / max(1, evaluated_proposals),
+        targeted_accepted / max(1, targeted_proposals),
+        (accepted - targeted_accepted) / max(1, evaluated_proposals - targeted_proposals),
+        _tri_up, tri_up_targeted, 100.0 * tri_up_targeted / max(1, _tri_up),
+        tri_gain_targeted, _tri_gain, 100.0 * tri_gain_targeted / max(1, _tri_gain),
+        _tri_gain,
     )
     if use_c5 or use_c6:
         _n_cyc = cycle_delta_computed + cycle_delta_dropped
@@ -956,6 +1079,7 @@ def refine(
         g_out.add_edges([(s, o) for s, o, _ in all_best])
         g_out.es["predicate"] = [p for _, _, p in all_best]
 
+    g_out["stage3_executed_steps"] = executed_steps
     g_out["stage3_best_accepted"] = best_accepted
     g_out["stage3_best_loss"] = round(best_loss, 6)
 
