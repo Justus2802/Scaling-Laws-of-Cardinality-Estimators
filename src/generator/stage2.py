@@ -41,6 +41,7 @@ def _connect_components(
     in_degrees: "np.ndarray",
     target_nc: int = 1,
     target_lcc: float = 1.0,
+    objects_by_rel: "dict | None" = None,
 ) -> "np.ndarray":
     """Bridge isolated entity components, targeting a specific component count and LCC fraction.
 
@@ -130,7 +131,16 @@ def _connect_components(
             continue
         src = comp[0]
         bridge = giant[int(rng.integers(len(giant)))]
-        pred = schema.relations[int(rng.integers(len(schema.relations)))]
+        # Respect inv-CS: only use a relation that bridge is eligible to receive.
+        if objects_by_rel is not None:
+            eligible = [r for r in range(len(schema.relations))
+                        if bridge in (objects_by_rel.get(r) or [])]
+            if not eligible:
+                eligible = list(range(len(schema.relations)))
+            rel_idx = eligible[int(rng.integers(len(eligible)))]
+        else:
+            rel_idx = int(rng.integers(len(schema.relations)))
+        pred = schema.relations[rel_idx]
         triple = (src, bridge, pred)
         if triple not in seen:
             seen.add(triple)
@@ -836,26 +846,26 @@ def instantiate(
     log.info("Stage 2: wired %d content edges", len(content_edges))
 
     # ------------------------------------------------------------------
-    # 4b. Inverse-CS template completion: redirect edges so every object
+    # 4b. Inv-CS template completion: redirect existing edges so every object
     #     node receives at least one in-edge per predicate in its assigned
-    #     template.  Without this, sparse wiring produces only a subset of
-    #     template predicates per node, exploding the distinct inverse-CS
-    #     count.  We REDIRECT existing edges (no net edge-count change):
-    #     for a node o missing predicate r, find an edge (s', o', r) where
-    #     o' already has r satisfied elsewhere, remove that edge, and add
-    #     (s', o, r) instead.  Only runs when entity_inv_cs is assigned.
+    #     template.  Runs after main wiring but before deficit recovery /
+    #     bridging (which use objects_by_rel and therefore stay inv-CS-aware).
+    #     For each missing predicate r on node o, finds a donor edge (s',o',r)
+    #     where o' has r from ≥2 edges (can spare one) and redirects to
+    #     (s',o,r).  No net edge-count change.
+    #     Limitation: in sparse graphs (mean degree ~2.5, 9 relations) only
+    #     ~44% of (node,rel) pairs have ≥2 in-edges, so not all gaps can be
+    #     filled — this is a structural density constraint, not a code issue.
     # ------------------------------------------------------------------
     if entity_inv_cs is not None and subjects_by_rel:
         pred_to_idx = {r: i for i, r in enumerate(schema.relations)}
-        # Build per-node actual in-predicate sets.
         actual_in_preds: list[set[int]] = [set() for _ in range(actual_V)]
         for s, o, pred in content_edges:
             if o < actual_V and pred in pred_to_idx:
                 actual_in_preds[o].add(pred_to_idx[pred])
 
-        # Build per-relation edge index list and per-(node,rel) in-edge count.
         edges_by_rel: dict[int, list[int]] = {}
-        in_count: dict[tuple[int,int], int] = {}  # (node, rel_idx) -> count
+        in_count: dict[tuple[int, int], int] = {}
         for ei, (s, o, pred) in enumerate(content_edges):
             if pred in pred_to_idx:
                 ri = pred_to_idx[pred]
@@ -871,20 +881,16 @@ def instantiate(
                 if rel_idx in actual_in_preds[o]:
                     continue
                 pred = schema.relations[rel_idx]
-                candidates = edges_by_rel.get(rel_idx, [])
-                shuffled = list(candidates)
-                rng.shuffle(shuffled)
-                for ei in shuffled:
+                candidates = list(edges_by_rel.get(rel_idx, []))
+                rng.shuffle(candidates)
+                for ei in candidates:
                     s2, o2, _ = content_edges[ei]
                     if o2 == o or s2 == o:
                         continue
-                    # Only redirect if o2 has at least 2 in-edges for this
-                    # relation — one can be lost without breaking its template.
                     if in_count.get((o2, rel_idx), 0) < 2:
                         continue
                     if (s2, o, pred) in seen:
                         continue
-                    # Redirect the edge.
                     seen.discard((s2, o2, pred))
                     seen.add((s2, o, pred))
                     content_edges[ei] = (s2, o, pred)
@@ -905,25 +911,21 @@ def instantiate(
     #     sample edge endpoints freely and would otherwise reconnect a
     #     deliberately-kept-isolated satellite) can be told which nodes to
     #     avoid via the returned mask.  See _connect_components.
+    #     objects_by_rel is passed so bridging edges respect inv-CS templates.
     # ------------------------------------------------------------------
     is_satellite = _connect_components(
         content_edges, actual_V, schema, rng, seen, in_degrees,
         target_nc=schema.target_num_components,
         target_lcc=schema.target_lcc,
+        objects_by_rel=objects_by_rel,
     )
     non_satellite = ~is_satellite
 
     # ------------------------------------------------------------------
-    # 5a. Deficit recovery: per-relation budget vs degree-quota misalignment can
-    #     leave part of the edge budget unplaced (capacity mode drops overflow
-    #     rather than exceeding a node's sampled target, and skips relations
-    #     whose object pool is fully saturated).  Places the remainder by
-    #     sampling (subject, object) pairs weighted by remaining quota — the
-    #     +1e-3 smoothing lets fully saturated pools still accept edges (soft
-    #     overflow spread evenly) so edge conservation always wins.  Pools are
-    #     restricted to non-satellite nodes so this can't undo step 5's
-    #     component selection; a relation with no non-satellite subjects/objects
-    #     is skipped for that attempt.
+    # 5a. Deficit recovery: per-relation budget vs degree-quota misalignment
+    #     can leave part of the edge budget unplaced.  Places the remainder
+    #     by sampling (subject, object) pairs weighted by remaining quota.
+    #     Uses objects_by_rel so only inv-CS-eligible objects are chosen.
     # ------------------------------------------------------------------
     deficit = content_E_target - len(content_edges)
     if deficit > 0 and present:

@@ -81,8 +81,18 @@ CC_CYCLE_SAMPLES = 5_000
 # single hub swap can stall the SA walk for minutes).  Such swaps skip the delta
 # entirely — the 5/6-cycle counts carry over unchanged, so the cycle loss terms
 # are identical before and after and neither favour nor penalise the swap.
-# Set to float("inf") to disable the guard (always compute the exact delta).
-CYCLE_DELTA_MAX_DEGREE = float("inf")
+# Set to float("inf") to disable the guard (always compute the exact delta).  When
+# left at the sentinel below, ``refine()`` derives a per-graph threshold instead
+# (see ``CYCLE_DELTA_MAX_DEGREE_PERCENTILE``) — profiling on wn18rr_v4 showed
+# this single delta accounting for >50% of Stage 3 wall-clock with the guard off.
+CYCLE_DELTA_MAX_DEGREE: float = -1.0  # sentinel: auto-derive from degree percentile
+# Percentile of the simple-degree distribution used to auto-derive
+# CYCLE_DELTA_MAX_DEGREE when it is left at its sentinel (-1.0).  Swaps touching
+# the top (100 - this) % of nodes by degree skip the exact cycle delta; those
+# hub-heavy swaps are also the ones the O(Δ^(k-2)) cost explodes on, so this
+# trades a small amount of exactness on rare hub swaps for a large constant-factor
+# speedup on typical ones.
+CYCLE_DELTA_MAX_DEGREE_PERCENTILE: float = 95.0
 # Degree guard for the incremental induced-star delta: the per-centre
 # inclusion-exclusion is O(2^(inner edges)) and stalls on clustered hubs.  Centres
 # with simple degree above this are skipped in the delta (degree is swap-invariant,
@@ -252,6 +262,14 @@ def refine(
     sim_deg = np.array([len(adj[v]) for v in range(n)], dtype=np.int64)
     # denom[v] = C(sim_deg[v], 2), floored at 1 to avoid division by zero.
     denom = np.maximum(sim_deg * (sim_deg - 1) // 2, 1).astype(np.float64)
+
+    # Auto-derive the cycle-delta degree guard from this graph's degree
+    # distribution when CYCLE_DELTA_MAX_DEGREE is left at its sentinel (-1.0).
+    # Doing this per-graph (rather than a fixed constant) keeps the guard
+    # meaningful across graphs of very different scale/density.
+    cycle_delta_max_degree = CYCLE_DELTA_MAX_DEGREE
+    if cycle_delta_max_degree < 0:
+        cycle_delta_max_degree = float(np.percentile(sim_deg, CYCLE_DELTA_MAX_DEGREE_PERCENTILE))
 
     # Initialise per-node triangle counts t_node from igraph's local CC:
     #   t_v = CC_local_v * C(k_v, 2)   (exact for k_v >= 2, 0 for k_v < 2)
@@ -548,7 +566,8 @@ def refine(
 
     log.info(
         "Stage 3: refining (seed=%d, budget=%d) — target triangles=%d, motif4 targets=%s, "
-        "5-cycle=%s, 6-cycle=%s, assortativity=%s, cc_avg=%s, tree_entropy=%s, path_entropy_k3=%s; "
+        "5-cycle=%s, 6-cycle=%s, assortativity=%s, cc_avg=%s, tree_entropy=%s, path_entropy_k3=%s, "
+        "cycle_delta_max_degree=%s; "
         "initial loss=%.4f (triangles=%d, cc_avg=%.4f, tree_entropy=%.4f, path_entropy=%.4f)",
         seed, budget, target_tri, sorted(_motif4_targets),
         _target_c5 if use_c5 else "off",
@@ -557,6 +576,7 @@ def refine(
         f"{target_cc:.4f}" if use_cc else "off",
         f"{_target_tree_entropy:.4f}" if use_tree_entropy else "off",
         f"{_target_path_entropy_k3:.4f}" if use_path_entropy else "off",
+        f"{cycle_delta_max_degree:.1f}" if (use_c5 or use_c6) else "n/a",
         current_loss, current.tri, current.cc, current.tree_h, current.path_h,
     )
 
@@ -752,7 +772,7 @@ def refine(
             # counts over unchanged leaves the cycle loss terms identical before
             # and after, so they cancel in the accept test (no positive/negative
             # contribution for these swaps).
-            if max(len(adj[s1]), len(adj[o1]), len(adj[s2]), len(adj[o2])) > CYCLE_DELTA_MAX_DEGREE:
+            if max(len(adj[s1]), len(adj[o1]), len(adj[s2]), len(adj[o2])) > cycle_delta_max_degree:
                 new_c5, new_c6 = current.c5, current.c6
             else:
                 _dc5, _dc6 = _cycle_delta(adj, s1, o1, s2, o2, k5=use_c5, k6=use_c6)

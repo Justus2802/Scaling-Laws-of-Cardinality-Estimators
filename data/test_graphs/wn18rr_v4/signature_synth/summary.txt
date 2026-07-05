@@ -1,66 +1,66 @@
 === Reduced Block A: Size & Vocabulary (G0) ===
   num_entities : 3861
   num_relations: 9
-  mean_degree  : 2.5504
+  mean_degree  : 2.5496
 
 === Reduced Block B: Relation Frequency & Multiplicity (G1/G2/G2b) ===
-  out-degree fit : alpha=2.5007  xmin=2.0
-  in-degree fit  : alpha=2.9796  xmin=11.0
+  out-degree fit : alpha=2.4999  xmin=2.0
+  in-degree fit  : alpha=2.9732  xmin=11.0
   relation Zipf  : exponent=nan  xmin=nan
   obj  mult-alpha quantiles: median=nan IQR=[nan,nan] cutoffs=[nan,nan]
   subj mult-alpha quantiles: median=nan IQR=[nan,nan] cutoffs=[nan,nan]
-  CS-size offset : a_obj=-0.1222  a_subj=-0.0098
+  CS-size offset : a_obj=-0.1263  a_subj=-0.0048
   out-degree     : max=26  p90=5.0
   in-degree      : max=48  p90=5.0
 
 === Reduced Block C: Schema & Co-occurrence (G3) ===
   num_classes        : 0
   class size power-law: alpha=nan  xmin=nan
-  subj co-occurrence : exp(rate=0.562, scale=0.494)  density=0.7284
-  obj  co-occurrence : exp(rate=0.568, scale=0.514)  density=0.8519
+  subj co-occurrence : exp(rate=0.611, scale=0.542)  density=0.6296
+  obj  co-occurrence : exp(rate=0.638, scale=0.577)  density=0.4321
   subj row entropy   : quantiles(median=nan, IQR=[nan,nan])
   obj  row entropy   : quantiles(median=nan, IQR=[nan,nan])
   P(r|t) spectrum    : exp(rate=nan, scale=nan)
   per-type entropy   : exp(rate=nan, scale=nan)
 
 === Reduced Block D: Characteristic Sets & Two-step (G3) ===
-  num_distinct_cs    : 45
-  CS frequency       : trunc. power-law(alpha=1.1752, range=[1,1359])
+  num_distinct_cs    : 41
+  CS frequency       : trunc. power-law(alpha=1.1518, range=[1,1402])
   CS size            : quantiles(median=1.0, IQR=[1.0,2.0], range=[1.0,5.0])
-  inv_num_distinct_cs: 55
-  inverse-CS freq    : trunc. power-law(alpha=1.3596, range=[1,1224])
-  inverse-CS size    : quantiles(median=1.0, IQR=[1.0,2.0], range=[1.0,4.0])
-  two-step path count: trunc. power-law(alpha=1.1219, range=[1,12538])
+  inv_num_distinct_cs: 20
+  inverse-CS freq    : trunc. power-law(alpha=1.0000, range=[1,1262])
+  inverse-CS size    : quantiles(median=1.0, IQR=[1.0,2.0], range=[1.0,3.0])
+  two-step path count: trunc. power-law(alpha=1.1050, range=[1,12566])
 
 === Reduced Block E: Motif Shape Distribution (G5) ===
 
 --- Subgraph counts ---
-  triangles:           641
-  4-cycles:            1091
-  5-cycles (est):      939
-  6-cycles (est):      2446
-  diamonds:            315
-  K4:                  20
-  tailed triangles:    9422
+  triangles:           618
+  4-cycles:            1314
+  5-cycles (est):      1568
+  6-cycles (est):      8804
+  diamonds:            389
+  K4:                  24
+  tailed triangles:    7724
 
 --- Path templates ---
     k  zipf_alpha     entropy
     2         nan     -0.0000
-    3      1.4277      0.0524
-    4      1.2182      0.1242
-    5      1.3405      0.3842
-    6      1.2337      0.5409
-    7      1.3211      0.6658
-    8      1.3452      0.7750
-    9      1.3881      0.8962
-   10      1.4074      0.9900
+    3      1.4204      0.0491
+    4      1.2223      0.1046
+    5      1.3332      0.3270
+    6      1.3171      0.4771
+    7      1.3415      0.6226
+    8      1.3054      0.7503
+    9      1.3532      0.8846
+   10      1.4026      1.0066
 
 --- Tree templates ---
-  zipf_alpha=1.1241  entropy=0.5139
+  zipf_alpha=1.1200  entropy=0.4783
 
 === Reduced Block F: Connectivity (G4) ===
   num_components            : 1
   largest_component_fraction: 1.0000
-  clustering_coefficient    : 0.0890
-  degree_assortativity      : -0.0947
-  shortest path             : max=nan, mean=nan, var=nan
+  clustering_coefficient    : 0.0945
+  degree_assortativity      : -0.0784
+  shortest path             : max=9.0, mean=4.879, var=0.976
