@@ -1,0 +1,145 @@
+{
+  "_class_size_fit": {
+    "__sig_type__": "PowerLawStats",
+    "data": [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ]
+  },
+  "_num_classes": 0,
+  "_subj_cooc_exp": {
+    "__sig_type__": "tuple",
+    "data": [
+      0.45044260276474735,
+      0.38032809017458263
+    ]
+  },
+  "_subj_cooc_density": 0.9012345679012346,
+  "_subj_row_entropy_q": {
+    "__sig_type__": "tuple",
+    "data": [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ]
+  },
+  "_obj_cooc_exp": {
+    "__sig_type__": "tuple",
+    "data": [
+      0.41944747587943465,
+      0.3533673706747426
+    ]
+  },
+  "_obj_cooc_density": 1.0,
+  "_obj_row_entropy_q": {
+    "__sig_type__": "tuple",
+    "data": [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ]
+  },
+  "_type_rel_spectrum_exp": {
+    "__sig_type__": "tuple",
+    "data": [
+      NaN,
+      NaN
+    ]
+  },
+  "_per_type_entropy_exp": {
+    "__sig_type__": "tuple",
+    "data": [
+      NaN,
+      NaN
+    ]
+  },
+  "_subj_singular_values": {
+    "__sig_type__": "ndarray",
+    "dtype": "float64",
+    "data": [
+      0.31042013724074824,
+      0.2591670916677079,
+      0.19300645306305078,
+      0.088971695777826,
+      0.058571273155084806,
+      0.05569428462959792,
+      0.022119728977686517,
+      0.014626689940882297,
+      0.0,
+      0.0
+    ]
+  },
+  "_obj_singular_values": {
+    "__sig_type__": "ndarray",
+    "dtype": "float64",
+    "data": [
+      0.6031235520822806,
+      0.15420959661198574,
+      0.1318611387308823,
+      0.08275483498347112,
+      0.06241558364970864,
+      0.05178979515439322,
+      0.029616543343568787,
+      0.019848504752689507,
+      0.0,
+      0.0
+    ]
+  },
+  "_type_rel_singular_values": {
+    "__sig_type__": "ndarray",
+    "dtype": "float64",
+    "data": []
+  },
+  "_subj_row_entropies": {
+    "__sig_type__": "ndarray",
+    "dtype": "float64",
+    "data": [
+      1.010944276487844,
+      0.975229846903845,
+      0.7559222889218311,
+      0.715159747415412,
+      1.1246032827445898,
+      1.2200621585172498,
+      0.8209806706066531,
+      0.7851206902809189,
+      0.599687855625056
+    ]
+  },
+  "_obj_row_entropies": {
+    "__sig_type__": "ndarray",
+    "dtype": "float64",
+    "data": [
+      0.9368594275866893,
+      1.4649338544793558,
+      1.2351661809958914,
+      1.0689217422065984,
+      1.5152826926625727,
+      1.2966207610188563,
+      1.0730928741337329,
+      1.2463149750977012,
+      1.2418963699955314
+    ]
+  },
+  "_per_type_entropies": {
+    "__sig_type__": "ndarray",
+    "dtype": "float64",
+    "data": []
+  },
+  "_class_sizes": {
+    "__sig_type__": "ndarray",
+    "dtype": "float64",
+    "data": []
+  }
+}

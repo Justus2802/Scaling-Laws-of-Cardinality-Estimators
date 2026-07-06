@@ -1,0 +1,19 @@
+{
+  "_triangle_count": 26,
+  "_four_cycle_count": 171,
+  "_five_cycle_count": 553,
+  "_six_cycle_count": 2729,
+  "_diamond_count": 0,
+  "_k4_count": 0,
+  "_tailed_triangle_count": 567,
+  "_path_template_zipf": {
+    "__sig_type__": "dict",
+    "items": []
+  },
+  "_path_template_entropy": {
+    "__sig_type__": "dict",
+    "items": []
+  },
+  "_tree_template_zipf": NaN,
+  "_tree_template_entropy": NaN
+}

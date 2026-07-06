@@ -1,0 +1,14 @@
+{
+  "_num_components": 55,
+  "_largest_component_fraction": 0.9923771880293619,
+  "_clustering_coefficient": 0.009991908147511282,
+  "_degree_assortativity": 0.009760374024975309,
+  "_shortest_path_max": NaN,
+  "_shortest_path_mean": NaN,
+  "_shortest_path_var": NaN,
+  "_pair_dists_finite": {
+    "__sig_type__": "ndarray",
+    "dtype": "float64",
+    "data": []
+  }
+}
