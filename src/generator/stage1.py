@@ -19,7 +19,7 @@ import math
 
 import numpy as np
 
-from signature import BlockA, BlockB, BlockC, BlockD, BlockF
+from signature import BlockA, BlockB, BlockC, BlockD, BlockF, QUANTILE_LEVELS
 
 from ._adapters import (
     _functionality_from_alpha,
@@ -392,6 +392,60 @@ def sample_schema(
         if not math.isnan(max_val) and max_val > 0:
             path_hi_target = int(max_val)
 
+    # Block C pair-level edge multiplicity (overlap) targets; NaN / not-measured
+    # (stale signatures) → 1.0, the neutral legacy near-simple graph.
+    def _ratio(getter) -> float:
+        try:
+            v = float(getter())
+        except Exception:  # noqa: BLE001 — NotCalculated on stale caches → neutral
+            return 1.0
+        return v if (v == v and v >= 1.0) else 1.0
+    edge_multiplicity = _ratio(lambda: c.edge_multiplicity)
+    bidirectional_ratio = _ratio(lambda: c.bidirectional_ratio)
+
+    # Per-relation reciprocity (Block B): assign each synthetic relation symmetric
+    # (~recip_symmetric_value) or asymmetric (0) by a Bernoulli draw on
+    # frac_symmetric[bin], where `bin` is the relation's OWN cumulative edge-fraction
+    # rank under `relation_weights` — i.e. a frequency-rank lookup, not an
+    # independent marginal draw. This preserves the frequency↔reciprocity pairing
+    # (which relation is symmetric matters, not just how many are): assigning
+    # reciprocity independently of frequency was found to put it on the wrong
+    # relations (e.g. the biggest relation getting ρ=0 despite being symmetric in the
+    # original) — see docs/notes/relation_reciprocity_and_bidirectionality.md.
+    # An empty bin (no relations landed there when Block B was measured — common
+    # when R is small, e.g. only 5 relations over 6 fixed bins) is a data gap, not
+    # evidence the bin is asymmetric: falling back to 0 there silently overrides
+    # graphs that are symmetric almost everywhere (aids: every relation reciprocity
+    # 1.0, yet naive zero-fill would still assign 0 to a relation whose bin happens
+    # to be empty). So an empty bin borrows the value of its nearest non-empty bin
+    # (ties broken toward the higher-frequency side) rather than defaulting to 0.
+    relation_reciprocity = None
+    if b is not None:
+        try:
+            frac_symmetric = np.asarray(b.recip_symmetric_frac, dtype=float)
+            symmetric_value = float(b.recip_symmetric_value)
+        except Exception:  # noqa: BLE001 — NotCalculated on stale caches → asymmetric
+            frac_symmetric = None
+        if frac_symmetric is not None and np.isfinite(frac_symmetric).any():
+            n_bins = frac_symmetric.size
+            valid = np.where(np.isfinite(frac_symmetric))[0]
+            filled = frac_symmetric.copy()
+            for i in range(n_bins):
+                if not np.isfinite(filled[i]):
+                    nearest = valid[np.argmin(np.abs(valid - i))]
+                    filled[i] = frac_symmetric[nearest]
+
+            order = np.argsort(-relation_weights)               # frequency-rank order
+            cum_frac = np.cumsum(relation_weights[order])
+            bin_edges = np.asarray(QUANTILE_LEVELS[1:], dtype=float)  # fixed thresholds
+            bin_idx = np.clip(np.searchsorted(bin_edges, cum_frac, side="left"),
+                              0, n_bins - 1)
+            p_sym = filled[bin_idx]
+            is_sym = rng.random(num_relations) < p_sym
+            recip_ordered = np.where(is_sym, symmetric_value if np.isfinite(symmetric_value) else 0.9, 0.0)
+            relation_reciprocity = np.empty(num_relations, dtype=float)
+            relation_reciprocity[order] = recip_ordered
+
     return Schema(
         relations=relations,
         relation_weights=relation_weights,
@@ -400,6 +454,9 @@ def sample_schema(
         type_relation_probs=type_relation_probs,
         num_entities=a.num_entities,
         num_triples=num_triples,
+        edge_multiplicity=edge_multiplicity,
+        bidirectional_ratio=bidirectional_ratio,
+        relation_reciprocity=relation_reciprocity,
         cs_size_mean=cs_size_mean,
         cs_num_templates=cs_num_templates,
         cs_template_zipf=cs_template_zipf,

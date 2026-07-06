@@ -148,6 +148,64 @@ class TestStage2EdgeBudget(unittest.TestCase):
         self.assertGreater(s_skew.relation_weights.var(), s_flat.relation_weights.var())
 
 
+def _und_pairs(edges: list) -> set:
+    return {(min(s, o), max(s, o)) for s, o, _ in edges if s != o}
+
+
+class TestStage2Reciprocity(unittest.TestCase):
+    """Bidirectional pair-overlap construction driven by per-relation reciprocity."""
+
+    def setUp(self):
+        self.a = _make_block_a(num_entities=300, num_triples=1200, num_relations=4)
+        self.c = _make_block_c(num_classes=3)
+        self.d = _make_block_d()
+
+    def _make_block_b_reciprocal(self, frac=1.0, value=0.9) -> BlockB:
+        b = _make_block_b()
+        b._recip_symmetric_frac = np.full(6, frac)
+        b._recip_symmetric_value = value
+        return b
+
+    def test_high_reciprocity_yields_bidirectional_pairs(self):
+        b_recip = self._make_block_b_reciprocal(frac=1.0)
+        b_none = _make_block_b()  # no reciprocity attrs set → NotCalculated → asymmetric
+        s_recip = sample_schema(self.a, self.c, b=b_recip, d=self.d, seed=0)
+        s_none = sample_schema(self.a, self.c, b=b_none, d=self.d, seed=0)
+        self.assertIsNotNone(s_recip.relation_reciprocity)
+        self.assertTrue((s_recip.relation_reciprocity > 0).any())
+
+        g_recip = instantiate(s_recip, seed=1)
+        g_none = instantiate(s_none, seed=1)
+
+        def _bidir_pair_frac(g) -> float:
+            edges = [(e.source, e.target, e["predicate"]) for e in _content_edges(g)]
+            dir_pairs = {(s, o) for s, o, _ in edges if s != o}
+            und = _und_pairs(edges)
+            return (len(dir_pairs) - len(und)) / max(1, len(und))
+
+        self.assertGreater(_bidir_pair_frac(g_recip), _bidir_pair_frac(g_none))
+
+    def test_budget_conserved_with_reciprocity(self):
+        b_recip = self._make_block_b_reciprocal(frac=1.0)
+        schema = sample_schema(self.a, self.c, b=b_recip, d=self.d, seed=0)
+        g = instantiate(schema, seed=1)
+        content = _content_edges(g)
+        target = schema.num_triples - schema.num_entities
+        self.assertLessEqual(len(content), target)
+        self.assertGreaterEqual(len(content), 0.85 * target)
+
+    def test_deterministic_with_reciprocity(self):
+        b_recip = self._make_block_b_reciprocal(frac=1.0)
+        schema = sample_schema(self.a, self.c, b=b_recip, d=self.d, seed=0)
+        g1 = instantiate(schema, seed=1)
+        g2 = instantiate(schema, seed=1)
+        self.assertEqual(g1.ecount(), g2.ecount())
+        self.assertEqual(
+            sorted((e.source, e.target, e["predicate"]) for e in g1.es),
+            sorted((e.source, e.target, e["predicate"]) for e in g2.es),
+        )
+
+
 def _count_components(edges: list, n: int) -> tuple[int, int]:
     """Return (num_components, giant_size) from an edge list on n nodes."""
     adj: list[list[int]] = [[] for _ in range(n)]

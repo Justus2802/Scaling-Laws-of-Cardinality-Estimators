@@ -12,6 +12,7 @@ Turns a Schema into an igraph.Graph by
 """
 
 import math
+from collections import defaultdict, deque
 
 import igraph
 import numpy as np
@@ -625,6 +626,51 @@ def instantiate(
         log.info("Stage 2: inverse CS (target %d distinct, realised %d)",
                  schema.inv_cs_num_templates, inv_used)
 
+    # --- 3b2. Overlap subject/object pools for reciprocal relations ---
+    # A bidirectional (mutual) pair a↔b needs both a and b to *emit* and *receive* the
+    # relation, i.e. to sit in both S_r (subject pool) and O_r (object pool). Forward
+    # and inverse CS are assigned independently above, so S_r ∩ O_r is tiny even for a
+    # relation Stage-1 marked symmetric (ρ_r≈1), starving the mutual-pair construction
+    # in the wiring loop. Here we make a ρ_r fraction of the entities that *emit* r also
+    # *receive* it: add r to their inverse CS (swapping out one existing entry so the
+    # inverse-CS *size* — and the §3c degree rank-matching / Block D inv_cs_size_q — is
+    # preserved; only which relations they receive changes, which is correct for a
+    # symmetric relation). This runs before objects_by_rel (= O_r) is derived from
+    # entity_inv_cs below, so the change propagates into O_r.
+    # No-op when entity_inv_cs is None (every entity already eligible to receive every
+    # relation → S_r ∩ O_r = S_r) or no reciprocity target is set.
+    if entity_inv_cs is not None and schema.relation_reciprocity is not None:
+        emitters_of: dict[int, list[int]] = defaultdict(list)
+        receivers_of: dict[int, set[int]] = defaultdict(set)
+        for v in range(actual_V):
+            cs_v = entity_cs[v]
+            if cs_v is not None:
+                for r in cs_v:
+                    emitters_of[int(r)].append(v)
+            inv_v = entity_inv_cs[v]
+            if inv_v is not None:
+                for r in inv_v:
+                    receivers_of[int(r)].add(v)
+        n_shared = 0
+        for r_idx in range(num_relations):
+            rho_r = float(schema.relation_reciprocity[r_idx])
+            if rho_r <= 0.0:
+                continue
+            already = receivers_of.get(r_idx, ())
+            for v in emitters_of.get(r_idx, ()):
+                if v in already or rng.random() >= rho_r:
+                    continue
+                inv_v = entity_inv_cs[v]
+                if inv_v is not None and len(inv_v) > 0:
+                    inv_v = np.asarray(inv_v).copy()
+                    inv_v[int(rng.integers(len(inv_v)))] = r_idx  # size-preserving swap
+                    entity_inv_cs[v] = inv_v
+                else:
+                    entity_inv_cs[v] = np.array([r_idx], dtype=int)
+                n_shared += 1
+        log.info("Stage 2: pool overlap — added %d reciprocal in-relations "
+                 "(entities now emitting+receiving a symmetric relation)", n_shared)
+
     # ------------------------------------------------------------------
     # 3c. Per-entity target degrees (replace the old global max-degree caps).
     #     Sampled target values are rank-matched to (inverse-)CS size so entities
@@ -709,6 +755,29 @@ def instantiate(
     content_edges: list[tuple[int, int, str]] = []
     # seen_src[o] = set of sources that already point to o (for unique_src_count)
     seen_src: list[set] = [set() for _ in range(actual_V)]
+
+    # ── Pair-level edge-multiplicity (overlap) steering (Block C targets) ────────
+    # Real graphs pack directed content edges onto shared pairs; the default wiring
+    # scatters them (~simple graph), inflating the undirected simple graph the
+    # motifs are counted on. We bias *which* pending object stub a subject pairs
+    # with — toward a pair it already links to (parallel/multi-relational) or one
+    # that already links to it (bidirectional) — which preserves the m_obj/m_in
+    # degree allocations exactly (degree- and budget-neutral) and only correlates
+    # the pairing. Global (cross-relation) neighbour indices:
+    out_targets: list[set[int]] = [set() for _ in range(actual_V)]  # o's that s → (parallel test)
+    in_neighbours: list[set[int]] = [set() for _ in range(actual_V)]  # o's that → s (bidir test)
+    # Target overlap-edge counts from ρ = edge_multiplicity·bidirectional_ratio:
+    #   parallel edges (extra relation on an existing directed pair) = E·(1 − 1/em)
+    #   bidirectional edges (the reverse-direction edge of a pair)    = E·(b−1)/(em·b)
+    _em = max(1.0, float(schema.edge_multiplicity))
+    _bd = max(1.0, float(schema.bidirectional_ratio))
+    n_parallel_target = int(round(content_E_target * (1.0 - 1.0 / _em)))
+    n_bidir_target = int(round(content_E_target * (_bd - 1.0) / (_em * _bd)))
+    n_parallel = 0
+    n_bidir = 0
+    # Per-relation reciprocity ρ_r drives the shared-pool bidirectional construction
+    # (Phase A in the pairing loop); None → all-asymmetric (legacy).
+    rel_recip = schema.relation_reciprocity
 
     # Subject pool S_r (forward CS) and object pool O_r (inverse CS) per relation.
     subjects_by_rel: dict[int, list[int]] = {}
@@ -825,34 +894,154 @@ def instantiate(
             global_cap = np.maximum(tgt_in[obj_ids] - (in_degrees[obj_ids] - 1.0), 0).astype(np.int64)
             _cap_redistribute(m_in, n_sr, w_in, hard_cap=global_cap)
 
-        # Pair subject-stubs with object-stubs within S_r × O_r (configuration model). Each
-        # object stub is consumed once (preserving m_in); on a self-loop or duplicate (s, o)
-        # we swap in another still-pending object stub (retry) so the edge is re-routed.
-        subj_stubs = np.repeat(np.asarray(S_r, dtype=np.int64), m_obj)
-        obj_stubs = np.repeat(obj_ids, m_in)
-        rng.shuffle(obj_stubs)
-        placed_pairs: set[tuple[int, int]] = set()
-        n_stubs = min(int(subj_stubs.shape[0]), int(obj_stubs.shape[0]))
-        for i in range(n_stubs):
-            s = int(subj_stubs[i])
-            for attempt in range(MAX_PAIR_RETRY):
-                j = i if attempt == 0 else int(rng.integers(i, n_stubs))
-                o = int(obj_stubs[j])
-                if o == s or (s, o) in placed_pairs:
-                    continue
-                obj_stubs[i], obj_stubs[j] = obj_stubs[j], obj_stubs[i]  # consume stub at i
-                placed_pairs.add((s, o))
-                content_edges.append((s, o, predicate))
-                seen.add((s, o, predicate))
-                in_degrees[o] += 1.0
-                out_degrees[s] += 1
-                if s not in seen_src[o]:
-                    seen_src[o].add(s)
-                    unique_src_count[o] += 1
-                break
-            # else: no valid object found within retries → drop this stub (rare)
+        # Reciprocity: guarantee both an out-stub AND an in-stub of r for a ρ_r-sized
+        # subset of the entities eligible for both (S_r ∩ O_r, populated by the §3b2
+        # CS-overlap pass above) — the mutual-pair construction below can only pair
+        # entities that actually have nonzero remaining stubs on *both* sides, and
+        # m_obj/m_in are otherwise independent draws that rarely give the same entity
+        # both by chance. This reservation steals one stub from the current max-count
+        # entity on each side, so sum(m_obj)==edges_r / sum(m_in)==edges_r exactly —
+        # budget-neutral, applied last so capping above can't undo it.
+        rho_r = float(rel_recip[rel_idx]) if rel_recip is not None else 0.0
+        if rho_r > 0.0:
+            both_r = list(set(S_r) & set(O_r if O_r is not None else all_objs.tolist()))
+            n_mutual_target = int(round(rho_r * edges_r / 2.0))
+            n_reserve = min(len(both_r) // 2 * 2, 2 * n_mutual_target, n_sr, n_or)
+            if n_reserve > 0:
+                rng.shuffle(both_r)
+                reserved = both_r[:n_reserve]
+                pos_out = {int(s): i for i, s in enumerate(S_r)}
+                pos_in = {int(o): i for i, o in enumerate(obj_ids.tolist())}
 
-    log.info("Stage 2: wired %d content edges", len(content_edges))
+                def _reserve(m: np.ndarray, pos: dict) -> None:
+                    for e in reserved:
+                        i = pos.get(e)
+                        if i is None or m[i] > 0:
+                            continue
+                        j = int(np.argmax(m))
+                        if m[j] <= 0:
+                            break               # no spare stub anywhere on this side
+                        m[j] -= 1
+                        m[i] += 1
+
+                _reserve(m_obj, pos_out)
+                _reserve(m_in, pos_in)
+
+        # Pair subjects with objects within S_r × O_r (configuration model), holding
+        # the per-entity out/in stub multiplicities as `remaining_out`/`remaining_in`
+        # counts (== m_obj/m_in) so both overlap phases below decrement them and the
+        # degree allocation is preserved exactly. `_place` does all placement
+        # bookkeeping and classifies the edge as parallel / bidirectional overlap.
+        remaining_out: dict[int, int] = defaultdict(int)
+        for idx, s in enumerate(S_r):
+            remaining_out[int(s)] += int(m_obj[idx])
+        remaining_in: dict[int, int] = defaultdict(int)
+        for idx, o in enumerate(obj_ids.tolist()):
+            remaining_in[int(o)] += int(m_in[idx])
+        placed_pairs: set[tuple[int, int]] = set()
+
+        def _place(s: int, o: int) -> bool:
+            """Place directed edge (s→o) if the stubs/pair are available, updating all
+            bookkeeping (degree allocation, neighbour indices, overlap counters)."""
+            nonlocal n_parallel, n_bidir
+            if (s == o or remaining_out.get(s, 0) <= 0 or remaining_in.get(o, 0) <= 0
+                    or (s, o) in placed_pairs):
+                return False
+            if o in out_targets[s]:
+                n_parallel += 1                      # (s,o) already exists (other relation)
+            elif s in out_targets[o]:
+                n_bidir += 1                         # (o,s) exists → this is the reverse edge
+            remaining_out[s] -= 1
+            remaining_in[o] -= 1
+            placed_pairs.add((s, o))
+            content_edges.append((s, o, predicate))
+            seen.add((s, o, predicate))
+            out_targets[s].add(o)
+            in_neighbours[o].add(s)
+            in_degrees[o] += 1.0
+            out_degrees[s] += 1
+            if s not in seen_src[o]:
+                seen_src[o].add(s)
+                unique_src_count[o] += 1
+            return True
+
+        # Phase A — reciprocity-driven bidirectional construction: this relation's
+        # target reciprocity ρ_r (Block B, sampled per relation in Stage 1) says a
+        # ρ_r fraction of its directed edges should be part of a mutual pair, i.e.
+        # build ~ρ_r·edges_r/2 mutual (e1↔e2) pairs. Draw both endpoints from the
+        # relation's *shared* pool `both = S_r ∩ O_r` (entities that are both a pending
+        # subject and object of r) — for a symmetric relation the forward and inverse
+        # CS coincide, so this is the correct pool. `_place` keeps it degree/budget-
+        # neutral and counts the reverse edge as bidirectional.
+        # An entity with multiple stubs (edges_r/n_sr is typically ≫1) can supply more
+        # than one mutual pair, so `pool` is drawn from *with replacement* rather than
+        # walked once — an entity stays in the pool (swap-removed only once BOTH its
+        # remaining_out and remaining_in are exhausted) so its full stub budget is used.
+        rho_r = (float(rel_recip[rel_idx]) if rel_recip is not None else 0.0)
+        n_mutual_target = int(round(rho_r * edges_r / 2.0))
+        if n_mutual_target > 0:
+            pool = [e for e in remaining_out
+                    if remaining_in.get(e, 0) > 0 and remaining_out[e] > 0]
+            built = 0
+            max_attempts = 4 * n_mutual_target + 20   # bound: a few stale-pick misses per pair
+            attempts = 0
+            while built < n_mutual_target and len(pool) >= 2 and attempts < max_attempts:
+                attempts += 1
+                i1 = int(rng.integers(len(pool)))
+                i2 = int(rng.integers(len(pool)))
+                if i2 == i1:
+                    continue
+                e1, e2 = pool[i1], pool[i2]
+                if (remaining_out.get(e1, 0) > 0 and remaining_in.get(e2, 0) > 0
+                        and remaining_out.get(e2, 0) > 0 and remaining_in.get(e1, 0) > 0
+                        and (e1, e2) not in placed_pairs and (e2, e1) not in placed_pairs):
+                    if _place(e1, e2):               # forward
+                        _place(e2, e1)               # reverse → counted as bidir in _place
+                        built += 1
+                # Swap-remove any entity no longer a valid mutual-pair candidate — it
+                # needs BOTH remaining_out>0 and remaining_in>0 to serve as either side
+                # of a future pair, so either hitting 0 disqualifies it (largest index
+                # first so popping doesn't invalidate the other's position).
+                for idx, e in sorted(((i1, e1), (i2, e2)), reverse=True):
+                    if remaining_out.get(e, 0) <= 0 or remaining_in.get(e, 0) <= 0:
+                        pool[idx] = pool[-1]
+                        pool.pop()
+
+        # Phase B — pair the remaining stubs. Draw objects from a shuffled reservoir
+        # (unbiased configuration model), but when behind on the parallel target first
+        # try an object s already links to (multi-relational overlap).
+        subj_seq = [e for e, c in remaining_out.items() for _ in range(c)]
+        obj_seq = [e for e, c in remaining_in.items() for _ in range(c)]
+        rng.shuffle(subj_seq)
+        rng.shuffle(obj_seq)
+        order: deque = deque(obj_seq)
+
+        def _valid(s: int, o: int) -> bool:
+            return o != s and remaining_in.get(o, 0) > 0 and (s, o) not in placed_pairs
+
+        for s in subj_seq:
+            if remaining_out.get(s, 0) <= 0:
+                continue                             # already consumed by phase A
+            placed = False
+            if n_parallel < n_parallel_target:       # multi-relational overlap first
+                for o in out_targets[s]:
+                    if _valid(s, o) and _place(s, o):
+                        placed = True
+                        break
+            if placed:
+                continue
+            for _ in range(MAX_PAIR_RETRY):          # default unbiased draw
+                if not order:
+                    break
+                cand = order.popleft()
+                if remaining_in.get(cand, 0) <= 0:
+                    continue                         # exhausted by an overlap/phase-A draw
+                if _valid(s, cand) and _place(s, cand):
+                    break
+                order.append(cand)                   # valid object, wrong for this s — requeue
+
+    log.info("Stage 2: wired %d content edges (overlap: parallel=%d/%d, bidir=%d/%d)",
+             len(content_edges), n_parallel, n_parallel_target, n_bidir, n_bidir_target)
 
     # ------------------------------------------------------------------
     # 4b. Inv-CS template completion: redirect existing edges so every object

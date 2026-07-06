@@ -120,6 +120,7 @@ def fit_quantiles(
     values,
     lo: Optional[float] = None,
     hi: Optional[float] = None,
+    min_samples: int = MIN_SAMPLES_FOR_FIT,
 ) -> QuantileFit:
     """Summarise a 1-D sample by its quantiles at :data:`QUANTILE_LEVELS`.
 
@@ -128,16 +129,20 @@ def fit_quantiles(
     far more stable to estimate and directly invertible for sampling. The min/max
     levels are the truncation cutoffs; pass ``lo``/``hi`` to pin them to fixed
     bounds (e.g. the ≈[1.4, 3.0] range for per-relation multiplicity α). Returns
-    all-NaN below ``MIN_SAMPLES_FOR_FIT`` finite samples.
+    all-NaN below ``min_samples`` finite samples.
 
     Args:
         values: iterable of real-valued samples.
         lo: lower cutoff override (default: observed minimum, the 0.0 quantile).
         hi: upper cutoff override (default: observed maximum, the 1.0 quantile).
+        min_samples: minimum finite samples to fit (default ``MIN_SAMPLES_FOR_FIT``,
+            appropriate when each sample is itself a noisy power-law α). Lower it
+            when the samples are directly-reliable statistics (e.g. per-relation
+            reciprocity fractions, which are meaningful even from few relations).
     """
     arr = np.asarray(list(values), dtype=float)
     arr = arr[np.isfinite(arr)]
-    if arr.size < MIN_SAMPLES_FOR_FIT:
+    if arr.size < min_samples:
         return nan_quantiles()
     try:
         qs = np.quantile(arr, QUANTILE_LEVELS)

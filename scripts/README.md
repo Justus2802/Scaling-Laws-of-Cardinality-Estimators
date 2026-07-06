@@ -113,6 +113,15 @@ python scripts/estimator_variance.py fb237_v4 --k 5 6 --samples 8 16 32 64 --per
 python scripts/estimator_variance.py fb237_v4 --metric delta --bins 20 50 100 200 450
 ```
 
+### `relation_reciprocity.py`
+Surveys **per-relation reciprocity** and forward/inverse-CS symmetry — testing whether bidirectionality is carried by a per-relation "symmetric vs asymmetric" split (it is, nearly bimodally). Per relation reports the same-relation edge reciprocity and `|S_r∩O_r|/|S_r∪O_r|`; per graph the edge-weighted overall reciprocity, symmetric-edge fraction, mid-band fraction (bimodality) and CS↔inv-CS Jaccard. Writes per-relation CSVs + a summary to `experiments/relation_reciprocity/`. Findings in `docs/notes/relation_reciprocity_and_bidirectionality.md`.
+
+```
+python scripts/relation_reciprocity.py fb237_v4 wn18rr_v4
+python scripts/relation_reciprocity.py            # all corpus graphs
+python scripts/relation_reciprocity.py --top 15
+```
+
 ## Visualisation
 
 ### `convergence_plot.py`

@@ -1,16 +1,3 @@
-=== Reduced Block A: Size & Vocabulary (G0) ===
-  num_entities : 45158
-  num_relations: 24
-  mean_degree  : 49.8294
-
-=== Reduced Block B: Relation Frequency & Multiplicity (G1/G2/G2b) ===
-  out-degree fit : alpha=2.6775  xmin=172.0
-  in-degree fit  : alpha=2.5979  xmin=66.0
-  relation Zipf  : exponent=2.3088  xmin=73566.0
-  obj  mult-alpha quantiles: median=2.320 IQR=[2.011,2.868] cutoffs=[1.40,3.00]
-  subj mult-alpha quantiles: median=2.349 IQR=[1.928,2.716] cutoffs=[1.40,3.00]
-  CS-size offset : a_obj=0.6644  a_subj=-0.2243
-
 === Reduced Block C: Schema & Co-occurrence (G3) ===
   num_classes        : 0
   class size power-law: alpha=nan  xmin=nan
@@ -20,48 +7,3 @@
   obj  row entropy   : quantiles(median=1.680, IQR=[0.000,2.317])
   P(r|t) spectrum    : exp(rate=nan, scale=nan)
   per-type entropy   : exp(rate=nan, scale=nan)
-
-=== Reduced Block D: Characteristic Sets & Two-step (G3) ===
-  num_distinct_cs    : 204
-  CS frequency       : power-law(alpha=2.2054, xmin=132.0)
-  CS size            : quantiles(median=4.0, IQR=[3.0,5.0], range=[1.0,7.0])
-  inv_num_distinct_cs: 819
-  inverse-CS freq    : power-law(alpha=1.6108, xmin=4.0)
-  inverse-CS size    : quantiles(median=1.0, IQR=[1.0,5.0], range=[1.0,12.0])
-  two-step path count: trunc. power-law(alpha=1.0000, range=[358,21928856])
-
-=== Reduced Block E: Motif Shape Distribution (G5) ===
-
---- Subgraph counts ---
-  triangles:           19789656
-  4-cycles:            46102308436
-  5-cycles (est):      402773611657
-  6-cycles (est):      132681503945364
-  diamonds:            5875783566
-  K4:                  102910926
-  tailed triangles:    148991302937
-
---- Star counts (induced) ---
-  k=2: 3405395797  k=3: 10765654504513  k=4: 31401156247203100  k=5: 76948844850810896384  k=6: 162770173143680779550720  k=7: 302421066127650327013359616  k=8: 501570249883543612385386299392  k=9: 754751875861827639784178641272832  k=10: 1031595875560169702659235308124504064
-
---- Path templates ---
-    k  zipf_alpha     entropy
-    2         nan     -0.0000
-    3      1.3885      0.0355
-    4      1.1916      0.7316
-    5      1.1835      1.4240
-    6      1.1569      2.6857
-    7      1.1755      3.0496
-    8      1.2142      4.3505
-    9      1.2754      4.7079
-   10         nan         nan
-
---- Tree templates ---
-  zipf_alpha=1.0421  entropy=0.0078
-
-=== Reduced Block F: Connectivity (G4) ===
-  num_components            : 1
-  largest_component_fraction: 1.0000
-  clustering_coefficient    : 0.1131
-  degree_assortativity      : -0.1699
-  shortest path             : max=6.0, mean=3.037, var=0.536

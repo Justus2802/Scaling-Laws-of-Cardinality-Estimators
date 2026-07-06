@@ -21,7 +21,7 @@ import numpy as np
 
 from ._logging import get_logger
 from ._block_base import SignatureBlock, _NOT_CALCULATED
-from ._utils import MIN_SAMPLES_FOR_FIT, PowerLawStats, _fit_powerlaw
+from ._utils import MIN_SAMPLES_FOR_FIT, RDF_TYPE, PowerLawStats, _fit_powerlaw
 from ._fits import (
     QuantileFit,
     QUANTILE_LEVELS,
@@ -63,6 +63,8 @@ class BlockB(SignatureBlock):
         self._subj_alpha_q = _NOT_CALCULATED            # G2 subject side
         self._a_obj = _NOT_CALCULATED                   # G2b object-side offset
         self._a_subj = _NOT_CALCULATED                  # G2b subject-side offset
+        self._recip_symmetric_frac = _NOT_CALCULATED    # P(symmetric) per edge-freq bin
+        self._recip_symmetric_value = _NOT_CALCULATED   # symmetric-mode reciprocity magnitude
         # high-end degree statistics (explicit targets for hub steering)
         self._out_degree_max = _NOT_CALCULATED
         self._out_degree_p90 = _NOT_CALCULATED
@@ -74,6 +76,7 @@ class BlockB(SignatureBlock):
         self._out_degrees = _NOT_CALCULATED
         self._in_degrees = _NOT_CALCULATED
         self._rel_edge_counts = _NOT_CALCULATED
+        self._recips = _NOT_CALCULATED                  # per-relation reciprocity values
 
     # ── properties ────────────────────────────────────────────────────────────
     # The quantile / Zipf fits are NamedTuples; the JSON round-trip restores
@@ -106,6 +109,14 @@ class BlockB(SignatureBlock):
     @property
     def a_subj(self) -> float:
         return self._require("a_subj", self._a_subj)
+
+    @property
+    def recip_symmetric_frac(self) -> np.ndarray:
+        return np.asarray(self._require("recip_symmetric_frac", self._recip_symmetric_frac))
+
+    @property
+    def recip_symmetric_value(self) -> float:
+        return self._require("recip_symmetric_value", self._recip_symmetric_value)
 
     @property
     def out_degree_max(self) -> int:
@@ -161,14 +172,21 @@ class BlockB(SignatureBlock):
         cs_of: defaultdict[int, set[str]] = defaultdict(set)
         inv_cs_of: defaultdict[int, set[str]] = defaultdict(set)
         rel_edge_counts: defaultdict[str, int] = defaultdict(int)
+        # Per-relation directed pairs, over entity–entity content edges only, for
+        # the reciprocity feature below.
+        rel_pairs: defaultdict[str, set] = defaultdict(set)
         for e in g.es:
             r: str = e["predicate"]
             subj_obj_count[r][e.source] += 1
             cs_of[e.source].add(r)
             rel_edge_counts[r] += 1
-            if not is_literal[e.target]:
+            tgt_lit = is_literal[e.target]
+            if not tgt_lit:
                 obj_subj_count[r][e.target] += 1
                 inv_cs_of[e.target].add(r)
+            if (r != RDF_TYPE and e.source != e.target
+                    and not tgt_lit and not is_literal[e.source]):
+                rel_pairs[r].add((e.source, e.target))
 
         # --- G1: relation-usage frequency (Zipf over per-predicate edge counts) ---
         self._rel_edge_counts = (
@@ -225,23 +243,70 @@ class BlockB(SignatureBlock):
                 subj_mults.append(m)
         self._a_subj = fit_cs_size_offset(subj_cs_sizes, subj_mults)
 
+        # --- Per-relation reciprocity: fraction of a relation's directed pairs whose
+        # reverse also exists via the same relation (drives bidirectionality). Nearly
+        # BIMODAL across the corpus (relations are symmetric ≈1 or asymmetric ≈0, with
+        # ~0% in between — see docs/notes/relation_reciprocity_and_bidirectionality.md),
+        # and STRONGLY tied to relation frequency (which relation is symmetric matters
+        # for generation, not just how many are). A plain quantile function over
+        # relations discards that frequency pairing, so instead we bin relations by
+        # cumulative EDGE-fraction rank (reusing QUANTILE_LEVELS as fixed bin edges —
+        # weights bins by edge mass, so a few huge relations get their own resolution
+        # instead of being diluted by a long tail of tiny ones) and store, per bin, the
+        # fraction of relations that are symmetric — a mixing weight, not a curve,
+        # because the bimodality collapses the general conditional distribution
+        # P(reciprocity | frequency) to a single number per bin. The symmetric-mode
+        # magnitude (~0.9, not exactly 1) is stored once as a separate scalar. ---
+        rel_recip: dict[str, float] = {
+            r: sum(1 for (s, o) in pairs if (o, s) in pairs) / len(pairs)
+            for r, pairs in rel_pairs.items() if pairs
+        }
+        self._recips = np.array(list(rel_recip.values()), dtype=float)
+        n_bins = len(QUANTILE_LEVELS) - 1
+        frac_symmetric = np.full(n_bins, np.nan)
+        symmetric_value = float("nan")
+        if rel_recip:
+            order = sorted(rel_recip, key=lambda r: -rel_edge_counts[r])
+            counts = np.array([rel_edge_counts[r] for r in order], dtype=float)
+            cum_frac = np.cumsum(counts) / counts.sum()
+            recip_ordered = np.array([rel_recip[r] for r in order], dtype=float)
+            bin_idx = np.clip(np.searchsorted(QUANTILE_LEVELS[1:], cum_frac, side="left"),
+                              0, n_bins - 1)
+            for b in range(n_bins):
+                in_bin = recip_ordered[bin_idx == b]
+                if in_bin.size:
+                    frac_symmetric[b] = float(np.mean(in_bin > 0.5))
+            symmetric_mode = self._recips[self._recips > 0.5]
+            if symmetric_mode.size:
+                symmetric_value = float(symmetric_mode.mean())
+        self._recip_symmetric_frac = frac_symmetric
+        self._recip_symmetric_value = symmetric_value
+
         log.info(
             "Block B: rel_zipf=%.3f, obj_alpha(median=%.3f), a_obj=%.3f, a_subj=%.3f",
             self._relation_zipf.exponent, self._obj_alpha_q.q50,
             self._a_obj, self._a_subj,
         )
+        log.info(
+            "Block B: per-relation reciprocity — frac_symmetric by edge-freq bin=%s, "
+            "symmetric_value=%.3f (%d relations)",
+            np.round(frac_symmetric, 3).tolist(), symmetric_value, self._recips.size,
+        )
         return self
 
     def as_vector(self) -> list[float]:
-        """Flatten to a fixed-length 22-vector for cross-KG comparison.
+        """Flatten to a fixed-length 32-vector for cross-KG comparison.
 
         Layout: out-degree (alpha, xmin); in-degree (alpha, xmin); relation Zipf
         (exponent, x_min); object-α quantile function (7 levels); subject-α
-        quantile function (7 levels); offsets a_obj, a_subj.
+        quantile function (7 levels); offsets a_obj, a_subj; out/in degree
+        max/p90 (4); per-relation reciprocity — P(symmetric) per edge-frequency bin
+        (6 levels) + the symmetric-mode reciprocity magnitude (1 scalar).
 
         Attributes absent from stale serialized data are emitted as NaN.
         """
         n_q = len(QUANTILE_LEVELS)
+        n_bins = n_q - 1
         return [
             self._safe_scalar(lambda: self.out_degree_fit.alpha),
             self._safe_scalar(lambda: self.out_degree_fit.xmin),
@@ -257,6 +322,8 @@ class BlockB(SignatureBlock):
             self._safe_scalar(lambda: self.out_degree_p90),
             self._safe_scalar(lambda: self.in_degree_max),
             self._safe_scalar(lambda: self.in_degree_p90),
+            *self._safe_iter(lambda: self.recip_symmetric_frac, n_bins),
+            self._safe_scalar(lambda: self.recip_symmetric_value),
         ]
 
     @classmethod
@@ -271,12 +338,15 @@ class BlockB(SignatureBlock):
             names += [f"{side}_mult_alpha_{suffix}" for suffix in QUANTILE_SUFFIXES]
         names += ["a_obj", "a_subj"]
         names += ["out_degree_max", "out_degree_p90", "in_degree_max", "in_degree_p90"]
+        names += [f"recip_symmetric_frac_bin{i}" for i in range(len(QUANTILE_LEVELS) - 1)]
+        names += ["recip_symmetric_value"]
         return names
 
     @classmethod
     def get_na_vec(cls) -> list[float]:
         """Return a NaN vector the same length as as_vector()."""
-        return [float("nan")] * (6 + 2 * len(QUANTILE_LEVELS) + 2 + 4)
+        n_q = len(QUANTILE_LEVELS)
+        return [float("nan")] * (6 + 2 * n_q + 2 + 4 + (n_q - 1) + 1)
 
     def distribution_fits(self) -> list[tuple[str, object, str]]:
         """Return ``(name, fit, kind)`` for each reportable distribution.

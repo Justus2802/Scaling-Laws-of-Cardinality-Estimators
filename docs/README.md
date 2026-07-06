@@ -75,3 +75,14 @@ corpus `data/test_graphs/` (use `--graphs <name>...` to restrict to specific gra
   targets cap the move at ~3e-4) **and** cancellation (Stage-2 overshoots paw/c5 ~2× while
   undershooting c4/k4, so correlated motif deltas oppose; median alignment 0.48). Points to
   the Stage-2 paw/c5 overshoot as the highest-value upstream lever.
+- **[notes/relation_reciprocity_and_bidirectionality.md](notes/relation_reciprocity_and_bidirectionality.md)** —
+  characterises *where* bidirectionality comes from (the harder half of the multiplicity gap) and
+  documents the implemented fix. Reciprocity is nearly **bimodal** per relation (symmetric ≈1 /
+  asymmetric ≈0, ~0% in between — aids fully symmetric, hetionet fully asymmetric, dbpedia the
+  partial exception, swdf cross-relational) and strongly tied to relation **frequency**. Realising
+  it needed four independent Stage-2 factors fixed together (CS-pool overlap, stub reservation,
+  mutual-pair reuse, frequency-binned reciprocity assignment) — a same-relation swap provably
+  cannot fix this post-hoc, since it preserves per-relation degree exactly. Measured result:
+  simple-edge inflation cut roughly in half on fb237/wn18rr/aids (e.g. wn18rr +45%→+24%);
+  bidirectional attainment ~45–50% of target, capped by a genuine stub-multiplicity ceiling
+  (documented, not further chased). Survey via `scripts/relation_reciprocity.py`.

@@ -5,6 +5,7 @@ import tempfile
 import unittest
 
 import igraph
+import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from kg_io import load_kg
@@ -110,6 +111,48 @@ class TestBlockBSerialize(unittest.TestCase):
         b = self._make()
         restored = BlockB.from_serializable(b.to_serializable())
         np.testing.assert_array_equal(b.as_vector(), restored.as_vector())
+
+
+class TestBlockBReciprocity(unittest.TestCase):
+    """Per-relation reciprocity: frequency-binned P(symmetric) + symmetric-mode value."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def _load_ttl(self, content: str) -> igraph.Graph:
+        path = os.path.join(self.tmp, "g.ttl")
+        with open(path, "w") as f:
+            f.write(content)
+        return load_kg(path)
+
+    def test_all_symmetric_relation_has_frac_one(self):
+        # Every edge of ex:p has its reverse also present via ex:p (a<->b, c<->d).
+        b = BlockB().calculate(self._load_ttl(
+            "@prefix ex: <http://example.org/> .\n"
+            "ex:a ex:p ex:b . ex:b ex:p ex:a .\n"
+            "ex:c ex:p ex:d . ex:d ex:p ex:c .\n"
+        ))
+        self.assertTrue(np.any(b.recip_symmetric_frac > 0.5))
+        self.assertGreater(b.recip_symmetric_value, 0.5)
+
+    def test_all_asymmetric_relation_has_frac_zero(self):
+        # No reverse edges exist for ex:p anywhere.
+        b = BlockB().calculate(self._load_ttl(
+            "@prefix ex: <http://example.org/> .\n"
+            "ex:a ex:p ex:b . ex:c ex:p ex:d .\n"
+        ))
+        frac = b.recip_symmetric_frac
+        self.assertTrue(np.all(frac[np.isfinite(frac)] == 0.0))
+        self.assertTrue(math.isnan(b.recip_symmetric_value))
+
+    def test_vector_includes_reciprocity(self):
+        b = BlockB().calculate(self._load_ttl(
+            "@prefix ex: <http://example.org/> .\nex:a ex:p ex:b . ex:b ex:p ex:a .\n"
+        ))
+        self.assertEqual(len(b.as_vector()), _VECTOR_LEN)
+        names = BlockB.feature_names()
+        self.assertIn("recip_symmetric_value", names)
+        self.assertTrue(any(n.startswith("recip_symmetric_frac_bin") for n in names))
 
 
 if __name__ == "__main__":

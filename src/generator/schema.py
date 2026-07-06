@@ -47,6 +47,20 @@ class Schema:
     type_relation_probs: np.ndarray
     num_entities: int
     num_triples: int
+    # Block C-derived pair-level edge multiplicity (overlap) targets. Defaults = 1.0
+    # reproduce the legacy near-simple graph (no shared pairs). Stage 2 biases the
+    # stub pairing toward already-used pairs (parallel) / reversed pairs (bidir) to
+    # hit these — degree-neutral, since it only correlates which pending stub a
+    # subject pairs with. See docs/notes/motif_reachability_and_edge_multiplicity.md.
+    edge_multiplicity: float = 1.0       # directed content edges / distinct directed pairs (≥1)
+    bidirectional_ratio: float = 1.0     # distinct directed pairs / distinct undirected pairs ([1,2])
+    # Per-relation reciprocity (Block B recip_symmetric_frac/recip_symmetric_value,
+    # looked up by each relation's own frequency rank in Stage 1 — not an independent
+    # marginal draw), one value in [0,1] per relation, indexed like `relations`.
+    # Drives the shared-pool bidirectional construction in Stage 2: a relation with
+    # reciprocity ρ_r builds mutual (a↔b) pairs for a ρ_r
+    # fraction of its edges. None → all-asymmetric (legacy behaviour).
+    relation_reciprocity: "np.ndarray | None" = None
     # Block D-derived CS structure (defaults = legacy behaviour)
     cs_size_mean: float = 0.0       # 0 → derive from E/V budget at instantiate time
     cs_num_templates: int = 0       # 0 → per-entity independent sampling

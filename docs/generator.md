@@ -151,6 +151,16 @@ where most of the fidelity fixes live.
      `(target − placed)⁺`, plus a **hard per-node quota** via `_cap_redistribute(hard_cap=…)`.
    - `"chunglu"`: weight ∝ target degree (expected-degree model), no hard cap — matches the
      distribution in expectation only; evaluated and rejected (tail overshoot ≈ +116% on max-out).
+5d. **Pool overlap for reciprocal relations** (when `relation_reciprocity` is set):
+   real graphs pack directed content edges onto **shared** node pairs (parallel/multi-relational
+   overlap and bidirectional pairs), whereas the CS-first construction above assigns forward and
+   inverse CS **independently**, so `S_r ∩ O_r` (entities eligible to both emit *and* receive `r`)
+   is tiny — even for a relation Stage 1 marked symmetric (`ρ_r≈1`). This pass adds `r` to a `ρ_r`
+   fraction of `r`'s emitters' inverse CS (swapping out one existing entry so inverse-CS *size* —
+   and the `inv_cs_size_q` / degree-rank-matching above — is unaffected; only *which* relations an
+   entity receives changes), enlarging `S_r ∩ O_r` before the wiring loop below needs it. See
+   `docs/notes/motif_reachability_and_edge_multiplicity.md` and
+   `docs/notes/relation_reciprocity_and_bidirectionality.md` for the diagnosis.
 6. **Per-relation wiring — multiplicity-then-degree-targeting with edge conservation, matched
    within `S_r × O_r`.** `S_r` = subjects whose forward CS contains `r`; `O_r` = objects whose
    inverse CS contains `r` (all entities when no inverse templates). For each present relation
@@ -165,8 +175,26 @@ where most of the fidelity fixes live.
      offset**); allocate by `multinomial`, then **cap at `|S_r|`** + redistribute, plus the
      per-object hard quota in capacity mode. When no degree targets exist, no degree factor
      is applied.
+   - **Stub reservation** (when `ρ_r > 0`): even with `S_r ∩ O_r` enlarged by 5d, the out-side and
+     in-side multinomials above are independent draws, so an entity eligible for both roles rarely
+     gets a stub on *both* sides by chance. For up to `round(ρ_r·edges_r/2)` entities in
+     `S_r ∩ O_r`, force their out-stub count and in-stub count to ≥1 each — stealing one stub from
+     the current max-count entity on the respective side, so the edge budget is untouched.
    - **Pair** subject-stubs with object-stubs within `S_r × O_r` (configuration model); on a
-     self-loop or duplicate `(s,o)` **retry** by swapping in another pending object stub.
+     self-loop or duplicate `(s,o)` **retry** by swapping in another pending object stub. Within
+     this pairing:
+     - **Mutual-pair construction** (reciprocal relations): draws entities *with replacement* from
+       `S_r ∩ O_r` (an entity stays available across multiple mutual pairs until either its
+       out-stub or in-stub supply is exhausted) and places `e1→e2` + `e2→e1`, up to the reserved
+       target — this is what actually realises bidirectional pairs.
+     - **Multi-relational biasing** (`edge_multiplicity`/`bidirectional_ratio` targets, independent
+       of per-relation reciprocity): the default draw first tries an object the subject already
+       links to (parallel overlap) before falling back to the unbiased reservoir.
+   Attainment is **capped by the entity pool and average stub multiplicity**, not just the
+   mechanism: e.g. on wn18rr_v4 the biggest relation needs ~3.4 stubs/entity on average from its
+   shared pool to hit its reciprocity target but only has ~2.85 available, so a real shortfall
+   remains even with reservation + full stub reuse (measured: bidirectional-pair attainment ≈45–50%
+   of target across fb237/wn18rr/aids, up from the ≈20–25% opportunistic baseline before 5d/reservation).
 6b. **Inv-CS template completion** (step 4b, when `entity_inv_cs` is assigned): after the main
    wiring loop, detects object nodes whose actual in-predicate set is a strict subset of their
    assigned inverse-CS template. For each missing predicate `r`, finds an existing edge

@@ -69,6 +69,10 @@ class BlockC(SignatureBlock):
         self._obj_cooc_exp = _NOT_CALCULATED
         self._obj_cooc_density = _NOT_CALCULATED
         self._obj_row_entropy_q = _NOT_CALCULATED
+        # Pair-level edge multiplicity (how directed content edges collapse onto the
+        # simple undirected graph that motifs are counted on). See calculate().
+        self._edge_multiplicity = _NOT_CALCULATED
+        self._bidirectional_ratio = _NOT_CALCULATED
         self._type_rel_spectrum_exp = _NOT_CALCULATED
         self._per_type_entropy_exp = _NOT_CALCULATED
         # unsummarised data kept for visualization
@@ -117,6 +121,14 @@ class BlockC(SignatureBlock):
         return QuantileFit(*self._require("obj_row_entropy_q", self._obj_row_entropy_q))
 
     @property
+    def edge_multiplicity(self) -> float:
+        return self._require("edge_multiplicity", self._edge_multiplicity)
+
+    @property
+    def bidirectional_ratio(self) -> float:
+        return self._require("bidirectional_ratio", self._bidirectional_ratio)
+
+    @property
     def type_rel_spectrum_exp(self) -> ExpDecayFit:
         return ExpDecayFit(*self._require("type_rel_spectrum_exp", self._type_rel_spectrum_exp))
 
@@ -141,10 +153,28 @@ class BlockC(SignatureBlock):
 
         subj_to_rels: defaultdict[int, set[int]] = defaultdict(set)
         obj_to_rels: defaultdict[int, set[int]] = defaultdict(set)
+        # Pair-level edge multiplicity, over entity–entity content edges (exclude
+        # rdf:type, literal endpoints and self-loops): how many directed content
+        # edges collapse onto distinct directed pairs (parallel/multi-relational)
+        # and how many directed pairs collapse onto undirected pairs (bidirectional).
+        is_lit = (g.vs["is_literal"] if "is_literal" in g.vertex_attributes()
+                  else [False] * g.vcount())
+        n_content = 0
+        dir_pairs: set[tuple[int, int]] = set()
+        und_pairs: set[tuple[int, int]] = set()
         for e in g.es:
             ri = rel_idx[e["predicate"]]
             subj_to_rels[e.source].add(ri)
             obj_to_rels[e.target].add(ri)
+            s, o = e.source, e.target
+            if e["predicate"] == RDF_TYPE or s == o or is_lit[s] or is_lit[o]:
+                continue
+            n_content += 1
+            dir_pairs.add((s, o))
+            und_pairs.add((s, o) if s < o else (o, s))
+        n_dir, n_und = len(dir_pairs), len(und_pairs)
+        self._edge_multiplicity = (n_content / n_dir) if n_dir else float("nan")
+        self._bidirectional_ratio = (n_dir / n_und) if n_und else float("nan")
 
         # Reuse the original matrix builder + SVD/density/row-entropy summary.
         M_subj = self._build_cooc_matrix(subj_to_rels, num_relations)
@@ -204,15 +234,21 @@ class BlockC(SignatureBlock):
             "Block C: classes=%d, subj_cooc(rate=%.3f), type_rel(rate=%.3f)",
             self._num_classes, self._subj_cooc_exp.rate, self._type_rel_spectrum_exp.rate,
         )
+        log.info(
+            "Block C: edge_multiplicity=%.4f, bidirectional_ratio=%.4f (rho=%.4f)",
+            self._edge_multiplicity, self._bidirectional_ratio,
+            self._edge_multiplicity * self._bidirectional_ratio,
+        )
         return self
 
     def as_vector(self) -> list[float]:
-        """Flatten to a fixed-length 27-vector for cross-KG comparison.
+        """Flatten to a fixed-length 29-vector for cross-KG comparison.
 
         Layout: class power-law (alpha, xmin); num_classes; subj co-occurrence
-        (rate, scale, density); obj co-occurrence (rate, scale, density); subj
-        row-entropy quantile function (7); obj row-entropy quantile function (7);
-        P(r|t) spectrum (rate, scale); per-type entropy curve (rate, scale).
+        (rate, scale, density); obj co-occurrence (rate, scale, density);
+        edge_multiplicity; bidirectional_ratio; subj row-entropy quantile function
+        (7); obj row-entropy quantile function (7); P(r|t) spectrum (rate, scale);
+        per-type entropy curve (rate, scale).
 
         Attributes absent from stale serialized data are emitted as NaN.
         """
@@ -227,6 +263,8 @@ class BlockC(SignatureBlock):
             self._safe_scalar(lambda: self.obj_cooc_exp.rate),
             self._safe_scalar(lambda: self.obj_cooc_exp.scale),
             self._safe_scalar(lambda: self.obj_cooc_density),
+            self._safe_scalar(lambda: self.edge_multiplicity),
+            self._safe_scalar(lambda: self.bidirectional_ratio),
             *self._safe_iter(lambda: self.subj_row_entropy_q, n_q),
             *self._safe_iter(lambda: self.obj_row_entropy_q, n_q),
             self._safe_scalar(lambda: self.type_rel_spectrum_exp.rate),
@@ -243,6 +281,7 @@ class BlockC(SignatureBlock):
             "num_classes",
             "subj_cooc_rate", "subj_cooc_scale", "subj_cooc_density",
             "obj_cooc_rate", "obj_cooc_scale", "obj_cooc_density",
+            "edge_multiplicity", "bidirectional_ratio",
         ]
         for side in ("subj", "obj"):
             names += [f"{side}_row_entropy_{suffix}" for suffix in QUANTILE_SUFFIXES]
@@ -255,7 +294,7 @@ class BlockC(SignatureBlock):
     @classmethod
     def get_na_vec(cls) -> list[float]:
         """Return a NaN vector the same length as as_vector()."""
-        return [float("nan")] * (9 + 2 * len(QUANTILE_LEVELS) + 4)
+        return [float("nan")] * (11 + 2 * len(QUANTILE_LEVELS) + 4)
 
     def distribution_fits(self) -> list[tuple[str, object, str]]:
         """Return ``(name, fit, kind)`` for each reportable distribution.

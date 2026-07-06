@@ -60,8 +60,8 @@ class TestFeatureOrder(unittest.TestCase):
         # The sampler deliberately excludes Block E (motifs / G5 are out of scope),
         # so FEATURE_ORDER must equal the measured schema with Block E's feature
         # names removed, in the same order.
-        self.assertEqual(len(FEATURE_ORDER), 82)
-        self.assertEqual(len(set(FEATURE_ORDER)), 82)  # no duplicates
+        self.assertEqual(len(FEATURE_ORDER), 97)
+        self.assertEqual(len(set(FEATURE_ORDER)), 97)  # no duplicates
         block_e_names = set(BlockE.feature_names())
         schema_minus_e = [
             k for k in ReducedGraphSignature().as_dict() if k not in block_e_names
