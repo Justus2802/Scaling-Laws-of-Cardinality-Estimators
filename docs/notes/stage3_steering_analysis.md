@@ -91,7 +91,9 @@ not yet implemented.
 ## 3. Per-proposal swap logging (leverage on fb237)
 
 `refine(swap_log=…)` writes one row per evaluated proposal (endpoint degrees,
-per-motif deltas, `d_loss`, accepted). Analysed with `scripts/swap_delta_viz.py`.
+per-motif deltas, `d_loss`, accepted, and the `targeted` flag). Analysed with
+`scripts/swap_delta_viz.py`; the `targeted` column drives the triangle-steer
+attribution in §9.
 
 On fb237 (300-swap diagnostic run, guards off):
 
@@ -271,9 +273,65 @@ Discussed as a random-restart strategy. Assessment:
 3. **Full-budget fb237 run** with re-derived `initial_temp≈0.002`, guards off, and
    the convergence + swap logs, to see whether exact hub deltas actually pull motif
    errors down within budget (over the whole hot→cold sweep, not 300 hot swaps).
+   *Partly done* (§9): a cooled 50k run (c5/c6 off) confirms triangles converge to
+   98.5 % but best-loss barely moves (motif cancellation, §5) — the c4/k4/paw
+   errors within budget are still open.
 4. **Stage-2-init vs Stage-3-final rank correlation** (§7) to decide the
    restart-screen proxy.
 5. Consider **loss reweighting** so the far-off overshoot motifs (paw/c5) are not
    fought by the same swaps that fix the undershoot motifs — though §5 suggests the
    move set itself (correlated motif deltas) limits how much independent control is
    possible.
+
+---
+
+## 9. Triangle-steer attribution — the biased `_targeted_swap` earns its keep only on hub-less graphs
+
+`_targeted_swap` biases the proposal stream toward triangle-closing swaps
+(probability ∝ `tri_deficit/target`, capped 0.5). To measure how much of the
+achieved triangle steering it actually delivers, `refine()` now tallies — over
+evaluated proposals — the split between targeted and random swaps for the
+accepted **triangle-up steers** (accepted proposals with `tri_delta > 0`), and
+`scripts/swap_delta_viz.py` reproduces it from the per-proposal `targeted`
+column (`<csv>_targeted_metrics.csv` / `_targeted.png`). A *steer* is an accepted
+`tri_delta>0` proposal; attribution is by both steer **count** and summed
+**+Δtri gain**.
+
+Two comparable runs — wn18rr_v4 (no hubs, budget 100k, `initial_temp=0.05`) and
+fb237_v4 (hub-heavy, budget 50k, `initial_temp=0.002`, `cooling_rate=0.9998`,
+c5/c6 steering off). The fb237 run is **properly cooled** (targeted accept 0.72
+vs random 0.51 — real selection; an earlier `initial_temp=0.05` fb237 log was
+all-hot at 0.98/1.0 and useless for this):
+
+| metric | wn18rr (cooled) | fb237 (cooled) |
+|---|---|---|
+| targeted share of proposals | 10.3 % | 5.2 % |
+| targeted / random accept rate | 0.81 / 0.72 | 0.72 / 0.51 |
+| targeted share of steer **count** | **80.0 %** | **18.7 %** |
+| targeted share of **+Δtri gain** | 80.3 % | 25.6 % |
+| gain per steer (targeted / random) | — | 2.93 / 1.96 |
+| final triangles / target | — | 16 861 / 17 114 (98.5 %) |
+
+**Finding — targeting is efficient everywhere but only *necessary* on hub-less
+graphs.** On fb237 it contributes only ~19 % of the steer count and ~26 % of the
+triangle gain — the **opposite** of wn18rr's 80 %. But it is not failing:
+
+- **Per-proposal it is 4.2× more efficient** — 39.6 % of targeted proposals
+  become triangle-up steers vs 9.4 % of random ones. Its low *volume* (5.2 %) is
+  the deficit-scaled probability throttling it as triangles converge, not a lack
+  of effect. The anneal also prefers its swaps (accept 0.72 vs 0.51).
+- **On fb237 triangles converge (98.5 %) via random swaps regardless** — hub
+  wedges close incidentally, so the biased proposal is redundant. On sparse
+  wn18rr random swaps rarely close a triangle, so it is essential.
+- **Cooling collapses the per-steer gain advantage** (6.45→2.93 vs the hot log):
+  the giant hub triangle-mints that dominated the hot walk are now *rejected*
+  because they wreck other motifs — the §5 cancellation surfacing as the accept
+  filter, exactly on the §3 high-leverage hub swaps.
+
+**Implication.** Triangle targeting is not the fb237 lever: triangles already
+reach target and best-loss barely moves (178.48→177.81), because the bottleneck
+is motif cancellation (§5), not triangle creation (§6). The `_targeted_swap`
+mechanism's payoff is concentrated on sparse/hub-less graphs. If targeted
+*motif* proposals are generalised to c4/k4/paw (the natural next step), expect
+the same regime split — useful where a motif is hard to form by chance, redundant
+where hub structure forms it incidentally.

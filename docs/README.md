@@ -75,6 +75,15 @@ corpus `data/test_graphs/` (use `--graphs <name>...` to restrict to specific gra
   targets cap the move at ~3e-4) **and** cancellation (Stage-2 overshoots paw/c5 ~2× while
   undershooting c4/k4, so correlated motif deltas oppose; median alignment 0.48). Points to
   the Stage-2 paw/c5 overshoot as the highest-value upstream lever.
+- **[notes/motif_reachability_and_edge_multiplicity.md](notes/motif_reachability_and_edge_multiplicity.md)** —
+  the follow-through on that lever: why Stage-3 *cannot* reach the fb237-class motif targets.
+  The per-swap motif coupling is nearly 1-D (clustering ↔ chordless-cycle axis); the targets
+  live on the original degree sequence but Stage-3 is locked to Stage-2's (27.5 % L1 off); and
+  the root cause is that Stage-2 produces ~zero **edge multiplicity** (pair overlap) — ρ≈1 vs
+  originals 1.03–2.0 across the whole corpus — inflating the simple graph +26 % and driving the
+  paw/c5 overshoot. The signature never encodes pair overlap (feature audit); proposed fix is a
+  third, pair-level relation co-occurrence (`pair_cooc`) whose density is the missing handle.
+  Corpus survey via `scripts/edge_multiplicity.py`.
 - **[notes/relation_reciprocity_and_bidirectionality.md](notes/relation_reciprocity_and_bidirectionality.md)** —
   characterises *where* bidirectionality comes from (the harder half of the multiplicity gap) and
   documents the implemented fix. Reciprocity is nearly **bimodal** per relation (symmetric ≈1 /

@@ -107,8 +107,8 @@ LOSS_WEIGHT_C5:            float = 1
 LOSS_WEIGHT_C6:            float = 1
 LOSS_WEIGHT_ASSORTATIVITY: float = 1.0
 LOSS_WEIGHT_CC_AVG:        float = 1.0
-LOSS_WEIGHT_TREE_ENTROPY:  float = 1.0
-LOSS_WEIGHT_PATH_ENTROPY:  float = 1.0
+LOSS_WEIGHT_TREE_ENTROPY:  float = 0
+LOSS_WEIGHT_PATH_ENTROPY:  float = 0
 
 # Lookup table used by _loss; keeps the function body concise.
 _MOTIF4_WEIGHTS: dict[tuple, float] = {
@@ -127,7 +127,10 @@ _DS_STEM: dict[tuple, str] = {
 # Samples for the 5/6-cycle CC estimator used for the initial cycle baseline and
 # the optional ground-truth convergence remeasure.  Fewer samples than the 4-node
 # budget because cycle estimation is higher-variance and only a direction is needed.
-CC_CYCLE_SAMPLES = 5_000
+CC_CYCLE_SAMPLES = 20000
+# Samples for the CC estimator behind the initial triangle/motif4 baseline.
+# Raised from HybridMotifCounter's default (10000) to match CC_CYCLE_SAMPLES.
+MOTIF4_INITIAL_SAMPLES = 20000
 # Degree guard for the incremental cycle delta, applied to **every node the
 # induced-path DFS expands** — swap endpoints and path interiors alike (an
 # interior hub explodes the O(Δ^(k-2)) search even when all four endpoints are
@@ -139,14 +142,14 @@ CC_CYCLE_SAMPLES = 5_000
 # left at the sentinel below, ``refine()`` derives a per-graph threshold instead
 # (see ``CYCLE_DELTA_MAX_DEGREE_PERCENTILE``) — profiling on wn18rr_v4 showed
 # this single delta accounting for >50% of Stage 3 wall-clock with the guard off.
-CYCLE_DELTA_MAX_DEGREE: float = -1.0  # sentinel: auto-derive from degree percentile
+CYCLE_DELTA_MAX_DEGREE: float = float("inf") # sentinel: auto-derive from degree percentile
 # Percentile of the simple-degree distribution used to auto-derive
 # CYCLE_DELTA_MAX_DEGREE when it is left at its sentinel (-1.0).  Swaps touching
 # the top (100 - this) % of nodes by degree skip the exact cycle delta; those
 # hub-heavy swaps are also the ones the O(Δ^(k-2)) cost explodes on, so this
 # trades a small amount of exactness on rare hub swaps for a large constant-factor
 # speedup on typical ones.
-CYCLE_DELTA_MAX_DEGREE_PERCENTILE: float = 95.0
+CYCLE_DELTA_MAX_DEGREE_PERCENTILE: float = 100
 # Degree guard for the incremental 4-node motif delta, applied to the four swap
 # endpoints only — unlike the cycle DFS, _motif4_delta's cost is fully determined
 # by the endpoint neighbourhoods (candidates come from N(a)∪N(b), so a max
@@ -174,7 +177,7 @@ CONVERGENCE_LOG_GLOBAL_REMEASURE: bool = False
 def _make_initial_motif_counter(seed: int) -> MotifCounter:
     """Counter for the initial triangle/motif4 baseline at the start of the walk."""
     # return CCMotifCounter(n_samples=CC_CYCLE_SAMPLES, seed=seed)  # CC-only alternative
-    return HybridMotifCounter(seed=seed)
+    return HybridMotifCounter(n_samples=MOTIF4_INITIAL_SAMPLES, seed=seed)
 
 
 def _make_measure_counter(seed: int) -> MotifCounter:

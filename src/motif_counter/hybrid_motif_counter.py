@@ -28,7 +28,7 @@ class HybridMotifCounter(MotifCounter):
     count scales with graph size (see ``CCMotifCounter``); the exact paths ignore it.
     """
 
-    def __init__(self, n_samples: int = 10000, seed: int = 1, n_colorings: int = 16,
+    def __init__(self, n_samples: int = 20000, seed: int = 1, n_colorings: int = 16,
                  adaptive: bool = False) -> None:
         self._n_samples = n_samples
         self._n_colorings = n_colorings
