@@ -455,7 +455,8 @@ class BlockB(SignatureBlock):
             plt.close("all")
 
     @staticmethod
-    def _plot_degree_hist(ax, degrees: np.ndarray, fit: PowerLawStats, title: str, log_scale: bool) -> None:
+    def _plot_degree_hist(ax, degrees: np.ndarray, fit: PowerLawStats, title: str, log_scale: bool,
+                          dot_color: str = "C0", line_color: str = "red") -> None:
         """Plot a degree histogram with an overlaid fitted power-law tail."""
         pos = degrees[degrees > 0]
         if pos.size == 0:
@@ -469,7 +470,7 @@ class BlockB(SignatureBlock):
         counts, edges = np.histogram(pos, bins=bins)
         centers = (edges[:-1] + edges[1:]) / 2
         plot_fn = ax.loglog if log_scale else ax.plot
-        plot_fn(centers[counts > 0], counts[counts > 0], "o", markersize=4, label="data")
+        plot_fn(centers[counts > 0], counts[counts > 0], "o", markersize=4, color=dot_color, label="data")
 
         if not np.isnan(fit.alpha) and not np.isnan(fit.xmin):
             xmin = max(int(fit.xmin), 1)
@@ -480,7 +481,7 @@ class BlockB(SignatureBlock):
             total = tail_counts.sum()
             if total > 0:
                 y_fit = y_fit / y_fit.sum() * total
-            plot_fn(x_fit, y_fit, "-", color="red", linewidth=1.5,
+            plot_fn(x_fit, y_fit, "-", color=line_color, linewidth=1.5,
                     label=f"powerlaw α={fit.alpha:.2f}")
 
         ax.set_xlabel("degree")
