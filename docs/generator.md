@@ -337,6 +337,20 @@ motif4 `*_err`, `c5/c6_err`, `cc_err`, `assort_err`, `tree_entropy_err`, `path_e
 re-measures the full graph each logged row and appends ground-truth `sig_*_err` columns (validates
 the incremental deltas; expensive).
 
+**Adaptive weights** (`adaptive_weights=True`, CLI `--adaptive-weights`). By default each term's
+weight in the loss sum is the fixed `LOSS_WEIGHT_*` constant. In adaptive mode, `_term_weights` is
+instead rescaled every accepted swap as `weight = base_weight * ADAPTIVE_WEIGHT_SCALE * error`
+(linear, with a high fixed multiplier; `ADAPTIVE_WEIGHT_SCALE = 50.0`, tuned at the top of
+`stage3.py`) from the *pre-swap* `current` state (never from the candidate being scored, so a swap
+can't move its own weight mid-evaluation) — a term already at target drops toward weight 0, a term
+still far off is pushed harder, proportionally to its error. This turns the loss from a
+weighted-L1 sum (`Σ base_i·err_i`) into a weighted-L2-like sum
+(`Σ base_i·ADAPTIVE_WEIGHT_SCALE·err_i²`) with an amplified overall scale, so loss magnitudes
+between adaptive and fixed runs on the same graph are not directly comparable. When a
+`convergence_log` is given in adaptive mode, one extra `weight_<name>`
+column per active term is written alongside the `<name>_err` column so the weight trajectory can be
+plotted with `scripts/convergence_plot.py --features weight_tri weight_cc ...`.
+
 When a `swap_log` is given, `refine()` additionally writes one CSV row per *evaluated* swap
 proposal (proposals discarded by the self-loop guard produce no row): context columns `step`,
 `targeted`, `deg_s1`/`deg_o1`/`deg_s2`/`deg_o2`/`deg_max4` (pre-swap simple degrees), the per-motif
@@ -571,3 +585,20 @@ and location. Plot the result with `scripts/convergence_plot.py`.
 with per-motif deltas, Δloss and the accept decision): no value auto-names
 `swaps_<graph>_seed<seed>_rb<budget>.csv` into `experiments/swap_delta_logs/`; an explicit path
 overrides. Plot with `scripts/swap_delta_viz.py`.
+
+Pass `--adaptive-weights` to switch Stage 3 to error-scaled loss weights (see "Adaptive weights"
+above). It appends an `adaptive` token to the auto-named convergence/swap log filenames — e.g.
+`conv_<graph>_seed42_rb5000_adaptive_<timestamp>.csv` — so a fixed-weight and an adaptive-weight run
+of the same graph/seed/budget land as sibling files in `experiments/convergence_logs/` instead of
+overwriting each other, ready to compare with `scripts/convergence_plot.py conv_..._TS1.csv
+conv_..._adaptive_TS2.csv`.
+
+`scripts/sweep_adaptive_weight_scale.py <graph>` finds the `ADAPTIVE_WEIGHT_SCALE` that minimises
+the accumulated *unweighted* error across all active motifs/metrics after a fixed rewire budget
+(default 100 000). Stage 1/2 run once to build a fixed pre-Stage-3 graph; each candidate scale then
+runs Stage 3 from a fresh copy of that same graph via a monkey-patch of
+`generator.stage3.ADAPTIVE_WEIGHT_SCALE`, so only the weighting scheme varies between candidates.
+The comparison metric is `stage3_best_unweighted_error_sum` — `Σ|error|` over `_error_terms` at the
+best snapshot, read straight off the graph attribute `refine()` now always sets — not
+`stage3_best_loss`, since the loss itself is scaled by the candidate under test and isn't
+comparable across scales. Pass `--scales`, `--rewire-budget`, `--seed`, `--out <csv>` to customise.

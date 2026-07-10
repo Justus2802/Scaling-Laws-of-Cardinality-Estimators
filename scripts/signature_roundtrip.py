@@ -15,6 +15,7 @@ Usage
     python scripts/signature_roundtrip.py wn18rr_v4          # from data/test_graphs
     python scripts/signature_roundtrip.py aids --seed 7 --rewire-budget 5000
     python scripts/signature_roundtrip.py --kg-file path/to/graph.ttl
+    python scripts/signature_roundtrip.py wn18rr_v4 --convergence-log --adaptive-weights
 """
 
 import argparse
@@ -85,6 +86,8 @@ def _auto_log_path(log_dir: Path, prefix: str, graph_label: str, args,
         parts.append("skipc5")
     if args.skip_c6:
         parts.append("skipc6")
+    if args.adaptive_weights:
+        parts.append("adaptive")
     parts.append(run_ts)
     return log_dir / (f"{prefix}_" + "_".join(parts) + ".csv")
 
@@ -283,6 +286,15 @@ def main():
     parser.add_argument("--skip-c6", action="store_true",
                         help="Disable 6-cycle steering in Stage 3 (sets use_c6=False), "
                              "dropping its per-swap delta and loss term.")
+    parser.add_argument("--adaptive-weights", action="store_true",
+                        help="Scale each Stage 3 loss term's weight linearly by its own "
+                             "current error, with a high fixed multiplier (weight = "
+                             "base_weight * ADAPTIVE_WEIGHT_SCALE * error) instead of a "
+                             "fixed weight, so terms further from target are pushed "
+                             "harder. Adds weight_* columns to --convergence-log and "
+                             "appends '_adaptive' to the auto-named log filename so it "
+                             "sits alongside a fixed-weight run of the same graph/seed/"
+                             "budget.")
     args = parser.parse_args()
 
     # Single per-run timestamp stamped into every auto-named output (graph,
@@ -328,6 +340,7 @@ def main():
         cooling_rate=args.cooling_rate,
         skip_c5=args.skip_c5,
         skip_c6=args.skip_c6,
+        adaptive_weights=args.adaptive_weights,
         convergence_log=conv_log_path,
         swap_log=swap_log_path,
     )

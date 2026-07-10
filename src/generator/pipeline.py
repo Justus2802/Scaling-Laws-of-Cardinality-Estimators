@@ -94,6 +94,7 @@ class Generator:
         cooling_rate: float = 0.99993,
         skip_c5: bool = False,
         skip_c6: bool = False,
+        adaptive_weights: bool = False,
         convergence_log: "Path | str | None" = None,
         swap_log: "Path | str | None" = None,
     ) -> igraph.Graph:
@@ -116,6 +117,11 @@ class Generator:
         skip_c5, skip_c6 : bool
             Force 5-/6-cycle steering off in Stage 3 regardless of the target
             count, dropping that cycle size's per-swap delta and loss term.
+        adaptive_weights : bool
+            If True, Stage 3 scales each loss term's weight linearly by its own
+            current error, with a high fixed multiplier (``weight = base_weight
+            * ADAPTIVE_WEIGHT_SCALE * error``) instead of a fixed weight, so
+            terms further from target are pushed harder. See ``stage3.refine``.
         convergence_log : Path or str, optional
             If given, write per-metric error CSV during Stage 3 rewiring
             (see ``stage3.CONVERGENCE_LOG_INTERVAL`` for the row interval).
@@ -150,6 +156,7 @@ class Generator:
             seed=seed + 2,
             skip_c5=skip_c5,
             skip_c6=skip_c6,
+            adaptive_weights=adaptive_weights,
             convergence_log=convergence_log,
             swap_log=swap_log,
         )

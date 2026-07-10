@@ -2,11 +2,13 @@
 
 Each CSV is produced by refine() when convergence_log is set.  Columns:
   step, accepted, loss, tri_err, [c4_err, diamond_err, k4_err, paw_err,] [c5_err, c6_err,]
-  [cc_err,] [assort_err], sig_tri_err, [sig_c4_err, …], sig_c5_err
+  [cc_err,] [assort_err], [weight_tri, weight_c4, …,] sig_tri_err, [sig_c4_err, …], sig_c5_err
 
 ``step`` is the proposal index (accepted + rejected) and forms the x-axis;
-``accepted`` is the accepted-swap count so far.  All metric columns are relative
-errors (plotted against a 0 reference line).  The
+``accepted`` is the accepted-swap count so far.  All ``*_err`` columns are relative
+errors (plotted against a 0 reference line).  The ``weight_*`` columns (present
+only when the run used ``--adaptive-weights``) are each term's live loss weight
+— pass one via ``--features weight_tri`` etc. to see how it moved. The
 ``sig_*_err`` columns are ground-truth errors measured periodically on the full
 graph; ``sig_c5_err`` is the global (induced) 5-cycle error, validating the
 incremental cycle delta.
