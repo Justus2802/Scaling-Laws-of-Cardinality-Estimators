@@ -2,6 +2,7 @@
 output/
 CHANGELOG.md
 graph_data/
+sig_out/
 
 # oversized test fixture (203MB, exceeds GitHub's 100MB limit)
 tests/graphs/59410577.ttl
