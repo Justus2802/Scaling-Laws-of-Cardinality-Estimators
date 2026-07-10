@@ -45,6 +45,8 @@ from .stage2 import _connect_components
 MAX_TARGETED_SWAP_PROB = 0.5   # cap on the probability of attempting a triangle-closing swap
 TEMP_FLOOR = 1e-10             # numerical floor on the SA temperature in the accept test
 ESCAPE_CHECK_INTERVAL = 10     # poll stdin for a manual-exit keypress every N rewiring steps
+ADAPTIVE_WEIGHT_SCALE = 50.0   # high-strength multiplier for adaptive_weights' linear term:
+                                # weight = base_weight * ADAPTIVE_WEIGHT_SCALE * error
 
 
 class _EscapeWatcher:
@@ -222,6 +224,7 @@ def refine(
     seed: int = 0,
     skip_c5: bool = False,
     skip_c6: bool = False,
+    adaptive_weights: bool = False,
     convergence_log: "Path | str | None" = None,
     swap_log: "Path | str | None" = None,
 ) -> igraph.Graph:
@@ -267,6 +270,15 @@ def refine(
         Force 5-/6-cycle steering off regardless of the target count and loss
         weight. Suppresses the (costly) per-swap cycle delta for that size so
         its contribution to the loss is dropped entirely.
+    adaptive_weights : bool
+        If True, each term's loss weight is scaled linearly by its own current
+        error magnitude, with a high fixed multiplier (``weight = base_weight *
+        ADAPTIVE_WEIGHT_SCALE * error``) instead of held fixed at
+        ``base_weight``. Terms that are already close to target contribute
+        little to the loss; terms still far off are pushed harder,
+        proportionally to their error. Recomputed every accepted
+        swap from ``current`` (the live SA state), not the
+        candidate being scored, so a single swap can't move its own weight.
     convergence_log : Path or str, optional
         If given, write a CSV with per-metric relative errors every
         ``CONVERGENCE_LOG_INTERVAL`` *proposals* (accepted or rejected).  The
@@ -287,7 +299,11 @@ def refine(
     -------
     igraph.Graph
         Best graph encountered during the annealing walk. Carries
-        ``stage3_best_accepted``, ``stage3_best_loss``, and
+        ``stage3_best_accepted``, ``stage3_best_loss``,
+        ``stage3_best_unweighted_error_sum`` (``Σ|error|`` over ``_error_terms``
+        at the best snapshot — unlike ``stage3_best_loss`` this ignores
+        ``adaptive_weights``/``ADAPTIVE_WEIGHT_SCALE``, so it's the metric to
+        use when comparing runs across different weighting schemes), and
         ``stage3_executed_steps`` (< ``budget`` if a manual escape stopped the
         loop early) as graph attributes.
     """
@@ -537,25 +553,45 @@ def refine(
             terms["path_entropy_k3"] = _rel(st.path_h, _target_path_entropy_k3, max(1e-9, _target_path_entropy_k3))
         return terms
 
-    # Weight per active error-term stem; parallels _error_terms so the loss is a
+    # Base weight per active error-term stem; parallels _error_terms so the loss is a
     # plain weighted sum over the shared term dict.
-    _term_weights: dict[str, float] = {"tri": LOSS_WEIGHT_TRIANGLES}
+    _base_weights: dict[str, float] = {"tri": LOSS_WEIGHT_TRIANGLES}
     for ds in _motif4_targets:
-        _term_weights[_DS_STEM[ds]] = _MOTIF4_WEIGHTS.get(ds, 1.0)
+        _base_weights[_DS_STEM[ds]] = _MOTIF4_WEIGHTS.get(ds, 1.0)
     if use_c5:
-        _term_weights["c5"] = LOSS_WEIGHT_C5
+        _base_weights["c5"] = LOSS_WEIGHT_C5
     if use_c6:
-        _term_weights["c6"] = LOSS_WEIGHT_C6
+        _base_weights["c6"] = LOSS_WEIGHT_C6
     if use_assort:
-        _term_weights["assort"] = LOSS_WEIGHT_ASSORTATIVITY
+        _base_weights["assort"] = LOSS_WEIGHT_ASSORTATIVITY
     if use_cc:
-        _term_weights["cc"] = LOSS_WEIGHT_CC_AVG
+        _base_weights["cc"] = LOSS_WEIGHT_CC_AVG
     if use_tree_entropy:
-        _term_weights["tree_entropy"] = LOSS_WEIGHT_TREE_ENTROPY
+        _base_weights["tree_entropy"] = LOSS_WEIGHT_TREE_ENTROPY
     if use_path_entropy:
-        _term_weights["path_entropy_k3"] = LOSS_WEIGHT_PATH_ENTROPY
+        _base_weights["path_entropy_k3"] = LOSS_WEIGHT_PATH_ENTROPY
 
-    def _loss(st: _SAState) -> float:
+    # _term_weights holds the weights actually used by _loss. In the fixed-weight
+    # case (default) it never changes. In adaptive mode it is refreshed once per
+    # accepted swap from the *current* (pre-swap) SA state — see _refresh_weights
+    # below — so scoring a candidate never lets it influence its own weight.
+    _term_weights: dict[str, float] = dict(_base_weights)
+
+    def _refresh_weights(st: "_SAState") -> None:
+        """Rescale each term's weight linearly by its own current error, with a
+        high fixed multiplier: weight = base * ADAPTIVE_WEIGHT_SCALE * error.
+
+        No-op when adaptive_weights is off (weights stay at their base value).
+        A term already at its target (error 0) drops to weight 0; a term far off
+        gets pushed harder, proportionally to its error. Mutates _term_weights
+        in place.
+        """
+        if not adaptive_weights:
+            return
+        for name, err in _error_terms(st).items():
+            _term_weights[name] = _base_weights[name] * ADAPTIVE_WEIGHT_SCALE * err
+
+    def _loss(st: "_SAState") -> float:
         """SA objective: weighted sum of the shared per-target relative errors."""
         return sum(_term_weights[name] * err for name, err in _error_terms(st).items())
 
@@ -564,9 +600,11 @@ def refine(
         c5=current_c5, c6=current_c6, tree_h=tree_entropy_current,
         path_h=path_entropy_current,
     )
+    _refresh_weights(current)
     current_loss = _loss(current)
     best_loss = current_loss
     best_content = list(content_edge_data)
+    best_state = current
     best_accepted = 0
     temp = initial_temp
     accepted = 0
@@ -584,6 +622,10 @@ def refine(
     # Error columns mirror the active terms exactly (one per _error_terms key).
     # ``step`` = proposals evaluated so far (x-axis); ``accepted`` = accepted swaps so far.
     _conv_fields = ["step", "accepted", "loss"] + [f"{name}_err" for name in _error_terms(current)]
+    # weight_ columns track each term's live loss weight; only meaningful (and only
+    # logged) in adaptive mode since fixed weights never move.
+    if adaptive_weights:
+        _conv_fields += [f"weight_{name}" for name in _error_terms(current)]
     # sig_ columns are only logged when the global remeasurement is enabled; they
     # hold ground-truth errors from remeasuring the full graph (see _write_conv_row).
     if CONVERGENCE_LOG_GLOBAL_REMEASURE:
@@ -610,6 +652,9 @@ def refine(
         row: dict = {"step": step, "accepted": accepted, "loss": round(current_loss, 6)}
         for name, err in _error_terms(current, signed=True).items():
             row[f"{name}_err"] = round(err, 6)
+        if adaptive_weights:
+            for name in _error_terms(current):
+                row[f"weight_{name}"] = round(_term_weights[name], 6)
 
         # Ground-truth errors via a full-graph remeasurement (expensive); only when
         # enabled. Otherwise the row carries just the locally tracked errors above.
@@ -652,11 +697,12 @@ def refine(
         _swap_writer.writeheader()
 
     log.info(
-        "Stage 3: refining (seed=%d, budget=%d) — target triangles=%d, motif4 targets=%s, "
+        "Stage 3: refining (seed=%d, budget=%d, adaptive_weights=%s) — target triangles=%d, "
+        "motif4 targets=%s, "
         "5-cycle=%s, 6-cycle=%s, assortativity=%s, cc_avg=%s, tree_entropy=%s, path_entropy_k3=%s, "
         "cycle_delta_max_degree=%s; "
         "initial loss=%.4f (triangles=%d, cc_avg=%.4f, tree_entropy=%.4f, path_entropy=%.4f)",
-        seed, budget, target_tri, sorted(_motif4_targets),
+        seed, budget, adaptive_weights, target_tri, sorted(_motif4_targets),
         _target_c5 if use_c5 else "off",
         _target_c6 if use_c6 else "off",
         f"{target_r:.4f}" if use_assort else "off",
@@ -1020,13 +1066,18 @@ def refine(
                     _path_freqs = _new_path_freqs
 
                 current = candidate
-                current_loss = new_loss
+                # Rescale weights from the *new* current state before recomputing
+                # current_loss, so current_loss and best_loss stay comparable
+                # under the same weight snapshot (adaptive mode only; no-op otherwise).
+                _refresh_weights(current)
+                current_loss = _loss(current)
                 temp *= cooling_rate
                 accepted += 1
 
                 if current_loss < best_loss:
                     best_loss = current_loss
                     best_content = list(content_edge_data)
+                    best_state = current
                     best_accepted = accepted
 
     if _conv_fh:
@@ -1103,8 +1154,14 @@ def refine(
         g_out.add_edges([(s, o) for s, o, _ in all_best])
         g_out.es["predicate"] = [p for _, _, p in all_best]
 
+    # Unweighted error sum at the best snapshot: independent of adaptive_weights /
+    # ADAPTIVE_WEIGHT_SCALE, so it's the fair metric for comparing runs across
+    # different weighting schemes (unlike best_loss, which bakes the weights in).
+    best_unweighted_error_sum = sum(_error_terms(best_state).values())
+
     g_out["stage3_executed_steps"] = executed_steps
     g_out["stage3_best_accepted"] = best_accepted
     g_out["stage3_best_loss"] = round(best_loss, 6)
+    g_out["stage3_best_unweighted_error_sum"] = round(best_unweighted_error_sum, 6)
 
     return g_out

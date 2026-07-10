@@ -3,6 +3,9 @@ output/
 CHANGELOG.md
 graph_data/
 
+# oversized test fixture (203MB, exceeds GitHub's 100MB limit)
+tests/graphs/59410577.ttl
+
 
 # Python
 __pycache__/
