@@ -30,7 +30,6 @@ import argparse
 import csv
 import json
 import signal
-import sys
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -38,16 +37,14 @@ from pathlib import Path
 import numpy as np
 
 _REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_REPO / "src"))
-
-from generator.stage1 import sample_schema
-from generator.stage2 import instantiate
-from generator.stage3 import CYCLE_DELTA_MAX_DEGREE
-from generator.local_updates import (
+from kgsynth.generator.stage1 import sample_schema
+from kgsynth.generator.stage2 import instantiate
+from kgsynth.generator.stage3 import CYCLE_DELTA_MAX_DEGREE
+from kgsynth.generator.local_updates import (
     _adj_inc, _triangle_node_delta, _motif4_delta, _cycle_delta,
 )
-from generator._constants import _RDF_TYPE
-from signature import BlockA, BlockB, BlockC, BlockD, BlockF
+from kgsynth.generator._constants import _RDF_TYPE
+from kgsynth.signature import BlockA, BlockB, BlockC, BlockD, BlockF
 
 _OUT_DIR = _REPO / "experiments" / "stage3_delta_profiling"
 _SEARCH_DIRS = [_REPO / "data" / "graphs", _REPO / "data" / "test_graphs"]

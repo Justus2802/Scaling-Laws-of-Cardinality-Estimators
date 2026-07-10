@@ -1,7 +1,7 @@
 # Stage-3 steering: delta cost, SA schedule, and why motif error is hard to move
 
 Analysis of the Stage-3 Maslov–Sneppen + simulated-annealing rewiring loop
-(`src/generator/stage3.py`), focused on **why it is slow on hub-heavy graphs**
+(`src/kgsynth/generator/stage3.py`), focused on **why it is slow on hub-heavy graphs**
 and **why per-swap motif steering barely moves the loss** on large graphs like
 `fb237_v4`. Measurements come from three tools built during this investigation:
 

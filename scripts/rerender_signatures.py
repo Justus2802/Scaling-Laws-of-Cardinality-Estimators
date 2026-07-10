@@ -17,13 +17,10 @@ import json
 import logging
 import sys
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 import matplotlib
 matplotlib.use("Agg")
 
-from signature import _ALL_BLOCKS, _BLOCK_CLASSES
+from kgsynth.signature import _ALL_BLOCKS, _BLOCK_CLASSES
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("rerender")

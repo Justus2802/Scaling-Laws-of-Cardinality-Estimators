@@ -21,18 +21,13 @@ Usage
 import argparse
 import json
 import logging
-import sys
 from itertools import product
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parent.parent
-_SCRIPTS = Path(__file__).resolve().parent
-sys.path.insert(0, str(_REPO / "src"))
-sys.path.insert(0, str(_SCRIPTS))
-
-from generator import Generator, Signature  # noqa: E402
-from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF  # noqa: E402
-from signature_roundtrip import _DEFAULT_SEARCH_DIRS, _load_target_from_corpus  # noqa: E402
+from kgsynth.generator import Generator, Signature  # noqa: E402
+from kgsynth.signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF  # noqa: E402
+from kgsynth.corpus import DEFAULT_SEARCH_DIRS, load_target_from_corpus
 
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -80,9 +75,9 @@ def main() -> None:
     target_path: Path = out_path.parent / f"{args.graph}_target.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    search_dirs = [args.graphs_dir] if args.graphs_dir else _DEFAULT_SEARCH_DIRS
+    search_dirs = [args.graphs_dir] if args.graphs_dir else DEFAULT_SEARCH_DIRS
     print(f"Loading target signature for '{args.graph}' …")
-    target_sig, _blocks, _graph_dir = _load_target_from_corpus(args.graph, search_dirs)
+    target_sig, _blocks, _graph_dir = load_target_from_corpus(args.graph, search_dirs)
 
     target_path.write_text(json.dumps(_sig_to_dict(target_sig), indent=2))
     print(f"Target saved → {target_path}")

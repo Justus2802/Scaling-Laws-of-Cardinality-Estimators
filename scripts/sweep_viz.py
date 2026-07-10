@@ -28,11 +28,9 @@ import sys
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_REPO / "src"))
-
-from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF  # noqa: E402
-from generator import Generator, Signature as GenSignature  # noqa: E402
-from generator.stage1 import sample_schema  # noqa: E402
+from kgsynth.signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF  # noqa: E402
+from kgsynth.generator import Generator, Signature as GenSignature  # noqa: E402
+from kgsynth.generator.stage1 import sample_schema  # noqa: E402
 
 _LETTERS = ("a", "b", "c", "d", "e", "f")
 _BLOCK_CLS = {"a": BlockA, "b": BlockB, "c": BlockC, "d": BlockD, "e": BlockE, "f": BlockF}
@@ -95,7 +93,7 @@ def _degree_stats(synth_dict: dict) -> dict:
     if b_data is None:
         return {"max_out": None, "max_in": None, "top10_out": None}
 
-    from signature import BlockB
+    from kgsynth.signature import BlockB
     b = BlockB.from_serializable(b_data)
     out_deg = b._out_degrees
     in_deg = b._in_degrees

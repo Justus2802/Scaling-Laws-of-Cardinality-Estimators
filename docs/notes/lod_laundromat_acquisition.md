@@ -23,7 +23,7 @@ for a *population* sampler (which needs independent draws, not row count — cf.
 | Footprint | 524 GB disk / 15.7 GB RAM to query | Per-doc files, mostly tiny |
 
 **LOD-a-lot is the wrong granularity for the population fit.** Measuring it yields *one*
-row, not thousands — and the `rdflib.parse → igraph` loader ([src/kg_io.py](../../src/kg_io.py))
+row, not thousands — and the `rdflib.parse → igraph` loader ([src/kgsynth/kg_io.py](../../src/kgsynth/kg_io.py))
 already OOMs on yago at 5 GB; 28 B triples / 304 GB is categorically out of reach. Treating
 LOD-a-lot as "a KG to measure" is a category error. Its only defensible role is as a
 **queryable HDT index** for materializing slices on a laptop — but a slice of the merged

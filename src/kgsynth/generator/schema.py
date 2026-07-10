@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from signature import QUANTILE_LEVELS
+from ..signature import QUANTILE_LEVELS
 
 # Canonical "fit unavailable" quantile function (one NaN per QUANTILE_LEVELS
 # level); the generator treats it as "no usable shape" and falls back to neutral

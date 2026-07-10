@@ -29,19 +29,15 @@ Usage
 
 import argparse
 import csv
-import sys
 from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
 
 _REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_REPO / "src"))
-sys.path.insert(0, str(_REPO / "scripts"))
-
 from edge_multiplicity import _find_source_file, _corpus_graphs, _graph_dir  # noqa: E402
-from generator._constants import _RDF_TYPE  # noqa: E402
-from kg_io import load_kg  # noqa: E402
+from kgsynth.generator._constants import _RDF_TYPE  # noqa: E402
+from kgsynth.kg_io import load_kg  # noqa: E402
 
 _OUT_DIR = _REPO / "experiments" / "relation_reciprocity"
 

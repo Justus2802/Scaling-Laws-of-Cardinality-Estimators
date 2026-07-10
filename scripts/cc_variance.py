@@ -64,12 +64,8 @@ import time
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parent.parent
-_SCRIPTS = Path(__file__).resolve().parent
-sys.path.insert(0, str(_REPO / "src"))
-sys.path.insert(0, str(_SCRIPTS))
-
-from motif_counter import CCMotifCounter, ExactMotifCounter  # noqa: E402
-from signature_roundtrip import _DEFAULT_SEARCH_DIRS, _load_target_from_corpus  # noqa: E402
+from kgsynth.motif_counter import CCMotifCounter, ExactMotifCounter  # noqa: E402
+from kgsynth.corpus import DEFAULT_SEARCH_DIRS, load_target_from_corpus
 
 # (feature name, sorted degree sequence) for the CC-estimated 4-node motifs.
 _MOTIF4_FEATURES = [
@@ -161,7 +157,7 @@ def main() -> None:
     if not graphs:
         parser.error("provide a graph name positionally or via --graphs")
 
-    search_dirs = [args.graphs_dir] if args.graphs_dir else _DEFAULT_SEARCH_DIRS
+    search_dirs = [args.graphs_dir] if args.graphs_dir else DEFAULT_SEARCH_DIRS
     base_dir = args.out or (_REPO / "experiments" / "cc_variance_sweeps")
 
     if args.graphs:
@@ -210,10 +206,10 @@ def _run_graph(graph: str, out_prefix: Path, args, search_dirs) -> None:
     meta_path = out_prefix.with_name(out_prefix.name + "_meta.json")
 
     print(f"Loading '{graph}' …")
-    _, tblocks, graph_dir = _load_target_from_corpus(graph, search_dirs)
+    _, tblocks, graph_dir = load_target_from_corpus(graph, search_dirs)
     assert graph_dir is not None
 
-    from kg_io import load_kg
+    from kgsynth.kg_io import load_kg
 
     kg_files = sorted(
         p for p in graph_dir.iterdir()

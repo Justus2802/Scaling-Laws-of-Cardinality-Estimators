@@ -1,6 +1,6 @@
 # Size dependence of the reduced signature features
 
-Which of the 99 reduced-signature features (`src/signature/`, blocks A/B/C/D/E/F)
+Which of the 99 reduced-signature features (`src/kgsynth/signature/`, blocks A/B/C/D/E/F)
 **scale with graph size** and which are **size-free**. This is the distinction the
 Stage-1 *conditional-on-size* model needs: extensive features must be conditioned on `V`;
 intensive ones form the size-free shape. See [signature.md](../signature.md) for the

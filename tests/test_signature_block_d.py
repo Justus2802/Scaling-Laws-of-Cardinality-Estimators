@@ -1,14 +1,11 @@
 import math
 import os
-import sys
 import tempfile
 import unittest
 
 import igraph
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from kg_io import load_kg
-from signature import BlockD
+from kgsynth.kg_io import load_kg
+from kgsynth.signature import BlockD
 
 _VECTOR_LEN = len(BlockD.feature_names())
 

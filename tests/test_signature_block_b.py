@@ -1,16 +1,13 @@
 import math
 import os
-import sys
 import tempfile
 import unittest
 
 import igraph
 import numpy as np
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from kg_io import load_kg
-from signature import BlockB
-from signature._utils import PowerLawStats
+from kgsynth.kg_io import load_kg
+from kgsynth.signature import BlockB
+from kgsynth.signature._utils import PowerLawStats
 
 _VECTOR_LEN = len(BlockB.feature_names())
 

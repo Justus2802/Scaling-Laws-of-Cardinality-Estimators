@@ -46,18 +46,14 @@ Usage
 import argparse
 import csv
 import random
-import sys
 from pathlib import Path
 
 import numpy as np
 
 _REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_REPO / "src"))
-sys.path.insert(0, str(_REPO / "scripts"))
-
 from profile_stage3_deltas import _build_stage2_graph  # noqa: E402
-from generator._constants import _RDF_TYPE  # noqa: E402
-from generator.local_updates import (  # noqa: E402
+from kgsynth.generator._constants import _RDF_TYPE  # noqa: E402
+from kgsynth.generator.local_updates import (  # noqa: E402
     _induced_cycles_through_pair_mitm as _cyc, _adj_inc, _adj_dec,
 )
 

@@ -14,17 +14,12 @@ large enough for a relative-error bound to be meaningful — the same strategy t
 CC star tests in ``test_generator_motif_counter.py`` use.
 """
 
-import os
-import sys
 import unittest
 
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-sys.path.insert(0, os.path.dirname(__file__))  # for the sibling brute-oracle module
-
-from motif_counter import HybridMotifCounter
-from motif_counter._base import MotifCounter
+from kgsynth.motif_counter import HybridMotifCounter
+from kgsynth.motif_counter._base import MotifCounter
 
 from _brute_motifs import (
     und,

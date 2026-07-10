@@ -4,11 +4,8 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from kgsynth.kg_io import load_kg, save_kg
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from kg_io import load_kg, save_kg
-
-_SRC_DIR = os.path.join(os.path.dirname(__file__), "..", "src")
 
 TTL_SAMPLE = """\
 @prefix ex: <http://example.org/> .
@@ -168,9 +165,8 @@ class TestLoadKGDeterminism(unittest.TestCase):
     _PROBE = textwrap.dedent(
         """
         import hashlib, sys
-        sys.path.insert(0, sys.argv[1])
-        from kg_io import load_kg
-        g = load_kg(sys.argv[2])
+        from kgsynth.kg_io import load_kg
+        g = load_kg(sys.argv[1])
         payload = repr(g.get_edgelist()) + repr(g.vs["name"])
         print(hashlib.md5(payload.encode()).hexdigest())
         """
@@ -185,7 +181,7 @@ class TestLoadKGDeterminism(unittest.TestCase):
     def _fingerprint(self, hash_seed: str) -> str:
         env = dict(os.environ, PYTHONHASHSEED=hash_seed)
         proc = subprocess.run(
-            [sys.executable, "-c", self._PROBE, _SRC_DIR, self.path],
+            [sys.executable, "-c", self._PROBE, self.path],
             capture_output=True, text=True, env=env, timeout=120,
         )
         self.assertEqual(proc.returncode, 0, f"probe failed:\n{proc.stderr}")

@@ -107,7 +107,7 @@ def compute_reduced_signature(
     Returns:
         A ``ReducedGraphSignature`` with the requested blocks populated.
     """
-    from kg_io import load_kg
+    from ..kg_io import load_kg
 
     active = set(blocks) if blocks is not None else set(_ALL_BLOCKS)
     unknown = active - set(_ALL_BLOCKS)

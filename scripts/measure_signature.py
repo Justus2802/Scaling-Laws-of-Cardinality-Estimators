@@ -2,12 +2,8 @@
 
 import argparse
 import logging
-import sys
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from signature import (
+from kgsynth.signature import (
     compute_reduced_signature as compute_signature,
     write_signature_outputs,
     _ALL_BLOCKS,

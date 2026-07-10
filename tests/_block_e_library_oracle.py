@@ -18,13 +18,10 @@ and it prints the ground truth as JSON on stdout.
 
 import json
 import math
-import os
 import sys
 import time
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 import igraph
-from kg_io import load_kg
+from kgsynth.kg_io import load_kg
 
 
 def load_graph(path: str, fmt: str) -> igraph.Graph:

@@ -22,14 +22,11 @@ import contextlib
 import io
 import json
 import logging
-import sys
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_REPO / "src"))
-
-from kg_io import load_kg
-from signature import BlockE
+from kgsynth.kg_io import load_kg
+from kgsynth.signature import BlockE
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 

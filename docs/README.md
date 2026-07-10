@@ -7,10 +7,10 @@ build records) in [`notes/`](notes/).
 ## Implemented
 
 - **[signature.md](signature.md)** — the reduced, non-over-determined signature
-  (`src/signature/`): the implemented module reference **and** the reasoning behind
+  (`src/kgsynth/signature/`): the implemented module reference **and** the reasoning behind
   it (non-over-determination, the derivability criterion, the multiplicity↔degree
   investigation, and the per-group G0–G6 justification). Start here.
-- **[generator.md](generator.md)** — the `kgsynth` generator (`src/generator/`): the three-stage
+- **[generator.md](generator.md)** — the `kgsynth` generator (`src/kgsynth/generator/`): the three-stage
   algorithm (schema sampler → CS-first instantiation → Maslov–Sneppen refinement) step by step,
   which signature fields drive each step, the reduced-signature adapters, and the evolution/fixes
   (P(r\|t) de-conflation, per-relation multiplicity-then-PA with edge conservation, the
@@ -19,7 +19,7 @@ build records) in [`notes/`](notes/).
   pattern shared by every block (lifecycle methods, the `_NOT_CALCULATED` sentinel,
   property guards, `visualize` split, logging conventions, selective block computation).
 
-A single `signature` package (`src/signature/`) provides the public Blocks A–F as the
+A single `signature` package (`src/kgsynth/signature/`) provides the public Blocks A–F as the
 reduced, non-over-determined measurements. Each block is a single class in `block_<x>.py`
 (the earlier `_orig_block_*` "full" measurements have been folded in and removed); the
 `test_signature_block_*` tests exercise these blocks directly. Both `scripts/measure_signature.py`
@@ -32,7 +32,7 @@ corpus `data/test_graphs/` (use `--graphs <name>...` to restrict to specific gra
 
 - **[plan/generation_implementation_plan.md](plan/generation_implementation_plan.md)** —
   the three-stage sampler against the reduced signature. **Implemented** in the
-  `src/generator/` package (Stage 1 schema, Stage 2 CS-first instantiation, Stage 3 motif
+  `src/kgsynth/generator/` package (Stage 1 schema, Stage 2 CS-first instantiation, Stage 3 motif
   refinement — all in scope now that reduced Block E exists); see the status note atop that plan.
 - **[plan/stage1_population_sampler.md](plan/stage1_population_sampler.md)** — the
   **doc-Stage-1 population sampler**: sampling a *novel* signature from the real-graph

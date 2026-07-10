@@ -5,7 +5,7 @@ Covers (1) the exact-vs-colour-coding (CC) counter comparison per motif size and
 
 ## Counters
 
-`src/motif_counter/` provides three `MotifCounter` implementations:
+`src/kgsynth/motif_counter/` provides three `MotifCounter` implementations:
 
 | Counter | Triangle | k=4 | k=5 | k=6 | stars k=2..10 |
 |---|---|---|---|---|---|

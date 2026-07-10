@@ -1,13 +1,9 @@
 import json
 import math
-import os
-import sys
 import unittest
 from pathlib import Path
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from signature import BlockE, ReducedGraphSignature  # noqa: E402
-from signature_sampler import (  # noqa: E402
+from kgsynth.signature import BlockE, ReducedGraphSignature  # noqa: E402
+from kgsynth.signature_sampler import (  # noqa: E402
     FEATURE_ORDER,
     SignatureSampler,
     UniformRangeSampler,

@@ -11,7 +11,7 @@ import math
 import numpy as np
 from scipy.special import zeta
 
-from signature import QUANTILE_LEVELS
+from ..signature import QUANTILE_LEVELS
 
 # Index of the median (0.5) level within QUANTILE_LEVELS, for scalar summaries.
 _MEDIAN_IDX = QUANTILE_LEVELS.index(0.5)

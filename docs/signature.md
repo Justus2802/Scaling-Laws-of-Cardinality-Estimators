@@ -13,7 +13,7 @@ below as "the notes"). For which features scale with graph size vs. which are si
 
 ## Implemented module
 
-`src/signature/` is the signature package (Blocks A–F). Each block is a single
+`src/kgsynth/signature/` is the signature package (Blocks A–F). Each block is a single
 non-over-determined ("reduced") measurement in `block_<x>.py`; the over-determined "full"
 measurements that earlier lived alongside as internal `_orig_block_*` modules have been folded
 in and removed, so each block is now one class with no second version. The package reuses a

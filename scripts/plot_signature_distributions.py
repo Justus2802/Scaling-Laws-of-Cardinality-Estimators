@@ -14,15 +14,11 @@ layout); both are scanned, so the same script serves either store.
 import argparse
 import json
 import math
-import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 ROOT = Path(__file__).parent.parent
 
 # Per-letter subplot colour, shared by both signatures.
@@ -38,7 +34,7 @@ def _block_config() -> tuple[list[tuple[str, type, str, str]], Path]:
     Reads from the canonical store ``data/graphs/``. The import is local so the
     signature package isn't required just to print ``--help``.
     """
-    from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
+    from kgsynth.signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
     blocks = [
         ("a", BlockA, "Block A — Size & Vocabulary"),
         ("b", BlockB, "Block B — Relation Freq & Multiplicity"),

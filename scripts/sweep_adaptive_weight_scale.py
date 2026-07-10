@@ -21,18 +21,13 @@ Usage
 import argparse
 import csv
 import logging
-import sys
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parent.parent
-_SCRIPTS = Path(__file__).resolve().parent
-sys.path.insert(0, str(_REPO / "src"))
-sys.path.insert(0, str(_SCRIPTS))
-
-import generator.stage3 as stage3  # noqa: E402
-from generator.stage1 import sample_schema  # noqa: E402
-from generator.stage2 import instantiate  # noqa: E402
-from signature_roundtrip import _DEFAULT_SEARCH_DIRS, _load_target_from_corpus  # noqa: E402
+import kgsynth.generator.stage3 as stage3  # noqa: E402
+from kgsynth.generator.stage1 import sample_schema  # noqa: E402
+from kgsynth.generator.stage2 import instantiate  # noqa: E402
+from kgsynth.corpus import DEFAULT_SEARCH_DIRS, load_target_from_corpus
 
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -59,9 +54,9 @@ def main() -> None:
                         help="Write per-candidate results to this CSV (default: no file).")
     args = parser.parse_args()
 
-    search_dirs = [Path(args.graphs_dir)] if args.graphs_dir else _DEFAULT_SEARCH_DIRS
+    search_dirs = [Path(args.graphs_dir)] if args.graphs_dir else DEFAULT_SEARCH_DIRS
     print(f"Loading target signature for '{args.graph}' from {[str(d) for d in search_dirs]}")
-    target_sig, _tblocks, _graph_dir = _load_target_from_corpus(args.graph, search_dirs)
+    target_sig, _tblocks, _graph_dir = load_target_from_corpus(args.graph, search_dirs)
 
     # Stage 1 + Stage 2 run once: every candidate scale rewires a fresh copy of
     # the same pre-Stage-3 graph, so the sweep isolates the effect of the scale.

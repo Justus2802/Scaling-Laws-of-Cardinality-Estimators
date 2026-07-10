@@ -82,8 +82,8 @@ fb237/wn18rr/codex_l but **not** swdf's. A complete mechanism needs both:
 Stage-2 is a **product-of-independent-marginals generator**: entities, CS
 membership, stub allocation and degree targets are each drawn independently, but a
 mutual pair `a↔b` under relation `r` requires **four** of these to correlate at once.
-Each was diagnosed and fixed in turn (`src/generator/stage2.py`,
-`src/generator/stage1.py`, `src/signature/block_b.py`):
+Each was diagnosed and fixed in turn (`src/kgsynth/generator/stage2.py`,
+`src/kgsynth/generator/stage1.py`, `src/kgsynth/signature/block_b.py`):
 
 1. **CS membership** (`S_r ∩ O_r` too small) — forward CS (§3a, who emits `r`) and
    inverse CS (§3b, who receives `r`) are built independently, so even a relation

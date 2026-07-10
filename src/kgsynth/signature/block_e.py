@@ -14,7 +14,7 @@ import igraph
 import matplotlib.pyplot as plt  # type: ignore[import-untyped]
 import numpy as np
 
-from motif_counter import HybridMotifCounter, MotifCounter
+from ..motif_counter import HybridMotifCounter, MotifCounter
 
 from ._logging import get_logger
 from ._block_base import SignatureBlock, _NOT_CALCULATED

@@ -1,13 +1,10 @@
 import os
-import sys
 import tempfile
 import unittest
 
 import igraph
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from kg_io import load_kg
-from signature import BlockA
+from kgsynth.kg_io import load_kg
+from kgsynth.signature import BlockA
 
 _VECTOR_LEN = 3   # num_entities, num_relations, mean_degree
 

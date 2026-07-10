@@ -47,10 +47,10 @@ by `docs/generator.md`.
   power-laws, skew-normal. Explain *why* (regenerates the shape; moments don't) and give
   the reading-guide for each family (what a large vs. small exponent/rate means).
 
-## 3. Signature Calculation — the `src/signature/` Module
+## 3. Signature Calculation — the `src/kgsynth/signature/` Module
 
 - Architecture: six independent measurement **blocks**, `BlockA`…`BlockF`, each one class
-  in `block_<x>.py`, sharing a common `SignatureBlock` ABC (`src/signature/_block_base.py`):
+  in `block_<x>.py`, sharing a common `SignatureBlock` ABC (`src/kgsynth/signature/_block_base.py`):
   lifecycle (`calculate` → `as_vector`/`as_dict` → `visualize`), the `_NOT_CALCULATED`
   sentinel guarding uncomputed access, and a serialization round-trip
   (`to_serializable`/`from_serializable`) preserving numpy arrays and fit tuples through
@@ -73,7 +73,7 @@ by `docs/generator.md`.
   - **F** (G4, 9 features) — connectivity: component count, LCC fraction, average local
     clustering, degree assortativity, shortest-path skew-normal fit.
 - The compute entry point: `compute_reduced_signature(path, blocks=...)`
-  (`src/signature/__init__.py`) loads a `.ttl`/`.nt` file via `kg_io.load_kg`, runs the
+  (`src/kgsynth/signature/__init__.py`) loads a `.ttl`/`.nt` file via `kg_io.load_kg`, runs the
   selected blocks, returns a `ReducedGraphSignature` dataclass; NaN-fills any block not
   computed so the feature vector is always fixed-length (`as_vector`/`as_dict`).
 - Output artifacts: `write_signature_outputs` — per-block plot (`block_<x>.png`),
@@ -81,14 +81,14 @@ by `docs/generator.md`.
   `summary.txt`. Same layout used for both measured real graphs and re-measured synthetic
   ones, which is what makes them directly comparable (§5).
 - Worth a short example walkthrough of one simple block (Block A,
-  `src/signature/block_a.py`) end-to-end — calculate → vector → visualize — as a concrete
+  `src/kgsynth/signature/block_a.py`) end-to-end — calculate → vector → visualize — as a concrete
   illustration of the shared pattern before summarizing the more complex blocks (B–F) at a
   higher level.
 - Distribution-fitting machinery: `_fits.py` (quantile fits, exponential-decay-rank fits,
   truncated power-law, Zipf — via `scipy.stats` and the `powerlaw` package) and
   `_plot_helpers.py` (overlay functions pairing each fit back onto its raw pre-fit data
   for the diagnostic plots).
-- Motif-counting backend feeding Block E: `src/motif_counter/` — `_base.py` (ABC),
+- Motif-counting backend feeding Block E: `src/kgsynth/motif_counter/` — `_base.py` (ABC),
   `exact_motif_counter.py` (exact triangle/4-node/ESCAPE 5-node counting),
   `cc_motif_counter.py` (color-coding sampler, Bressan et al. 2021, for large/dense
   graphs), `hybrid_motif_counter.py` (exact for k≤3, CC for k≥4 — the `MOTIF_COUNTER`
@@ -103,7 +103,7 @@ by `docs/generator.md`.
 
 ## 4. The Generation Pipeline (architecture only, not algorithm internals)
 
-- Public API surface and orchestration: `src/generator/pipeline.py` —
+- Public API surface and orchestration: `src/kgsynth/generator/pipeline.py` —
   `Signature` (target-loading wrapper around Blocks A–F) + `Generator.sample()`. One
   seeded call (`Generator(Signature.from_file(...)).sample(seed=42, rewire_budget=...)`)
   derives sub-seeds for each stage (`seed`, `seed+1`, `seed+2`) so the whole pipeline is
@@ -149,7 +149,7 @@ by `docs/generator.md`.
 
 ### 5.2 Distribution-level comparison — Wasserstein distance
 
-- `src/signature/_distance.py`: comparing fitted distribution *parameters* directly is
+- `src/kgsynth/signature/_distance.py`: comparing fitted distribution *parameters* directly is
   misleading (an unstable shape parameter can explode relative error even when the
   underlying distributions agree) — so the roundtrip instead reconstructs a representative
   sample from each fit (via inverse-CDF / shared common random numbers so identical fits

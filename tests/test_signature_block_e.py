@@ -1,17 +1,14 @@
 import itertools
 import math
 import os
-import sys
 import tempfile
 import unittest
 
 import igraph
 import numpy as np
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from kg_io import load_kg
-from motif_counter import ExactMotifCounter
-from signature import BlockE
+from kgsynth.kg_io import load_kg
+from kgsynth.motif_counter import ExactMotifCounter
+from kgsynth.signature import BlockE
 
 _VECTOR_LEN = 27   # 7 motifs + 9 path_zipf + 9 path_entropy + 2 tree
 
@@ -278,8 +275,8 @@ class TestBlockEDeterminism(unittest.TestCase):
         # The color-coding counter is a module global whose RNG advances across
         # calls, so two back-to-back calculations differ. The real guarantee is
         # that a fresh, identically-seeded counter reproduces the vector exactly.
-        import signature.block_e as be
-        from motif_counter import HybridMotifCounter
+        import kgsynth.signature.block_e as be
+        from kgsynth.motif_counter import HybridMotifCounter
 
         g = _make_g(6, [(0, 1), (1, 2), (2, 0), (1, 3), (3, 0), (3, 4), (4, 5)])
         be.MOTIF_COUNTER = HybridMotifCounter(n_samples=10_000, seed=1)

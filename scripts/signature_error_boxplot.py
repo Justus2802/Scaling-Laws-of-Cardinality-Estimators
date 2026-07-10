@@ -44,9 +44,9 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 
-from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
-from signature import _distance
-from signature._fits import QUANTILE_SUFFIXES
+from kgsynth.signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
+from kgsynth.signature import _distance
+from kgsynth.signature._fits import QUANTILE_SUFFIXES
 
 _REPO = Path(__file__).resolve().parent.parent
 

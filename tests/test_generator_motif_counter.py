@@ -1,25 +1,20 @@
 """Tests for generator.motif_counter — ExactMotifCounter and helpers."""
 
 import itertools
-import os
-import sys
 import unittest
 
 import igraph
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-sys.path.insert(0, os.path.dirname(__file__))  # for the sibling brute-oracle module
-
-from motif_counter import (
+from kgsynth.motif_counter import (
     CCMotifCounter,
     ExactMotifCounter,
     cc_run_stars,
     cc_run_stars_loop,
 )
 
-from motif_counter._common import _count_motifs4_through_edge
-from generator.local_updates import (
+from kgsynth.motif_counter._common import _count_motifs4_through_edge
+from kgsynth.generator.local_updates import (
     _motif4_delta,
     _triangle_node_delta,
     _induced_cycles_through_pair,

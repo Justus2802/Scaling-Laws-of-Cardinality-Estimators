@@ -1,14 +1,11 @@
 import os
-import sys
 import tempfile
 import unittest
 
 import igraph
 import numpy as np
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from kg_io import load_kg  # noqa: E402
-from signature import (  # noqa: E402
+from kgsynth.kg_io import load_kg  # noqa: E402
+from kgsynth.signature import (  # noqa: E402
     BlockA, BlockB, BlockC, BlockD, BlockE, BlockF,
     ReducedGraphSignature,
 )

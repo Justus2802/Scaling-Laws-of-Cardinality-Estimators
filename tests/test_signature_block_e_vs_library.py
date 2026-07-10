@@ -57,11 +57,8 @@ import unittest
 
 import igraph
 import numpy as np
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-sys.path.insert(0, os.path.dirname(__file__))  # for the sibling oracle module
-from motif_counter import ExactMotifCounter, HybridMotifCounter
-from signature.block_e import _SAMPLE_BUDGET
+from kgsynth.motif_counter import ExactMotifCounter, HybridMotifCounter
+from kgsynth.signature.block_e import _SAMPLE_BUDGET
 from _block_e_library_oracle import load_graph
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

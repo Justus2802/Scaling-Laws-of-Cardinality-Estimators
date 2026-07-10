@@ -3,8 +3,8 @@
 Branch: `feat/measure-reduced-signature`. Implements
 [../signature.md](../signature.md). **Integration mode: coexisting module**
 (revised from the original in-place *replace*). The reduced signature lives in a new
-sibling package `src/signature/` that reuses the existing block infrastructure;
-the original `src/signature/` package and `generator.py` are left untouched, so both
+sibling package `src/kgsynth/signature/` that reuses the existing block infrastructure;
+the original `src/kgsynth/signature/` package and `generator.py` are left untouched, so both
 signatures remain runnable side by side. See **Realised implementation** below.
 
 Schema decision: measure **both** the co-occurrence spectrum **and** the CS-size /
@@ -13,7 +13,7 @@ many / how often), not redundant.
 
 ## Realised implementation (coexisting module)
 
-Built as `src/signature/`, importing the shared base from `signature` (the
+Built as `src/kgsynth/signature/`, importing the shared base from `signature` (the
 `SignatureBlock` ABC with its `as_dict`/`to_serializable`/`from_serializable`,
 `_serialize`, `_logging`, and `_utils`'s `_fit_powerlaw`/`PowerLawStats`). Scope =
 Blocks **A, B, C, D, F**; Block **E (motifs) is deferred**. Library-backed fits live in
@@ -73,7 +73,7 @@ degree-fixed `Σ C(deg,k)`.)
 inverse-CS, row entropy, cooc density, type-rel entropy, two-step, and induced stars
 moved from "removed" to "kept targets".
 
-## Step 1 — new fitting utilities (`src/signature/_utils.py` or new `_fits.py`)
+## Step 1 — new fitting utilities (`src/kgsynth/signature/_utils.py` or new `_fits.py`)
 
 All new representations need fitters; centralise them so every block reuses them.
 
@@ -149,7 +149,7 @@ so they carry structure independent of the degree sequence.
 redundant with triangles + degree). Replace `avg_shortest_path_length` + `_se` with
 shortest-path **skew-normal** (loc, scale, shape).
 
-## Step 3 — package wiring (`src/signature/__init__.py`)
+## Step 3 — package wiring (`src/kgsynth/signature/__init__.py`)
 
 - Update `GraphSignature.as_vector`/`as_dict` (lengths change automatically from the
   blocks) and `_BLOCK_NA_VEC`.

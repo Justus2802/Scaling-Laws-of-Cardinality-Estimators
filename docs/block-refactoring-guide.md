@@ -211,18 +211,18 @@ of which blocks were computed.
 Replace all occurrences of the old pattern:
 
 ```python
-from signature import BlockX, block_x
+from kgsynth.signature import BlockX, block_x
 b = block_x(g)
 ```
 
 with:
 
 ```python
-from signature import BlockX
+from kgsynth.signature import BlockX
 b = BlockX().calculate(g)
 ```
 
-Files to check per block: `src/signature/__init__.py`, `tests/test_signature_block_x.py`, `scripts/`.
+Files to check per block: `src/kgsynth/signature/__init__.py`, `tests/test_signature_block_x.py`, `scripts/`.
 
 In `__init__.py`:
 - Remove `block_x` from the import line and from `__all__`

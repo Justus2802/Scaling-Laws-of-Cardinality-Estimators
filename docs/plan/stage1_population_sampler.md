@@ -215,7 +215,7 @@ Per the "acquire typed KGs first" decision, before the type block can be modelle
 
 ## Implemented — v0 uniform-range sampler
 
-`src/signature_sampler.py` provides the sampler class hierarchy:
+`src/kgsynth/signature_sampler.py` provides the sampler class hierarchy:
 
 - **`SignatureSampler` (ABC)** — loads the corpus
   (`UniformRangeSampler.load_corpus()` reads `data/graphs/*/signature/signature.json`),

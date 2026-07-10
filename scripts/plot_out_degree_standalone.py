@@ -13,13 +13,10 @@ Usage
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_REPO / "src"))
-
-from signature import BlockB  # noqa: E402
+from kgsynth.signature import BlockB  # noqa: E402
 
 
 def main() -> None:

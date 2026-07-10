@@ -20,10 +20,8 @@ from pathlib import Path
 import numpy as np
 
 _REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_REPO / "src"))
-
-from signature import BlockB  # noqa: E402
-from signature._block_base import _NOT_CALCULATED  # noqa: E402
+from kgsynth.signature import BlockB  # noqa: E402
+from kgsynth.signature._block_base import _NOT_CALCULATED  # noqa: E402
 
 _NEW_FIELDS = ("out_degree_max", "out_degree_p90", "in_degree_max", "in_degree_p90")
 _DEFAULT_ROOTS = [_REPO / "data" / "graphs", _REPO / "data" / "test_graphs"]

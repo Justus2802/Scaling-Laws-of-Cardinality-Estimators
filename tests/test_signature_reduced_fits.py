@@ -1,12 +1,8 @@
 import math
-import os
-import sys
 import unittest
 
 import numpy as np
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from signature._fits import (  # noqa: E402
+from kgsynth.signature._fits import (  # noqa: E402
     QUANTILE_LEVELS,
     fit_quantiles,
     fit_exp_decay_rank,

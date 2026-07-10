@@ -71,12 +71,12 @@ in others two statistics that *look* related are actually not exactly derivable 
 other and both need to be kept. Working out which of ~130 candidate KG statistics are
 algebraically/statistically redundant, and which must be kept as independent targets, is
 the subject of **[docs/signature.md](docs/signature.md)** — the design document for the
-reduced, 117-feature signature actually implemented in `src/signature/`. Start there for the
+reduced, 117-feature signature actually implemented in `src/kgsynth/signature/`. Start there for the
 full reasoning (it's substantial: the *why* behind every kept and dropped feature).
 
 ## The three-stage generator
 
-Given a target signature, `src/generator/` builds a graph in three stages, each responsible
+Given a target signature, `src/kgsynth/generator/` builds a graph in three stages, each responsible
 for a different layer of structure:
 
 1. **Stage 1 — schema sampler** (`stage1.py`): decides the *abstract* shape — how many
@@ -98,7 +98,7 @@ for a different layer of structure:
    sequence); it only rewires *which* nodes each relation connects.
 
 ```python
-from generator import Signature, Generator
+from kgsynth import Signature, Generator
 
 target = Signature.from_file("some_real_graph.ttl")   # measure
 synthetic = Generator(target).sample(seed=42, rewire_budget=100_000)  # generate
@@ -124,11 +124,12 @@ win — it trades some metrics for others).
 ## Repository layout
 
 ```
-src/
-  signature/        Block A–F measurement code (the "measure" step)
-  generator/         Stage 1/2/3 synthetic-graph generation (the "generate" step)
-  motif_counter/     Exact / color-coding / hybrid subgraph-counting backends
-  kg_io.py           Load/save KGs (.ttl, .nt, …)
+src/kgsynth/          the installable package (pip install -e .)
+  signature/          Block A–F measurement code (the "measure" step)
+  generator/          Stage 1/2/3 synthetic-graph generation (the "generate" step)
+  motif_counter/      Exact / color-coding / hybrid subgraph-counting backends
+  kg_io.py            Load/save KGs (.ttl, .nt, …)
+  corpus.py           Locate + load cached signatures from data/graphs/
 scripts/
   measure_signature_reduced.py   measure a real graph -> data/<name>/signature/
   signature_roundtrip.py         measure -> generate -> re-measure -> compare
@@ -151,7 +152,7 @@ approach still falls short of the real-graph targets.
 ## Getting started
 
 ```bash
-pip install -r requirements.txt
+pip install -e .
 
 # Measure a real graph into data/graphs/<name>/signature/
 python scripts/measure_signature_reduced.py <graph_name>

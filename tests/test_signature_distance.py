@@ -1,16 +1,12 @@
 import math
-import os
-import sys
 import unittest
 
 import numpy as np
 import scipy.stats
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from signature import _distance, fit_quantiles  # noqa: E402
-from signature._fits import ZipfFit, ExpDecayFit, TruncPowerLawFit  # noqa: E402
-from signature._utils import PowerLawStats  # noqa: E402
-from generator._adapters import sample_quantiles_trunc, _quantile_mean  # noqa: E402
+from kgsynth.signature import _distance, fit_quantiles  # noqa: E402
+from kgsynth.signature._fits import ZipfFit, ExpDecayFit, TruncPowerLawFit  # noqa: E402
+from kgsynth.signature._utils import PowerLawStats  # noqa: E402
+from kgsynth.generator._adapters import sample_quantiles_trunc, _quantile_mean  # noqa: E402
 
 
 class TestSampleQuantilesTrunc(unittest.TestCase):

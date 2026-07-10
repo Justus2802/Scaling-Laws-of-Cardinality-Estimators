@@ -1,15 +1,11 @@
-import os
-import sys
 import unittest
 
 import numpy as np
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from signature import BlockA, BlockC
-from signature._fits import ExpDecayFit, nan_exp_decay
-from signature._utils import PowerLawStats
-from generator import Schema, sample_schema
-from generator.stage1 import COOC_NUM_GROUPS
+from kgsynth.signature import BlockA, BlockC
+from kgsynth.signature._fits import ExpDecayFit, nan_exp_decay
+from kgsynth.signature._utils import PowerLawStats
+from kgsynth.generator import Schema, sample_schema
+from kgsynth.generator.stage1 import COOC_NUM_GROUPS
 
 # Default P(r|t) type-relation spectrum: a positive, decaying exp curve that
 # reconstructs to a usable low-rank signal for P(r|t) synthesis.

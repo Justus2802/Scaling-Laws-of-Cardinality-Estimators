@@ -21,16 +21,12 @@ Usage
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
 
 _REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_REPO / "src"))
-sys.path.insert(0, str(_REPO / "scripts"))
-
 from sweep_viz import _reconstruct_block, _block_feature_map, _LETTERS
 from plot_signature_pca import (
     _find_corpus_signatures, _load_signature_json, _build_matrix,

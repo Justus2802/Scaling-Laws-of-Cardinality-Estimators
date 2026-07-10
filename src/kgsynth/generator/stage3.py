@@ -36,7 +36,7 @@ import igraph
 import numpy as np
 
 from ._constants import _RDF_TYPE
-from motif_counter import ExactMotifCounter, HybridMotifCounter, MotifCounter  # CCMotifCounter available as swap-in
+from ..motif_counter import ExactMotifCounter, HybridMotifCounter, MotifCounter  # CCMotifCounter available as swap-in
 from .local_updates import _adj_inc, _adj_dec, _triangle_node_delta, _motif4_delta, _cycle_delta, _star_count_delta, _tree_entropy_delta, _path_entropy_delta, _entropy_from_freq
 from ._logging import get_logger
 from .stage2 import _connect_components

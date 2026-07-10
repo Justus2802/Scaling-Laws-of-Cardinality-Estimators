@@ -19,7 +19,7 @@ import math
 
 import numpy as np
 
-from signature import BlockA, BlockB, BlockC, BlockD, BlockF, QUANTILE_LEVELS
+from ..signature import BlockA, BlockB, BlockC, BlockD, BlockF, QUANTILE_LEVELS
 
 from ._adapters import (
     _functionality_from_alpha,

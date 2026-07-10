@@ -6,7 +6,7 @@ signature lands near the target. It implements the project brief's three-stage p
 [plan/generation_implementation_plan.md](plan/generation_implementation_plan.md)) against the
 reduced blocks ([signature.md](signature.md)).
 
-Code lives in the **`src/generator/`** package:
+Code lives in the **`src/kgsynth/generator/`** package:
 
 | Module | Role |
 |---|---|
@@ -20,7 +20,7 @@ Code lives in the **`src/generator/`** package:
 
 Public API (re-exported from `__init__.py`, unchanged by the refactor):
 ```python
-from generator import Signature, Generator
+from kgsynth import Signature, Generator
 g = Generator(Signature.from_file("target.ttl")).sample(seed=42, rewire_budget=5000)
 ```
 `Signature` holds reduced blocks `a, c, e` (required) and `b, d, f` (optional — each enables

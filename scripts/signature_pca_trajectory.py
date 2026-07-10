@@ -23,7 +23,6 @@ Usage
 
 import argparse
 import logging
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -31,15 +30,12 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes, mark_inset
 
 _REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_REPO / "src"))
-sys.path.insert(0, str(_REPO / "scripts"))
+from kgsynth.generator import Generator
+from kgsynth.signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
+import kgsynth.signature.block_e as _block_e
+from kgsynth.motif_counter import HybridMotifCounter
 
-from generator import Generator
-from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
-import signature.block_e as _block_e
-from motif_counter import HybridMotifCounter
-
-from signature_roundtrip import _load_target_from_corpus, _DEFAULT_SEARCH_DIRS
+from kgsynth.corpus import DEFAULT_SEARCH_DIRS, load_target_from_corpus
 from plot_signature_pca import (
     _find_corpus_signatures, _load_signature_json, _build_matrix,
     _fit_pca_2d, _project, _SIZE_DEPENDENT_FEATURES,
@@ -104,9 +100,9 @@ def main() -> None:
     args = parser.parse_args()
 
     # ── Step 1: target signature + Stage-2 output (checkpoint 0) ─────────────
-    search_dirs = [Path(args.graphs_dir)] if args.graphs_dir else _DEFAULT_SEARCH_DIRS
+    search_dirs = [Path(args.graphs_dir)] if args.graphs_dir else DEFAULT_SEARCH_DIRS
     print(f"Loading   : cached target signature for '{args.graph}' from {[str(d) for d in search_dirs]}")
-    target_sig, _tblocks, _graph_dir = _load_target_from_corpus(args.graph, search_dirs)
+    target_sig, _tblocks, _graph_dir = load_target_from_corpus(args.graph, search_dirs)
 
     # Checkpoint step indices: 0 is the post-Stage-2 graph (no rewiring yet),
     # then num_checkpoints equally-spaced points through [0, rewire_budget],

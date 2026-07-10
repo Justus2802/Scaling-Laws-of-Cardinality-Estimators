@@ -19,24 +19,21 @@ Usage
 """
 
 import argparse
-import json
 import logging
-import sys
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 
 _REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_REPO / "src"))
-
-from generator import Generator, Signature
-from kg_io import load_kg, save_kg
-from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
-from signature import ReducedGraphSignature, write_signature_outputs
-from signature import _distance
-import signature.block_e as _block_e
-from motif_counter import HybridMotifCounter
+from kgsynth.generator import Generator, Signature
+from kgsynth.kg_io import load_kg, save_kg
+from kgsynth.signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
+from kgsynth.signature import ReducedGraphSignature, write_signature_outputs
+from kgsynth.signature import _distance
+import kgsynth.signature.block_e as _block_e
+from kgsynth.motif_counter import HybridMotifCounter
+from kgsynth.corpus import DEFAULT_SEARCH_DIRS, load_target_from_corpus
 
 # Sample budget for the synthetic graph's final re-measurement (Block E motif CC
 # sampling + path/tree walks). Lower than the 100k Block-E default to keep the
@@ -45,15 +42,6 @@ _FINAL_SAMPLE_BUDGET = 20_000
 
 # Surface generator + signature-measurement progress and errors in the console.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-
-# Reduced block letter → class, in signature order.
-_BLOCK_CLASSES = {"a": BlockA, "b": BlockB, "c": BlockC, "d": BlockD, "f": BlockF}
-
-# Directories searched (in order) when --graphs-dir is not set explicitly.
-_DEFAULT_SEARCH_DIRS: list[Path] = [
-    _REPO / "data" / "graphs",
-    _REPO / "data" / "test_graphs",
-]
 
 # Where auto-named Stage 3 convergence / swap-proposal CSVs are written.
 _CONVERGENCE_LOG_DIR = _REPO / "experiments" / "convergence_logs"
@@ -118,74 +106,6 @@ def _rename_to_executed_budget(path: "Path | None", planned_budget: int,
     if new_path != path:
         path.rename(new_path)
     return new_path
-
-
-def _load_block(cls, path: Path):
-    """Reconstruct a reduced block from its serialized ``block_*.json``."""
-    return cls.from_serializable(json.loads(path.read_text()))
-
-
-def _find_graph_file(d: Path) -> Path | None:
-    """Return the first non-synthetic .nt/.ttl graph file in directory ``d`` (None if absent)."""
-    for pattern in ("*.nt", "*.ttl", "*.nt.gz", "*.ttl.gz"):
-        hits = sorted(p for p in d.glob(pattern) if not p.stem.endswith("_synth"))
-        if hits:
-            return hits[0]
-    return None
-
-
-def _load_target_from_corpus(graph_name: str, search_dirs: list[Path]):
-    """Load the cached reduced target signature for ``graph_name``.
-
-    Searches each directory in ``search_dirs`` for ``<graph_name>/signature/``
-    and loads blocks A/B/C/D/F from the first match. Block E is loaded from
-    ``block_e.json`` if present, else measured from the graph file. Returns
-    ``(Signature, blocks_dict)``.
-    """
-    graph_dir = sig_dir = None
-    for graphs_dir in search_dirs:
-        candidate = graphs_dir / graph_name
-        if (candidate / "signature").is_dir():
-            graph_dir = candidate
-            sig_dir = candidate / "signature"
-            break
-
-    if sig_dir is None:
-        available: list[str] = []
-        for d in search_dirs:
-            if d.is_dir():
-                available += sorted(p.name for p in d.iterdir() if p.is_dir())
-        raise SystemExit(
-            f"'{graph_name}' not found in {[str(d) for d in search_dirs]}. "
-            f"Available graphs: {sorted(set(available))}"
-        )
-
-    blocks: dict[str, object] = {}
-    for letter, cls in _BLOCK_CLASSES.items():
-        path = sig_dir / f"block_{letter}.json"
-        if not path.exists():
-            raise SystemExit(f"Missing cached block: {path}")
-        blocks[letter] = _load_block(cls, path)
-        print(f"  Loaded : {path.name}")
-
-    e_path = sig_dir / "block_e.json"
-    if e_path.exists():
-        blocks["e"] = _load_block(BlockE, e_path)
-        print(f"  Loaded : {e_path.name}")
-    else:
-        graph_file = _find_graph_file(graph_dir)
-        if graph_file is None:
-            raise SystemExit(
-                f"block_e.json absent and no graph file in {graph_dir} to measure it from."
-            )
-        print(f"  block_e.json absent — measuring Block E from {graph_file.name} …")
-        blocks["e"] = BlockE().calculate(load_kg(graph_file))
-
-    sig = Signature(
-        a=blocks["a"], b=blocks["b"], c=blocks["c"],
-        d=blocks["d"], e=blocks["e"], f=blocks["f"],
-    )
-    return sig, blocks, graph_dir
 
 
 def _measure_target_from_file(kg_file: Path, skip_templates: bool = False):
@@ -310,9 +230,9 @@ def main():
         graph_label = kg_path.stem
         graph_dir = kg_path.parent
     elif args.graph:
-        search_dirs = [Path(args.graphs_dir)] if args.graphs_dir else _DEFAULT_SEARCH_DIRS
+        search_dirs = [Path(args.graphs_dir)] if args.graphs_dir else DEFAULT_SEARCH_DIRS
         print(f"Loading   : cached target signature for '{args.graph}' from {[str(d) for d in search_dirs]}")
-        target_sig, tblocks, found_graph_dir = _load_target_from_corpus(args.graph, search_dirs)
+        target_sig, tblocks, found_graph_dir = load_target_from_corpus(args.graph, search_dirs)
         default_out = found_graph_dir / f"{args.graph}_synth_{run_ts}.ttl"
         graph_label = args.graph
         graph_dir = found_graph_dir

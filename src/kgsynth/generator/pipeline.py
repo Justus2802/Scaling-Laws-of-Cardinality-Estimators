@@ -5,7 +5,7 @@ from pathlib import Path
 
 import igraph
 
-from signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
+from ..signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
 
 from ._logging import get_logger
 from .stage1 import sample_schema
@@ -61,7 +61,7 @@ class Signature:
 
     @classmethod
     def from_file(cls, path) -> "Signature":
-        from kg_io import load_kg
+        from ..kg_io import load_kg
         return cls.from_graph(load_kg(Path(path)))
 
 

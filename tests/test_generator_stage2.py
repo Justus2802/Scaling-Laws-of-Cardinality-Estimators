@@ -1,16 +1,12 @@
-import os
-import sys
 import unittest
 
 import numpy as np
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from signature import BlockA, BlockB, BlockC, BlockD  # noqa: E402
-from signature._fits import (  # noqa: E402
+from kgsynth.signature import BlockA, BlockB, BlockC, BlockD  # noqa: E402
+from kgsynth.signature._fits import (  # noqa: E402
     ExpDecayFit, TruncPowerLawFit, ZipfFit, fit_quantiles, nan_exp_decay,
 )
-from signature._utils import PowerLawStats  # noqa: E402
-from generator import sample_schema, instantiate  # noqa: E402
+from kgsynth.signature._utils import PowerLawStats  # noqa: E402
+from kgsynth.generator import sample_schema, instantiate  # noqa: E402
 
 _RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 
@@ -254,7 +250,7 @@ class TestConnectComponents(unittest.TestCase):
         in_deg = np.zeros(n)
         for _, o, _ in edges:
             in_deg[o] += 1.0
-        from generator.stage2 import _connect_components
+        from kgsynth.generator.stage2 import _connect_components
         _connect_components(edges, n, _FakeSch(), rng, seen, in_deg,
                             target_nc=target_nc, target_lcc=target_lcc)
         return edges
