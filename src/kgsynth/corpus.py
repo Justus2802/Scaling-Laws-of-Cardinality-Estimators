@@ -12,9 +12,12 @@ imported across scripts via a ``sys.path`` hack; they live here so every consume
 import json
 from pathlib import Path
 
+from ._logging import get_logger
 from .generator import Signature
 from .kg_io import load_kg
 from .signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
+
+log = get_logger(__name__)
 
 # Repo root: src/kgsynth/corpus.py → parents[2]. Valid for an editable install,
 # which is how the corpus-facing scripts are run.
@@ -90,19 +93,19 @@ def load_target_from_corpus(graph_name: str, search_dirs: list[Path]):
         if not path.exists():
             raise SystemExit(f"Missing cached block: {path}")
         blocks[letter] = load_block(cls, path)
-        print(f"  Loaded : {path.name}")
+        log.info("Loaded : %s", path.name)
 
     e_path = sig_dir / "block_e.json"
     if e_path.exists():
         blocks["e"] = load_block(BlockE, e_path)
-        print(f"  Loaded : {e_path.name}")
+        log.info("Loaded : %s", e_path.name)
     else:
         graph_file = find_graph_file(graph_dir)
         if graph_file is None:
             raise SystemExit(
                 f"block_e.json absent and no graph file in {graph_dir} to measure it from."
             )
-        print(f"  block_e.json absent — measuring Block E from {graph_file.name} …")
+        log.info("block_e.json absent — measuring Block E from %s …", graph_file.name)
         blocks["e"] = BlockE().calculate(load_kg(graph_file))
 
     sig = Signature(

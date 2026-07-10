@@ -27,7 +27,7 @@ import numpy as np
 import scipy.sparse
 import scipy.sparse.linalg
 
-from ._logging import get_logger
+from .._logging import get_logger
 from ._block_base import SignatureBlock, _NOT_CALCULATED
 from ._utils import RDF_TYPE, PowerLawStats, _fit_powerlaw, _nan_power_law_stats
 from ._fits import (

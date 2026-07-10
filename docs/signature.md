@@ -47,11 +47,16 @@ Total **117** features (A3 + B26 + C27 + D25 + E27 + F9).
 The fits are stored as NamedTuples that restore as plain tuples through the JSON
 round-trip, so each block property re-wraps them to preserve attribute access.
 
-Run it: `python scripts/measure_signature_reduced.py <graph> [--blocks a,b,c,d,e,f]` →
-`<graph-dir>/signature/` (override with `--output-dir`); the curated corpus lives in
-`data/graphs/<name>/signature/`. Or `scripts/measure_all_raw.py` for every raw KG in `data/graphs/` and the test corpus `data/test_graphs/`. The on-disk layout (per-block `block_<x>.png`/`.json`, `summary.txt`, combined `signature.json`) is produced by the shared `signature.write_signature_outputs` helper, which `scripts/signature_roundtrip.py` also uses to dump re-measured **generated** graphs to a parallel `signature_synth/` directory. Tests: `tests/test_signature_reduced_fits.py`,
-`tests/test_signature_reduced_blocks.py`. The original full signature (`signature/`,
-`scripts/measure_signature.py`) is unchanged and still runs.
+Run it: `python scripts/measure_signature.py <graph> [--blocks a,b,c,d,e,f]` (or the installed
+`kgsynth measure` CLI) → `<graph-dir>/signature/` (override with `--output-dir`); the curated
+corpus lives in `data/graphs/<name>/signature/`. Or `scripts/measure_all_raw.py` for every raw KG
+in `data/graphs/` and the test corpus `data/test_graphs/`. The on-disk layout (per-block
+`block_<x>.png`/`.json`, `summary.txt`, combined `signature.json`) is produced by the shared
+`signature.write_signature_outputs` helper, which `scripts/signature_roundtrip.py` also uses to
+dump re-measured **generated** graphs to a parallel `signature_synth/` directory. Tests:
+`tests/test_signature_reduced_fits.py`, `tests/test_signature_reduced_blocks.py`. There is no
+separate "full" signature — this reduced, non-over-determined signature is the only one the
+package computes.
 
 The rest of this document is the **reasoning**: why the signature is reduced this way (the
 derivability criterion), how per-relation multiplicity and degree relate (the

@@ -10,7 +10,7 @@ and the ``powerlaw`` package (via the shared ``_fit_powerlaw``) for the
 power-law fits.
 
 The reduced signature stores a compact distribution summary for each quantity
-(see ``docs/signature_redesign.md``) — a quantile function for sample
+(see ``docs/signature.md``) — a quantile function for sample
 distributions, or the parameters of a parametric family — not raw moments, so the
 shape can be regenerated at sampling time.
 """

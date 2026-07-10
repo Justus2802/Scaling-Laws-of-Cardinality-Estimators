@@ -533,10 +533,10 @@ is used verbatim.
 The re-measured synthetic signature is also dumped to a `signature_synth_<timestamp>/` directory
 next to the source graph (`data/graphs/<name>/`, `data/test_graphs/<name>/`),
 using the same layout as the measured `signature/` dir — per-block `block_<x>.png` plots and
-`block_<x>.json` state, plus `summary.txt` and combined `signature.json`. This mirrors what
-`measure_signature.py` writes for real graphs (both now share
-`signature.write_signature_outputs`), so a measured and a generated signature are structurally
-identical and directly comparable for validation.
+`block_<x>.json` state, plus `summary.txt` and combined `signature.json`, via the shared
+`signature.write_signature_outputs` helper. This mirrors what `measure_signature.py` writes for
+real graphs (its own inline write logic produces the same on-disk layout), so a measured and a
+generated signature are structurally identical and directly comparable for validation.
 
 Pass `--convergence-log` with no value to record the Stage 3 convergence CSV; the file is
 auto-named from the graph name and run options (e.g. `conv_<graph>_seed42_rb5000.csv`) and written

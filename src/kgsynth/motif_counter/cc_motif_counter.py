@@ -13,7 +13,7 @@ import numpy as np
 import scipy.sparse
 
 from ._base import MotifCounter
-from ._logging import get_logger
+from .._logging import get_logger
 
 log = get_logger(__name__)
 

@@ -1,16 +1,13 @@
 """Reduced (non-over-determined) graph signature.
 
-A coexisting alternative to the ``signature`` package: it measures the same KGs
-but stores a **compact distribution summary** for each quantity — a quantile
-function for sample distributions, or the parameters of a parametric family
-(exponential-decay, truncated power-law, …) — instead of redundant moments,
-dropping every value guaranteed by the stored summary. See
-``docs/signature_redesign.md`` for the design and ``docs/signature_measurement_plan.md``
-for the mapping onto blocks.
+Measures a KG's statistical signature and stores a **compact distribution
+summary** for each quantity — a quantile function for sample distributions,
+or the parameters of a parametric family (exponential-decay, truncated
+power-law, …) — instead of redundant moments, dropping every value guaranteed
+by the stored summary. See ``docs/signature.md`` for the design and
+``docs/notes/signature_measurement_plan.md`` for the mapping onto blocks.
 
-Scope: Blocks A, B, C, D, E, F (G0–G5). The shared block infrastructure — the
-``SignatureBlock`` ABC, JSON serialization and logging — is reused from the
-``signature`` package.
+Scope: Blocks A, B, C, D, E, F (G0–G5).
 """
 
 import contextlib

@@ -19,7 +19,7 @@ import numpy as np
 
 from ._adapters import sample_powerlaw, sample_quantiles_trunc
 from ._constants import _RDF_TYPE
-from ._logging import get_logger
+from .._logging import get_logger
 from .schema import Schema
 
 log = get_logger(__name__)

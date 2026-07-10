@@ -21,7 +21,7 @@ import igraph
 import matplotlib.pyplot as plt  # type: ignore[import-untyped]
 import numpy as np
 
-from ._logging import get_logger
+from .._logging import get_logger
 from ._block_base import SignatureBlock, _NOT_CALCULATED
 from ._fits import (
     QuantileFit,

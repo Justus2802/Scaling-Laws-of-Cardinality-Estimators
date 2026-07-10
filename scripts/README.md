@@ -22,18 +22,11 @@ Downloads the AIFB knowledge graph from Figshare and saves it as `aifb.ttl`. One
 ## Signature Measurement
 
 ### `measure_signature.py`
-Computes the full graph signature (Blocks A–F) for a single KG file and writes block plots, JSON results, and a text summary to a `signature/` directory next to the graph file (i.e. `data/graphs/<name>/signature/`), or to `--output-dir`.
+Computes the graph signature (Blocks A–F) for a single KG file and writes block plots, JSON results, and a text summary to a `signature/` directory next to the graph file (i.e. `data/graphs/<name>/signature/`), or to `--output-dir`. Equivalent to the installed `kgsynth measure` CLI.
 
 ```
 python scripts/measure_signature.py data/graphs/aids/AIDS.nt
 python scripts/measure_signature.py mygraph.ttl --output-dir out/ --format pdf
-```
-
-### `measure_signature_reduced.py`
-Same as above but for the reduced (non-over-determined) signature. Writes a `signature/` directory next to the graph file by default, matching the `data/graphs/<name>/` corpus layout.
-
-```
-python scripts/measure_signature_reduced.py data/graphs/aids/AIDS.nt
 ```
 
 ### `measure_block_e.py`
@@ -46,11 +39,10 @@ python scripts/measure_block_e.py --force
 ```
 
 ### `measure_all_raw.py`
-Batch-measures every graph under `data/graphs/` **and** the held-out test corpus `data/test_graphs/` by calling the per-graph measurement scripts as subprocesses. Defaults to the reduced signature; pass `--full` for the original full signature. Either way each graph's `signature/` directory is written next to its graph file. `--blocks` re-measures only a subset of blocks. `--graphs` restricts the run to specific graphs by directory name.
+Batch-measures every graph under `data/graphs/` **and** the held-out test corpus `data/test_graphs/` by calling `measure_signature.py` as a subprocess per graph. Each graph's `signature/` directory is written next to its graph file. `--blocks` re-measures only a subset of blocks. `--graphs` restricts the run to specific graphs by directory name.
 
 ```
 python scripts/measure_all_raw.py
-python scripts/measure_all_raw.py --full
 python scripts/measure_all_raw.py --blocks e             # re-measure Block E only
 python scripts/measure_all_raw.py --graphs aids fb237_v4  # only these graphs
 ```

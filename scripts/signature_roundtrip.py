@@ -4,7 +4,7 @@ graph from it, save it, re-measure it, and compare.
 By default the target signature is searched in ``data/graphs/`` first, then in
 ``data/test_graphs/`` (smaller graphs excluded from the population fit).  Within
 each directory the per-block ``block_*.json`` files written by
-``measure_signature_reduced.py`` are used — no recomputation of the original.
+``measure_signature.py`` are used — no recomputation of the original.
 Block E is not part of the corpus yet; if ``block_e.json`` is absent it is
 measured on demand from the graph file in that directory.  Pass ``--kg-file`` to
 measure the full target signature from a graph file instead.

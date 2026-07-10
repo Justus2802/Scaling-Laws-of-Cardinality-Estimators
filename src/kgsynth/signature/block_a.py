@@ -10,7 +10,7 @@ edge-budget handle). ``num_classes`` is reported by Block C, which already scans
 
 import igraph
 
-from ._logging import get_logger
+from .._logging import get_logger
 from ._block_base import SignatureBlock, _NOT_CALCULATED
 
 log = get_logger(__name__)

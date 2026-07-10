@@ -131,7 +131,7 @@ src/kgsynth/          the installable package (pip install -e .)
   kg_io.py            Load/save KGs (.ttl, .nt, …)
   corpus.py           Locate + load cached signatures from data/graphs/
 scripts/
-  measure_signature_reduced.py   measure a real graph -> data/<name>/signature/
+  measure_signature.py           measure a real graph -> data/<name>/signature/
   signature_roundtrip.py         measure -> generate -> re-measure -> compare
   sweep_*.py, *_plot*.py         parameter sweeps and diagnostic plots
 data/

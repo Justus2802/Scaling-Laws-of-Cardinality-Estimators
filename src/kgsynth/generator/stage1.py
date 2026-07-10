@@ -27,7 +27,7 @@ from ._adapters import (
     _quantile_mean,
     sample_degree_sequence,
 )
-from ._logging import get_logger
+from .._logging import get_logger
 from .schema import Schema, _NAN_Q
 
 log = get_logger(__name__)

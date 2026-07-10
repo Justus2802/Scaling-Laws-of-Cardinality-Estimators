@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt  # type: ignore[import-untyped]
 import numpy as np
 import scipy.stats
 
-from ._logging import get_logger
+from .._logging import get_logger
 from ._block_base import SignatureBlock, _NOT_CALCULATED
 
 log = get_logger(__name__)

@@ -19,7 +19,7 @@ import igraph
 import matplotlib.pyplot as plt  # type: ignore[import-untyped]
 import numpy as np
 
-from ._logging import get_logger
+from .._logging import get_logger
 from ._block_base import SignatureBlock, _NOT_CALCULATED
 from ._utils import MIN_SAMPLES_FOR_FIT, RDF_TYPE, PowerLawStats, _fit_powerlaw
 from ._fits import (
@@ -38,7 +38,7 @@ from . import _distance
 log = get_logger(__name__)
 
 # Per-relation multiplicity exponents are confined to this range for generation;
-# stored as the quantile-function cutoffs (q@0 / q@1; docs/signature_redesign.md G2).
+# stored as the quantile-function cutoffs (q@0 / q@1; docs/signature.md §G2).
 _ALPHA_LO = 1.4
 _ALPHA_HI = 3.0
 

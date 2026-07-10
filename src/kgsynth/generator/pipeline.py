@@ -7,7 +7,7 @@ import igraph
 
 from ..signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
 
-from ._logging import get_logger
+from .._logging import get_logger
 from .stage1 import sample_schema
 from .stage2 import instantiate
 from .stage3 import refine

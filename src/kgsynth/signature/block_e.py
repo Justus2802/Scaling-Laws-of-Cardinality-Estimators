@@ -6,8 +6,14 @@ and 4-node motifs are computed on the undirected simplification; 5/6-node and
 path/tree templates come from the color-coding (CC) counter.
 
 The induced ``star_count_k*`` features are no longer part of the signature and
-are no longer measured. The counter's ``count_stars`` helper is kept (unused)
-should they be reinstated later.
+are no longer measured here. The counter's ``count_stars`` helper stays in
+``motif_counter`` regardless — it is exercised directly by
+``tests/test_generator_motif_counter.py``, ``tests/test_hybrid_motif_counter.py``,
+and ``scripts/cc_variance.py``, independent of whether Block E calls it.
+
+Older corpus ``block_e.json`` files measured before this removal may still
+carry a stale ``_star_counts`` key; that key is not read by anything and
+disappears the next time the graph is re-measured.
 """
 
 import igraph
@@ -16,7 +22,7 @@ import numpy as np
 
 from ..motif_counter import HybridMotifCounter, MotifCounter
 
-from ._logging import get_logger
+from .._logging import get_logger
 from ._block_base import SignatureBlock, _NOT_CALCULATED
 
 log = get_logger(__name__)
@@ -155,7 +161,7 @@ class BlockE(SignatureBlock):
         log.info("Block E: computed tailed_triangle_count (%d)", self._tailed_triangle_count)
 
         # 5/6-cycle counts are core motif features, so they are always measured via
-        # the hybrid counter (ESCAPE-exact for k=5 on low-degree graphs, CC otherwise).
+        # the hybrid counter (CC-sampled for k>=4, see HybridMotifCounter).
         # motifs5/motifs6 are reused by the path-template block when paths are not skipped.
         motifs5 = MOTIF_COUNTER.count_motifsk(g_und, 5)
         self._five_cycle_count = motifs5.get((2, 2, 2, 2, 2), 0)

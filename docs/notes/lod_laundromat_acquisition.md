@@ -67,7 +67,7 @@ shortest-path shapes. Those require *loading each document* and running the proj
   are dedup'd sorted N-Triples → after `gunzip` they drop straight into `kg_io.load_kg`
   (which detects the serialization from content, so the extensionless dumps need no suffix),
   no new I/O code. Measure ~30–300 curated documents with
-  `scripts/measure_signature_reduced.py` for full-signature rows — the literal §3b fix. The
+  `scripts/measure_signature.py` for full-signature rows — the literal §3b fix. The
   meta-dataset is the **sampling frame** that makes the curation principled.
 
 ## The case against — ordered strongest first
