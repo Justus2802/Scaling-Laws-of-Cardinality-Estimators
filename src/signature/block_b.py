@@ -469,9 +469,15 @@ class BlockB(SignatureBlock):
             bins = np.linspace(pos.min(), pos.max() + 1, 30)
         counts, edges = np.histogram(pos, bins=bins)
         centers = (edges[:-1] + edges[1:]) / 2
-        plot_fn = ax.loglog if log_scale else ax.plot
-        plot_fn(centers[counts > 0], counts[counts > 0], "o", markersize=4, color=dot_color, label="data")
+        widths = np.diff(edges)
+        mask = counts > 0
+        bars = ax.bar(centers[mask], counts[mask], width=widths[mask], align="center",
+                      color=dot_color, label="data")
+        if log_scale:
+            ax.set_xscale("log")
+            ax.set_yscale("log")
 
+        handles = [bars]
         if not np.isnan(fit.alpha) and not np.isnan(fit.xmin):
             xmin = max(int(fit.xmin), 1)
             x_fit = np.arange(xmin, pos.max() + 1, dtype=float)
@@ -481,10 +487,13 @@ class BlockB(SignatureBlock):
             total = tail_counts.sum()
             if total > 0:
                 y_fit = y_fit / y_fit.sum() * total
-            plot_fn(x_fit, y_fit, "-", color=line_color, linewidth=1.5,
-                    label=f"powerlaw α={fit.alpha:.2f}")
+            line, = ax.plot(x_fit, y_fit, "-", color=line_color, linewidth=1.5,
+                            label=f"powerlaw α={fit.alpha:.2f}")
+            handles.append(line)
 
         ax.set_xlabel("degree")
         ax.set_ylabel("count")
         ax.set_title(title)
-        ax.legend(fontsize=8)
+        # explicit handle order: legend's default ordering puts the line before the
+        # bar container, which reads backwards against the data-then-fit plot order.
+        ax.legend(handles=handles, fontsize=8)
