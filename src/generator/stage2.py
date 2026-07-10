@@ -31,8 +31,6 @@ SIZE_ESCAPE_FAILS = 32         # consecutive template collisions before growing 
 TEMPLATE_ATTEMPT_FLOOR = 64    # floor on rejection-sampling attempts per template pool
 TEMPLATE_ATTEMPT_FACTOR = 20   # rejection-sampling attempts per requested distinct template
 FALLBACK_CS_MEAN_FLOOR = 0.5   # floor on the budget-derived CS-size Poisson mean (no Block D)
-PATH_STEERING_ENABLED = False  # Stage-2 path-length steering (shortcut injection); can only
-                               # shorten paths, so disabled for now — see _steer_path_lengths
 
 
 def _connect_components(
@@ -67,9 +65,9 @@ def _connect_components(
     np.ndarray
         Boolean mask, length ``actual_V``, True for nodes left in a
         deliberately-unbridged satellite component. Callers that add further
-        edges after this (deficit recovery, path-length steering) must not
-        touch these nodes — doing so would silently reconnect a satellite
-        and undo the ``target_nc`` / ``target_lcc`` guarantee established here.
+        edges after this (deficit recovery) must not touch these nodes — doing
+        so would silently reconnect a satellite and undo the ``target_nc`` /
+        ``target_lcc`` guarantee established here.
     """
     is_satellite = np.zeros(actual_V, dtype=bool)
     if actual_V < 2:
@@ -151,125 +149,6 @@ def _connect_components(
             in_degrees[bridge] += 1.0
 
     return is_satellite
-
-
-def _steer_path_lengths(
-    content_edges: list,
-    actual_V: int,
-    schema: "Schema",
-    rng: "np.random.Generator",
-    seen: set,
-    in_degrees: "np.ndarray",
-    is_satellite: "np.ndarray | None" = None,
-) -> None:
-    """Steer mean path length and diameter toward Block F targets via hub shortcuts.
-
-    Builds a temporary undirected igraph entity graph for efficient C-backend
-    diameter and distance estimation; adds shortcut edges to both the igraph
-    object and content_edges so each round re-estimates on the updated graph.
-    Runs at most 4 estimation + injection rounds.
-
-    No-ops when schema.path_mean_target is NaN and schema.path_hi_target is 0.
-
-    Parameters
-    ----------
-    is_satellite : np.ndarray, optional
-        Boolean mask (from ``_connect_components``) marking nodes in a
-        deliberately-unbridged satellite component. All BFS-source and
-        shortcut-endpoint sampling is restricted to the complement (the giant
-        component) so this pass cannot silently reconnect a satellite.
-    """
-    path_mean_target = schema.path_mean_target
-    path_hi_target = schema.path_hi_target
-    has_mean = not math.isnan(path_mean_target)
-    has_hi = path_hi_target > 0
-
-    if not PATH_STEERING_ENABLED:
-        if has_mean or has_hi:
-            log.warning("Stage 2: path steering disabled (PATH_STEERING_ENABLED=False); "
-                        "Block F path targets (mean=%s, diameter=%s) will not be steered",
-                        f"{path_mean_target:.2f}" if has_mean else "—",
-                        str(path_hi_target) if has_hi else "—")
-        return
-    if (not has_mean and not has_hi) or actual_V < 3:
-        return
-
-    ig = igraph.Graph(n=actual_V, directed=False)
-    ig.add_edges([(s, o) for s, o, _ in content_edges
-                  if s < actual_V and o < actual_V and s != o])
-
-    giant_nodes = (np.where(~is_satellite)[0] if is_satellite is not None
-                   else np.arange(actual_V))
-    n_giant = giant_nodes.size
-    if n_giant < 3:
-        return
-
-    def estimate_stats(k: int = 50) -> tuple[int, float]:
-        diam = ig.diameter(directed=False, unconn=True)
-        srcs = rng.choice(giant_nodes, size=min(k, n_giant), replace=False)
-        tot = cnt = 0
-        for src in srcs:
-            for d in ig.distances(source=[int(src)], mode="all")[0]:
-                if 0 < d < float("inf"):
-                    tot += d; cnt += 1
-        return int(diam), (tot / cnt if cnt > 0 else float("nan"))
-
-    def add_shortcut(u: int, v: int) -> bool:
-        if u == v:
-            return False
-        pred = schema.relations[int(rng.integers(len(schema.relations)))]
-        triple = (u, v, pred)
-        if triple in seen:
-            return False
-        seen.add(triple)
-        content_edges.append(triple)
-        in_degrees[v] += 1.0
-        ig.add_edge(u, v)
-        return True
-
-    diam0, mean0 = estimate_stats()
-
-    for _ in range(4):
-        diam, mean_path = estimate_stats()
-        hi_ok = not has_hi or diam <= path_hi_target
-        mean_ok = not has_mean or math.isnan(mean_path) or mean_path <= path_mean_target + 0.5
-        if hi_ok and mean_ok:
-            break
-
-        if not hi_ok:
-            # Add several shortcuts per round: sample different remote pairs so the
-            # diameter converges from multiple directions simultaneously.
-            n_hi = max(1, (diam - path_hi_target + 1) // 2)
-            for _ in range(n_hi):
-                src = int(rng.choice(giant_nodes))
-                row = ig.distances(source=[src], mode="all")[0]
-                far = int(max(giant_nodes,
-                              key=lambda v, r=row: r[v] if r[v] < float("inf") else -1))
-                add_shortcut(src, far)
-
-        if not mean_ok:
-            deg = np.array(ig.degree(), dtype=np.float64)[giant_nodes]
-            deg_sum = deg.sum()
-            if deg_sum > 0:
-                p = deg / deg_sum
-                n_sc = max(1, round(n_giant ** 0.5 * (mean_path - path_mean_target) / mean_path))
-                added = 0
-                for _ in range(n_sc * 8):
-                    if added >= n_sc:
-                        break
-                    if add_shortcut(int(rng.choice(giant_nodes, p=p)),
-                                    int(rng.choice(giant_nodes, p=p))):
-                        added += 1
-
-    diam1, mean1 = estimate_stats(k=30)
-    log.info(
-        "Stage 2: path steering — diameter %d→%d (target %s), mean %.2f→%.2f (target %s)",
-        diam0, diam1,
-        str(path_hi_target) if has_hi else "—",
-        mean0 if not math.isnan(mean0) else float("nan"),
-        mean1 if not math.isnan(mean1) else float("nan"),
-        f"{path_mean_target:.2f}" if has_mean else "—",
-    )
 
 
 def instantiate(
@@ -1164,13 +1043,6 @@ def instantiate(
                 unique_src_count[o] += 1
             placed += 1
         log.info("Stage 2: deficit recovery placed %d/%d missing edges", placed, deficit)
-
-    # ------------------------------------------------------------------
-    # 5b. Path-length steering (diameter cap + mean compression via shortcuts).
-    #     Restricted to non-satellite nodes for the same reason as 5a.
-    # ------------------------------------------------------------------
-    _steer_path_lengths(content_edges, actual_V, schema, rng, seen, in_degrees,
-                        is_satellite=is_satellite)
 
     # ------------------------------------------------------------------
     # 6. Build rdf:type edges

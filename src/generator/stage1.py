@@ -383,15 +383,6 @@ def sample_schema(
     target_num_components = int(f.num_components) if f is not None else DEFAULT_NUM_COMPONENTS
     target_lcc = float(f.largest_component_fraction) if f is not None else DEFAULT_LCC
 
-    # --- Path-length targets from Block F (max, mean, var) ---
-    path_mean_target = float("nan")
-    path_hi_target = 0
-    if f is not None:
-        path_mean_target = f.shortest_path_mean   # NaN when paths not sampled
-        max_val = f.shortest_path_max
-        if not math.isnan(max_val) and max_val > 0:
-            path_hi_target = int(max_val)
-
     # Block C pair-level edge multiplicity (overlap) targets; NaN / not-measured
     # (stale signatures) → 1.0, the neutral legacy near-simple graph.
     def _ratio(getter) -> float:
@@ -479,6 +470,4 @@ def sample_schema(
         obj_group_weights=obj_group_weights,
         target_num_components=target_num_components,
         target_lcc=target_lcc,
-        path_mean_target=path_mean_target,
-        path_hi_target=path_hi_target,
     )

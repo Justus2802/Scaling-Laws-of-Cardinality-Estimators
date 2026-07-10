@@ -94,9 +94,6 @@ class Schema:
     # Block F-derived connectivity targets.  Defaults reproduce current fully-connected behaviour.
     target_num_components: int = 1    # target weakly-connected component count
     target_lcc: float = 1.0           # target largest-component fraction of entity nodes
-    # Block F-derived path-length targets.  NaN / 0 = skip the corresponding steering step.
-    path_mean_target: float = float("nan")  # target mean shortest path (skew-normal mean)
-    path_hi_target: int = 0                 # target diameter cap (skew-normal hi); 0 = uncapped
     # Co-occurrence group prototypes (Block C subj_cooc_exp / obj_cooc_exp).
     # When set, Stage 2 uses these to generate entity CSes (instead of type_relation_probs)
     # and assigns types post-hoc via log P(CS|t) argmax.  None → fall back to the

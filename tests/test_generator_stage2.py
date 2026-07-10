@@ -325,36 +325,5 @@ class TestConnectComponents(unittest.TestCase):
         self.assertEqual(nc, 1)
 
 
-class TestSteerPathLengths(unittest.TestCase):
-    """_steer_path_lengths caps diameter and compresses mean via hub shortcuts."""
-
-    def _entity_graph(self, g) -> "igraph.Graph":
-        """Return an undirected igraph over entity nodes only (no type nodes)."""
-        import igraph as ig
-        entity_edges = [(e.source, e.target)
-                        for e in g.es if e["predicate"] != _RDF_TYPE
-                        and e.source < 60 and e.target < 60]
-        return ig.Graph(n=60, directed=False, edges=entity_edges)
-
-    def test_steer_hi_caps_diameter(self):
-        # Very low density (V=60, E=90) → natural diameter can be large.
-        # path_hi_target=5 should bring it down.
-        a = _make_block_a(num_entities=60, num_triples=90, num_relations=3)
-        c = _make_block_c(num_classes=2)
-        schema = sample_schema(a, c, seed=7)
-        schema = schema.__class__(**{**schema.__dict__, "path_hi_target": 5})
-        g = instantiate(schema, seed=8)
-        diam = self._entity_graph(g).diameter(directed=False, unconn=True)
-        self.assertLessEqual(diam, schema.path_hi_target + 2)
-
-    def test_no_steer_when_targets_absent(self):
-        # Default schema has NaN mean + 0 hi — instantiate must succeed without error.
-        a = _make_block_a(num_entities=60, num_triples=90, num_relations=3)
-        c = _make_block_c(num_classes=2)
-        schema = sample_schema(a, c, seed=0)
-        g = instantiate(schema, seed=1)
-        self.assertGreater(g.vcount(), 0)
-
-
 if __name__ == "__main__":
     unittest.main()

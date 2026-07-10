@@ -1,11 +1,22 @@
 # Path-length steering — problem analysis and open options
 
+> **Historical note.** The Stage-2 implementation described below
+> (`_steer_path_lengths`, `PATH_STEERING_ENABLED`, and the `Schema.path_mean_target` /
+> `path_hi_target` fields) has been **removed** from the code. It was one-sided — shortcut
+> injection can only shorten paths — and had been disabled behind its flag. Block F's path
+> statistics are now measured but not targeted; see
+> [generator.md § Path-length steering](../generator.md#path-length-steering--removed).
+> This document is retained for its root-cause analysis and for
+> § "Option B — Stage 3 SA loss term", which remains the way forward if path-length targeting
+> is ever revisited. Sections "Current implementation" and "File map" describe code that no
+> longer exists.
+
 Block F stores three path-length statistics: `shortest_path_max` (diameter),
 `shortest_path_mean`, and `shortest_path_var` (variance).  The generator
-consumes `max` as the diameter cap target and `mean` as the mean path-length
+consumed `max` as the diameter cap target and `mean` as the mean path-length
 target; `var` is validation-only.
 
-These are currently the hardest Block F targets to hit.
+These were the hardest Block F targets to hit.
 
 ---
 

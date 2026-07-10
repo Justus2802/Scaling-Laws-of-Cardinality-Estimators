@@ -49,8 +49,10 @@ from one integer: Stage 1 `seed`, Stage 2 `seed+1`, Stage 3 `seed+2`.
 | E | motif counts | Stage-3 targets (triangles, 4-cycle, diamond, k4, tailed) |
 | F | `degree_assortativity` | Stage-3 target |
 | F | `num_components`, `largest_component_fraction` | Stage-2 connectivity target (nc, LCC fraction) |
-| F | `shortest_path_max` | Stage-2 diameter cap (`path_hi_target = int(max)`) |
-| F | `shortest_path_mean` | Stage-2 mean path-length target (passed through directly) |
+
+Block F's `shortest_path_mean` / `shortest_path_max` are measured but **not** targeted — the
+Stage-2 path-length steering that consumed them was removed (see
+[§ Path-length steering](#path-length-steering)).
 
 **Validation-only (measured, deliberately *not* used constructively):** C `subj/obj_cooc_density`,
 `subj/obj_row_entropy_q`, `per_type_entropy_exp`; D `two_step_fit`; F
@@ -79,10 +81,7 @@ needs. All randomness from one seeded `np.random.Generator`.
    `cs_template_vmax = cs_freq_fit.v_max` (reuse-draw truncation — the fitted α covers the
    full bounded range, so unbounded draws would over-skew); `cs_size_q` passed through; the
    CS-size quantile-function mean (trapezoid integral) gates whether template mode is enabled.
-6. **Path-length targets (Block F).** Read `path_mean_target = f.shortest_path_mean`
-   (NaN when Block F absent or paths not sampled) and `path_hi_target = int(f.shortest_path_max)`
-   (0 when absent or NaN). Both are stored in `Schema` and consumed by Stage 2 step 7b.
-7. **Co-occurrence group prototypes (Block C).** When `subj_cooc_exp` / `obj_cooc_exp` have a
+6. **Co-occurrence group prototypes (Block C).** When `subj_cooc_exp` / `obj_cooc_exp` have a
    usable fit, reconstruct `COOC_NUM_GROUPS = 10` singular values and call
    `_sample_type_relation_probs` to build one `(k, R)` group-prototype matrix per side, plus a
    normalized weight vector from the singular values. Stage 2 draws entity CSes from these
@@ -215,20 +214,6 @@ where most of the fidelity fixes live.
    (+1e-3 smoothing so saturated pools still accept soft overflow) — edge conservation always
    wins. Subject/object pools are filtered to non-satellite nodes first; a relation left with an
    empty pool on either side is skipped for that attempt.
-7b. **Path-length steering** (`_steer_path_lengths`) — gated by the module constant
-    `PATH_STEERING_ENABLED` (currently `False`; logs a warning and no-ops when disabled but a
-    Block F path target is set) and otherwise runs only when `path_mean_target` or
-    `path_hi_target` are set. Because it can only *add* shortcut edges, it can only shorten paths,
-    never lengthen them — hence disabled for now. Builds a temporary undirected igraph entity graph (igraph C backend)
-    and runs up to 4 rounds of estimate → inject shortcuts, with all BFS-source and
-    shortcut-endpoint sampling restricted to non-satellite nodes:
-    - *Diameter (hi):* find farthest-pair from a random BFS; add
-      `⌈(diam − hi_target)/2⌉` shortcuts, each source→its-farthest-node, until `diam ≤ hi_target`.
-    - *Mean:* sample 50 BFS sources; if `mean > mean_target + 0.5`, inject
-      `max(1, round(√V_ns · (mean − mean_target) / mean))` shortcuts (`V_ns` = non-satellite
-      count) between nodes sampled ∝ degree.
-    Each shortcut is added to both the igraph object and `content_edges`; `in_degrees` and `seen`
-    are updated. See [§ Path-length steering](#path-length-steering) for design rationale.
 8. **`rdf:type` edges** for typed entities; assemble the `igraph.Graph` with the `kg_io.load_kg`
    attribute contract (so `compute_reduced_signature` can read it back).
 
@@ -480,55 +465,32 @@ directly controlled).
 
 ---
 
-## Path-length steering
+## Path-length steering — removed
 
-### Why mean, not loc/scale/shape
+Stage 2 once injected hub shortcuts to pull mean shortest-path length and diameter toward the
+Block F targets (`_steer_path_lengths`, gated behind `PATH_STEERING_ENABLED`). **It has been
+removed.** The mechanism was *one-sided*: shortcuts can only ever shorten paths, never lengthen
+them, so a graph whose paths were already too short had no correction available. It had been
+disabled behind the flag for some time, and the test asserting its diameter cap failed with the
+flag off.
 
-`shortest_path_skew` stores a skew-normal fit with five parameters. The full shape
-(loc/scale/shape) is emergent — it is determined by density (Block A) and degree structure
-(Block B). Trying to steer all five parameters independently would require expensive BFS-in-the-
-wiring-loop feedback and would conflict with the degree/CS targets already set.
+Consequence: **Block F's `shortest_path_mean` and `shortest_path_max` are measured but no longer
+targeted.** They remain in the signature and are reported by the roundtrip comparison as
+validation-only quantities, alongside the skew-normal `loc`/`scale`/`shape`, which were always
+emergent — determined by density (Block A) and degree structure (Block B) rather than steered
+directly.
 
-Instead, the generator targets only two derived scalars:
-- **`path_hi_target`** (`int(skew.hi)`) — the observed maximum path length (diameter cap).
-  Controllable directly via shortcuts.
-- **`path_mean_target`** (`_skewnorm_mean(skew)`) — the mean of the untruncated skew-normal.
-  Partially controllable by adding hub-to-hub shortcuts that compress long paths.
-
-`loc`, `scale`, and `shape` emerge from density + degree structure and are validated in the
-roundtrip report but not explicitly steered.
-
-### Mechanism
-
-`_steer_path_lengths` runs after `_connect_components` (step 7b) so BFS distances are
-well-defined on the connected entity subgraph. It builds a **temporary undirected igraph object**
-from `content_edges` so igraph's C-backend `diameter()` and `distances()` can be used without
-switching to the final graph representation early.
-
-Each round:
-1. Estimate current diameter (`ig.diameter()`) and mean (sampled BFS from 50 random sources).
-2. If `diameter > hi_target`: add `⌈(diam − hi_target)/2⌉` shortcuts; each connects a random
-   source to its farthest reachable node (different source each time → parallel coverage).
-3. If `mean > mean_target + 0.5`: add `max(1, round(√V · (mean − mean_target) / mean))`
-   shortcuts between nodes sampled with probability ∝ degree. Hub-to-hub links act as
-   long-range relays that globally compress path lengths.
-4. Shortcuts are added to both the igraph object and `content_edges`; the next round
-   re-estimates on the updated graph without rebuilding.
-
-### Limitations
-
-- **One-sided:** shortcuts can only reduce mean/diameter, not increase them. If the synthetic
-  graph has shorter paths than the target (unusual — typical issue is too-long paths), no
-  correction is possible without removing edges.
-- **Heuristic count for mean:** `√V · relative_overshoot` is not derived analytically; it is
-  a coarse estimate. Multiple rounds (up to 4) course-correct.
-- **loc/scale/shape remain unsteered:** only mean and hi are targeted. The skew of the
-  path-length distribution (shape parameter) is emergent and will track the degree structure.
+The prior analysis, including the structural-undershoot root cause and the proposal to move
+steering into Stage 3's annealing loop, is kept for reference in
+[notes/path_length_steering.md](notes/path_length_steering.md).
 
 ---
 
 ## Known limitations / open items
 
+- **Block F path lengths are unsteered.** `shortest_path_mean` / `shortest_path_max` are
+  measured and reported but no target drives them, since the one-sided Stage-2 shortcut
+  injection was removed (see [§ Path-length steering](#path-length-steering--removed)).
 - **Co-occurrence density and row-entropy not analytically pinned.** These emerge from
   group prototype concentration and CS size but have no independent control knob. Remaining
   deviations require either softmax temperature tuning per group or Stage-3 obj-side steering.
