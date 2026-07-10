@@ -9,7 +9,9 @@ signature. For the concrete module/feature reference jump to
 basis: [notes/signature_observations.md](notes/signature_observations.md) (referred to
 below as "the notes"). For which features scale with graph size vs. which are size-free
 (the Stage-1 conditioning split), see
-[notes/signature_size_dependence.md](notes/signature_size_dependence.md).
+[notes/signature_size_dependence.md](notes/signature_size_dependence.md). For where this
+implementation intentionally departs from the proposal, see
+[Deviations from the proposal](#deviations-from-the-proposal).
 
 ## Implemented module
 
@@ -37,13 +39,13 @@ block's plot now shows all of its distribution fits, not just a subset:
 | Block | Vec | Stored representation (rationale in the sections below) |
 |---|---|---|
 | **A** — G0 | 3 | `num_entities`, `num_relations`, **mean degree** `E/V` |
-| **B** — G1/G2/G2b | 26 | out/in-degree power-law (target); relation-usage **Zipf**; obj/subj multiplicity-α **quantile function** (7 levels, cutoffs [1.4,3.0]); CS-size offsets `a_obj`, `a_subj`; high-end degree targets `out/in_degree_max`, `out/in_degree_p90` (explicit hub-steering targets for Stage 2) |
-| **C** — G3 | 27 | class-size **power-law**; subj/obj co-occurrence **exp-decay** + density; row entropy **quantile function** (7 levels); `P(r\|t)` spectrum **exp-decay**; per-type entropy **exp-decay** |
+| **B** — G1/G2/G2b | 33 | out/in-degree power-law (target); relation-usage **Zipf**; obj/subj multiplicity-α **quantile function** (7 levels, cutoffs [1.4,3.0]); CS-size offsets `a_obj`, `a_subj`; high-end degree targets `out/in_degree_max`, `out/in_degree_p90` (explicit hub-steering targets for Stage 2); per-relation **reciprocity** (`recip_symmetric_frac_bin0..5` over 6 frequency bins + `recip_symmetric_value`) |
+| **C** — G3 | 29 | class-size **power-law**; subj/obj co-occurrence **exp-decay** + density; `edge_multiplicity` + `bidirectional_ratio` (pair-overlap / two-way scalars); row entropy **quantile function** (7 levels); `P(r\|t)` spectrum **exp-decay**; per-type entropy **exp-decay** |
 | **D** — G3 | 25 | `num_distinct_cs`; CS-freq **truncated power-law** (α, v_min, v_max); CS-size **quantile function** (7 levels); symmetric inverse side (`inv_num_distinct_cs`, inverse-CS-freq **truncated power-law**, inverse-CS-size **quantile function**); two-step path-count **truncated power-law** |
 | **E** — G5 | 27 | raw motif counts (triangle, 4-/5-/6-cycle, diamond, k4, tailed triangle); path-template **Zipf** + entropy (k=2..10); tree-template Zipf + entropy. Induced `star_count_k*` were removed — no longer measured or vectorised (the `count_stars` helper is kept, unused) |
-| **F** — G4 | 9 | components, LCC fraction, avg-local clustering, assortativity; shortest-path **skew-normal** |
+| **F** — G4 | 7 | components, LCC fraction, avg-local clustering, assortativity; shortest-path **max/mean/var** summary (`shortest_path_max` = diameter, `shortest_path_mean`, `shortest_path_var`) |
 
-Total **117** features (A3 + B26 + C27 + D25 + E27 + F9).
+Total **124** features (A3 + B33 + C29 + D25 + E27 + F7).
 The fits are stored as NamedTuples that restore as plain tuples through the JSON
 round-trip, so each block property re-wraps them to preserve attribute access.
 
@@ -65,8 +67,9 @@ investigation), and the per-group justification (G0–G6).
 ## Goal
 
 A **complete** signature — enough to instantiate a KG in Stage 2 — that is also
-**non-over-determined**: no entry is an exact function of the others. The current
-133-feature measurement signature is over-determined in two ways this proposal fixes:
+**non-over-determined**: no entry is an exact function of the others. The original
+133-feature measurement signature (the over-determined predecessor this reduction replaces)
+was over-determined in two ways this proposal fixes:
 
 1. **Algebraic redundancy** — values that are exact functions of others
    (`density = E/V²`, `relation_reuse = E/R`, …).
@@ -117,7 +120,7 @@ Each retained value carries a **why** (what it controls in generation) and a **n
 | Per-type relation entropy (rank curve) | **exponential decay** | rate, magnitude scale |
 | Co-occurrence row entropy | **quantile function** | 7 quantiles (q@0 … q@1) |
 | Two-step pair frequencies (value set) | **truncated power-law** (free α) | α, v_min, v_max |
-| Shortest-path length | **skew-normal** | loc, scale, shape |
+| Shortest-path length | **max/mean/var summary** (was skew-normal in the notes) | max (diameter), mean, var |
 | Relation-usage frequency | **Zipf / power-law** (decision) | exponent (+ scale) |
 
 **CS-frequency** is not covered by the notes, but **confirmed power-law** (consistent
@@ -141,7 +144,8 @@ reconstruction keeps the roundtrip W1 distance finite even when α ≤ 2.
   more stable to estimate (no MLE shape parameter), directly invertible for
   inverse-transform sampling, and its L1 difference is the Wasserstein-1 distance. Used
   for skewed-but-unimodal real-valued quantities (per-relation multiplicity-α spread, CS
-  size, row entropy). (Block F's shortest-path length still uses a skew-normal.)
+  size, row entropy). (Block F's shortest-path length is instead reduced to three
+  summary statistics — max/mean/var — rather than a fitted distribution.)
 - **exponential decay `(rate λ, magnitude scale A)`** — value at rank `k` ≈
   `A · exp(−λ k)`. `A` is the magnitude of the top-ranked value; `λ` is **how fast**
   values fall with rank (large λ ⇒ only the first few ranks matter; small λ ⇒ a long
@@ -510,7 +514,7 @@ Genuinely derived/dropped: nothing extra here beyond the global drop list.
 |---|---|---|---|
 | out/in-degree distribution | power-law α_out, α_in (+ x_min) | E | **Not** pinned by per-relation multiplicity marginals (compound sum needs the joint) → kept as a target. Drop only if independence is assumed. |
 | component structure | **largest-component fraction** ∈ (0,1] (+ `num_components`) | E | Global reachability; one blob vs many islands. Keep one unless both wanted as targets. |
-| shortest-path length | **skew-normal** (loc, scale, shape) per notes | E | Small-world-ness / diameter; central to query cost. Stored as the **distribution**. |
+| shortest-path length | **max/mean/var** summary (`shortest_path_max`/`_mean`/`_var`) | E | Small-world-ness / diameter; central to query cost. Stored as three summary statistics (the notes' skew-normal fit was dropped as unstable to estimate). |
 | average-local clustering | `transitivity_avglocal_undirected` ∈ [0,1] | E | Local triadic closure. **Must be average-*local*** — global transitivity `3T/ΣC(deg,2)` would be redundant with triangles + degree. |
 | degree assortativity | scalar ∈ [−1,1] | E | Whether hubs attach to hubs; shapes navigation and motifs. |
 
@@ -553,6 +557,21 @@ drafts wrongly dropped.
 | raw singular **values** | replaced by exponential-decay parameters (per notes); the spectrum is kept, just reparameterised |
 
 ---
+
+## Deviations from the proposal
+
+Where this implementation intentionally departs from `scaling_laws_student_project.pdf`.
+Each is a deliberate scope or design decision, not an omission; the inline note at the
+corresponding block/function repeats the short version.
+
+| Proposal asks | What we do | Why |
+|---|---|---|
+| Block A stores `density`, `triples_per_entity`, `relation_reuse` | **Dropped.** Block A keeps only `num_entities`, `num_relations`, and **mean degree** `E/V` (= the old `triples_per_entity`). | All three are exact algebraic functions of `V`, mean degree, and `R` (`density = E/V²`, `relation_reuse = E/R`) — tier-1 derivable, so storing them would over-determine the signature. See [Derivability criterion](#derivability-criterion--what-may-actually-be-dropped). |
+| Block E induced **star counts** (`star_count_k2..k10`) | **Dropped** — no longer measured or vectorised (the `count_stars` helper is kept, unused, for tests / `scripts/cc_variance.py`). | The characteristic-set distribution (Block D) already pins per-subject fan-out, so induced stars are redundant with it. |
+| Per-feature **standard errors** on every signature value (§3.3 step 2) | **Not stored** on the signature. | Estimator variance is characterised once, offline, in `scripts/cc_variance.py` / `scripts/estimator_variance.py` (the sampled Block E motif estimators) and reported in the writeup, rather than carried per-feature on every measurement. |
+| `Generator.sample(num_triples=…)` — instantiate at an arbitrary target size (§3.4) | **Not implemented.** Size is pinned by Block A: `num_triples = round(V × mean_degree)` ([stage1.py](../src/kgsynth/generator/stage1.py)). | Honouring an arbitrary `num_triples` needs a rescaling law for the *extensive* features (raw motif counts, `\|R\|`, `\|T\|`, `num_distinct_cs`, `num_components` — see [notes/signature_size_dependence.md](notes/signature_size_dependence.md)); that is the conditional-on-size model in [plan/stage1_population_sampler.md](plan/stage1_population_sampler.md), blocked on data and needed only by Phase 2. |
+| Phase 2 — the scaling-law study (query generation, QLever labelling, FICE grid, `Qerror(N)` fitting) | **Out of scope.** | This submission is Phase 1 (the `kgsynth` package). Phase 2 is documented as future work. |
+| Block F path-length steering | **Removed** — `shortest_path_max`/`_mean`/`_var` are measured but no target drives them. | The Stage-2 shortcut injection was one-sided (could only shorten paths); see [generator.md § Path-length steering](generator.md#path-length-steering--removed) and [notes/path_length_steering.md](notes/path_length_steering.md). |
 
 ## Decisions — resolved
 

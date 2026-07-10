@@ -151,14 +151,20 @@ def save_kg(graph: igraph.Graph, path: str | Path, fmt: str = "turtle") -> None:
     Because the output format cannot be inferred from content that does not yet
     exist, it is given explicitly via ``fmt`` rather than the path's extension.
 
-    Args:
-        graph: Graph with vertex attribute 'name' and edge attribute
-            'predicate' as set by load_kg.
-        path: Destination file path (its extension is not interpreted).
-        fmt: Output serialization — 'turtle'/'ttl' or 'nt'/'n-triples'.
+    Parameters
+    ----------
+    graph : igraph.Graph
+        Graph with vertex attribute 'name' and edge attribute 'predicate' as
+        set by load_kg.
+    path : str or Path
+        Destination file path (its extension is not interpreted).
+    fmt : str
+        Output serialization — 'turtle'/'ttl' or 'nt'/'n-triples'.
 
-    Raises:
-        ValueError: if ``fmt`` is not a supported serialization.
+    Raises
+    ------
+    ValueError
+        If ``fmt`` is not a supported serialization.
     """
     path = Path(path)
     rdf_fmt = _FORMAT_ALIASES.get(fmt.lower())

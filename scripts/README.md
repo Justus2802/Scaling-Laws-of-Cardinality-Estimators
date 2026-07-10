@@ -79,6 +79,15 @@ python scripts/sweep_collect.py fb237_v4_ind --budgets 500 2000 5000 --intervals
 python scripts/sweep_collect.py fb237_v4_ind --append
 ```
 
+### `sweep_adaptive_weight_scale.py`
+Sweeps Stage 3's `ADAPTIVE_WEIGHT_SCALE` and reports the value that minimises the accumulated **unweighted** error across all steered motifs/metrics after a fixed rewire budget. Stages 1–2 are run once to build a fixed pre-Stage-3 graph; each candidate scale then runs Stage 3 (`adaptive_weights=True`) from a fresh copy of that graph, so only the loss-weighting scheme differs. Comparison metric is `stage3_best_unweighted_error_sum` (independent of the scale itself, so runs are directly comparable). Output CSV via `--out`.
+
+```
+python scripts/sweep_adaptive_weight_scale.py wn18rr_v4
+python scripts/sweep_adaptive_weight_scale.py wn18rr_v4 --scales 1 5 10 20 30 50 75 100 --rewire-budget 100000
+python scripts/sweep_adaptive_weight_scale.py wn18rr_v4 --seed 7 --out sweep.csv
+```
+
 ### `cc_variance.py`
 Collects the **exact-vs-CC counter benchmark** (accuracy + runtime) per motif size for Block E motif counts. Runs `CCMotifCounter` with N seeds over an `n_samples × n_colorings` grid, recording per seed the estimated counts **and the wall-clock time of each family call** (`runtime_triangle_s`, `runtime_motif4_s`, `runtime_motif5_s`, `runtime_motif6_s`, `runtime_stars_s`). The exact ground-truth counts and per-family exact runtimes are computed once via `ExactMotifCounter` and stored in the `_meta.json` sidecar. Covers triangle (k=3), 4-node motifs (k=4), 5-cycle (k=5), 6-cycle (k=6, exact via the ESCAPE enumerator), and stars k=2..10. Output goes to `experiments/cc_variance_sweeps/`. The exact-baseline phase logs per-family progress (`[1/4] triangle … [4/4] stars`). Two degree guards keep that phase tractable on hub graphs and leave the affected ground-truth values `None` (CC estimates are still swept): `--exact-max-degree` (default 100) gates exact c5/c6 ESCAPE enumeration, and a fixed degree-50 guard (`_STAR_EXACT_MAX_DEGREE`, matching the counter's `_HUB_THRESH`) skips exact stars when any hub would trigger the intractable `C(d,k)` subset enumeration.
 
@@ -146,6 +155,37 @@ python scripts/convergence_plot.py experiments/conv_a.csv --features tri_err cc_
 python scripts/convergence_plot.py experiments/conv_a.csv --list-features
 ```
 
+### `convergence_plot_grid.py`
+Like `convergence_plot.py`, but always renders a fixed 2×2 grid of the same four `*_err` columns (triangle, diamond, c6, paw) instead of an arbitrary `--features` list — a fixed side-by-side view for comparing runs (e.g. fixed-weight vs. adaptive-weight) without re-specifying `--features`. Same convergence-CSV input.
+
+```
+python scripts/convergence_plot_grid.py experiments/conv_a.csv
+python scripts/convergence_plot_grid.py experiments/conv_a.csv experiments/conv_b.csv --out experiments/convergence_grid.png
+```
+
+### `signature_error_boxplot.py`
+Per-block error boxplot for one graph's roundtrip: reconstructs each block's distribution and reports **Wasserstein-1** distance for distributional features and plain relative error for standalone scalars, on one comparable scale — showing *which* blocks carry the roundtrip error (the per-block companion to `signature_roundtrip.py`'s scalar + W1 tables). A couple of extreme outliers (`b:a_obj`, `d:cs_freq` W1) are excluded by default; `--exclude` disables the exclusion.
+
+```
+python scripts/signature_error_boxplot.py wn18rr_v4
+python scripts/signature_error_boxplot.py wn18rr_v4 --synth-dir signature_synth_20260706_184120
+python scripts/signature_error_boxplot.py wn18rr_v4 --out data/graph_population/error_boxplot.png
+```
+
+### `plot_out_degree_standalone.py`
+Renders a standalone out-degree distribution panel from a measured `block_b.json`, reusing `BlockB._plot_degree_hist` as a single-axes figure with poster-matched colours. Useful for pulling one publication-ready degree plot out of the full block_b diagnostic grid.
+
+```
+python scripts/plot_out_degree_standalone.py data/test_graphs/wn18rr_v4/signature/block_b.json --out out_degree_dist.png
+```
+
+### `viz_sampling_approaches.py`
+Conceptual (non-data) illustration contrasting two signature-sampling strategies over a toy signature space: **Signature Sampling** (one fitted joint density, which smears mass into empty gaps under p ≫ n) vs. **Signature Varying** (a Gaussian bump anchored on each measured signature, keeping every draw near a real graph). Datapoints are illustrative, not measured graphs.
+
+```
+python scripts/viz_sampling_approaches.py
+```
+
 ### `sweep_viz.py`
 Visualises per-feature relative-error distributions from a sweep JSONL file produced by `sweep_collect.py`. Supports box and violin plots; can list available features. With no `--features`, all non-NaN features are plotted. A final `mean |rel err|` panel aggregates the shown features — per (config, seed) it averages the absolute relative error across all shown features, then box-plots those per-seed means across seeds in the same style — giving one overall error level per config (also printed in the console mean ± std table).
 
@@ -194,4 +234,24 @@ Runs one `signature_roundtrip.py`-style generation, but snapshots the graph righ
 ```
 python scripts/signature_pca_trajectory.py wn18rr_v4
 python scripts/signature_pca_trajectory.py wn18rr_v4 --num-checkpoints 5 --rewire-budget 20000
+```
+
+## Maintenance / one-off
+
+### `rerender_signatures.py`
+Re-renders the `block_<x>.png` plots for every `block_<x>.json` already collected under `data/` (loads each via `from_serializable` and re-writes the plot). Use after changing `visualize()` or a plot helper, to refresh figures **without** re-running the (slow) measurements. `--blocks` restricts to specific blocks, `--fmt` picks the image format, `--dry-run` lists without writing.
+
+```
+python scripts/rerender_signatures.py                  # all blocks
+python scripts/rerender_signatures.py --blocks b c d
+python scripts/rerender_signatures.py --fmt pdf --dry-run
+```
+
+### `patch_block_b_degree_stats.py`
+**One-off migration.** Backfills the Block B degree-stat fields (`out_degree_max`, `out_degree_p90`, `in_degree_max`, `in_degree_p90`) into every `block_b.json` / `signature.json` under the given roots, computing them from the `_out_degrees` / `_in_degrees` arrays already stored in each `block_b.json`. Superseded by any full corpus re-measurement (which emits these fields directly); retained only for patching a pre-existing corpus in place. `--dry-run` lists targets without writing.
+
+```
+python scripts/patch_block_b_degree_stats.py
+python scripts/patch_block_b_degree_stats.py --roots data/graphs data/test_graphs
+python scripts/patch_block_b_degree_stats.py --dry-run
 ```

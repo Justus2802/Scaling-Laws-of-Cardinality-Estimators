@@ -15,10 +15,11 @@ This module provides the sampler **class hierarchy**:
   independently from a uniform distribution over its observed corpus range,
   widened by ±10 % of that range.
 
-Output is the **88-value feature dict** (the same shape as a measured
-``signature.json``'s ``"features"`` block), so sampled signatures are drop-in
-compatible with the existing readers. Reconstruction into a
-``ReducedGraphSignature`` object is intentionally not done here.
+Output is the **97-value feature dict** (the A/B/C/D/F subset of a measured
+``signature.json``'s ``"features"`` block — Block E motifs are excluded, see the
+scope note below), so sampled signatures are drop-in compatible with the existing
+readers for those blocks. Reconstruction into a ``ReducedGraphSignature`` object
+is intentionally not done here.
 
 Scope note — **motifs / Block E (G5) are out of scope**, exactly as in the
 reduced signature itself (the sampler cannot be more complete than its target
@@ -43,7 +44,8 @@ from .signature import BlockA, BlockB, BlockC, BlockD, BlockF
 _ROOT = Path(__file__).resolve().parents[1]
 _DEFAULT_CORPUS = _ROOT / "data" / "graphs"
 
-# Canonical 88-key order, in the same order as ``ReducedGraphSignature.as_dict()``.
+# Canonical 97-key order (A/B/C/D/F; Block E excluded), in the same order as
+# ``ReducedGraphSignature.as_dict()``.
 # Derived from the block classes so it never drifts from the measured schema.
 _BLOCKS = [BlockA, BlockB, BlockC, BlockD, BlockF]
 FEATURE_ORDER: list[str] = [name for blk in _BLOCKS for name in blk.feature_names()]
@@ -111,10 +113,14 @@ class SignatureSampler(ABC):
     def load_corpus(cls, root: str | Path = _DEFAULT_CORPUS) -> "SignatureSampler":
         """Build a sampler from ``<root>/<name>/signature/signature.json`` files.
 
-        Args:
-            root: corpus directory (default ``data/graphs/``).
+        Parameters
+        ----------
+        root : str or Path
+            Corpus directory (default ``data/graphs/``).
 
-        Returns:
+        Returns
+        -------
+        SignatureSampler
             An instance of *cls* holding the loaded corpus.
         """
         root = Path(root)
@@ -139,12 +145,16 @@ class SignatureSampler(ABC):
         """Draw a raw value for *feature* (before shared post-processing)."""
 
     def sample(self, seed: int | None = None) -> dict[str, float]:
-        """Sample a full reduced signature as an 88-key feature dict.
+        """Sample a full reduced signature as a 97-key feature dict.
 
-        Args:
-            seed: RNG seed for reproducibility.
+        Parameters
+        ----------
+        seed : int or None
+            RNG seed for reproducibility.
 
-        Returns:
+        Returns
+        -------
+        dict[str, float]
             ``{feature_name: value}`` in :data:`FEATURE_ORDER` order.
         """
         rng = np.random.default_rng(seed)

@@ -24,7 +24,7 @@ by `docs/generator.md`.
 ## 2. The Signature Concept
 
 - What a "signature" is in this project's domain language: a compact, **non-redundant**
-  numerical fingerprint of a KG (117 features) — not a full copy of the graph, not a
+  numerical fingerprint of a KG (124 features) — not a full copy of the graph, not a
   naive dump of every possible statistic.
 - Why not "just record every statistic": KG statistics are highly inter-dependent (e.g.
   degree = sum of per-relation multiplicities), so a naive feature set is
@@ -44,7 +44,8 @@ by `docs/generator.md`.
   store raw moments (mean/std/median) but the **parameters of a distribution family**
   chosen per-quantity from empirical observation (`docs/notes/signature_observations.md`):
   quantile functions, power-laws, Zipf, exponential-decay rank curves, truncated
-  power-laws, skew-normal. Explain *why* (regenerates the shape; moments don't) and give
+  power-laws, and a few plain summary scalars (Block F shortest-path max/mean/var).
+  Explain *why* (regenerates the shape; moments don't) and give
   the reading-guide for each family (what a large vs. small exponent/rate means).
 
 ## 3. Signature Calculation — the `src/kgsynth/signature/` Module
@@ -55,23 +56,25 @@ by `docs/generator.md`.
   sentinel guarding uncomputed access, and a serialization round-trip
   (`to_serializable`/`from_serializable`) preserving numpy arrays and fit tuples through
   JSON. Reference: `docs/block-refactoring-guide.md`.
-- Table of blocks, what each measures, and vector length (117 total) — pull directly from
+- Table of blocks, what each measures, and vector length (124 total) — pull directly from
   `docs/signature.md`'s block table:
   - **A** (G0, 3 features) — size & vocabulary root parameters: `num_entities`,
     `num_relations`, mean degree `E/V`.
-  - **B** (G1/G2/G2b, 26 features) — relation-usage Zipf skew; per-relation
+  - **B** (G1/G2/G2b, 33 features) — relation-usage Zipf skew; per-relation
     object/subject multiplicity tail shape as **quantile functions**; CS-size↔multiplicity
-    offsets (`a_obj`, `a_subj`); degree-tail steering targets (`out/in_degree_max/p90`).
-  - **C** (G3, 27 features) — schema/type structure: class-size power-law; subject/object
-    relation co-occurrence spectra (exp-decay) + density; row-entropy quantile functions;
-    `P(r|t)` spectrum; per-type entropy.
+    offsets (`a_obj`, `a_subj`); degree-tail steering targets (`out/in_degree_max/p90`);
+    per-relation reciprocity (6 frequency-binned fractions + a symmetric-mode value).
+  - **C** (G3, 29 features) — schema/type structure: class-size power-law; subject/object
+    relation co-occurrence spectra (exp-decay) + density; edge-multiplicity and
+    bidirectional-ratio scalars; row-entropy quantile functions; `P(r|t)` spectrum;
+    per-type entropy.
   - **D** (G3, 25 features) — characteristic-set (CS) structure: `num_distinct_cs` +
     CS-frequency (truncated power-law) + CS-size (quantile function), mirrored for the
     inverse (object) side; two-step path-count truncated power-law.
   - **E** (G5, 27 features) — motif counts (triangle, 4-/5-/6-cycle, diamond, K4, tailed
     triangle), path-template Zipf+entropy (k=2..10), tree-template Zipf+entropy.
-  - **F** (G4, 9 features) — connectivity: component count, LCC fraction, average local
-    clustering, degree assortativity, shortest-path skew-normal fit.
+  - **F** (G4, 7 features) — connectivity: component count, LCC fraction, average local
+    clustering, degree assortativity, shortest-path max/mean/var summary.
 - The compute entry point: `compute_reduced_signature(path, blocks=...)`
   (`src/kgsynth/signature/__init__.py`) loads a `.ttl`/`.nt` file via `kg_io.load_kg`, runs the
   selected blocks, returns a `ReducedGraphSignature` dataclass; NaN-fills any block not
@@ -98,7 +101,7 @@ by `docs/generator.md`.
   trustworthy as this counting layer.
 - Design rationale deep-dives worth citing/summarizing (not full detail, but the headline
   findings): `docs/notes/assumptions.md` (per-block measurement choices, e.g. literal
-  exclusion), `docs/notes/signature_size_dependence.md` (which of the 117 features scale
+  exclusion), `docs/notes/signature_size_dependence.md` (which of the 124 features scale
   with graph size vs. are size-free — relevant to any cross-graph comparison).
 
 ## 4. The Generation Pipeline (architecture only, not algorithm internals)
@@ -174,7 +177,7 @@ by `docs/generator.md`.
 
 ### 5.4 Population-level / PCA comparison
 
-- The problem PCA analysis addresses: a single signature vector (117 numbers) has no
+- The problem PCA analysis addresses: a single signature vector (124 numbers) has no
   meaningful "shape" in isolation — comparing target vs. synthetic only makes sense
   relative to the spread of real KGs (`scripts/plot_signature_pca.py` docstring).
 - `scripts/plot_signature_pca.py`: fits a 2D PCA basis on the **corpus** of real measured

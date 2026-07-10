@@ -40,7 +40,7 @@ You can't directly ask "is this synthetic graph realistic?" without first decidi
 **signature**:
 
 ```
-   real KG  --[measure]-->  signature (117 numbers)  --[generate]-->  synthetic KG
+   real KG  --[measure]-->  signature (124 numbers)  --[generate]-->  synthetic KG
                                     ^                                      |
                                     |                                      |
                                     +---------------[re-measure]-----------+
@@ -71,7 +71,7 @@ in others two statistics that *look* related are actually not exactly derivable 
 other and both need to be kept. Working out which of ~130 candidate KG statistics are
 algebraically/statistically redundant, and which must be kept as independent targets, is
 the subject of **[docs/signature.md](docs/signature.md)** — the design document for the
-reduced, 117-feature signature actually implemented in `src/kgsynth/signature/`. Start there for the
+reduced, 124-feature signature actually implemented in `src/kgsynth/signature/`. Start there for the
 full reasoning (it's substantial: the *why* behind every kept and dropped feature).
 
 ## The three-stage generator

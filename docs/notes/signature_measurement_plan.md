@@ -1,5 +1,15 @@
 # Plan: measure the reduced (non-over-determined) signature
 
+> **Superseded historical build record.** This is the original build plan for the reduced
+> signature and describes an early state: a **coexisting module** (before the `_orig_block_*`
+> "full" measurements were folded in and removed), a **69-feature** vector (A3 + B18 + C23 +
+> D16 + F9, Block E deferred, multiplicity/row-entropy/CS-size as **skew-normal**). None of
+> those numbers or representations are current. The signature now has **124 features**
+> (A3 + B33 + C29 + D25 + E27 + F7), with quantile functions in place of the skew-normal fits
+> and Block F shortest-path stored as max/mean/var. For the live module reference see
+> [../signature.md](../signature.md); this file is retained only as a record of how the
+> build was originally scoped.
+
 Branch: `feat/measure-reduced-signature`. Implements
 [../signature.md](../signature.md). **Integration mode: coexisting module**
 (revised from the original in-place *replace*). The reduced signature lives in a new

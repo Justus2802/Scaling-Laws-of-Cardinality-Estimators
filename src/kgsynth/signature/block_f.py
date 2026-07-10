@@ -234,9 +234,12 @@ class BlockF(SignatureBlock):
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
         """Display or save diagnostics for reduced Block F.
 
-        Args:
-            mode: "plot" for a matplotlib figure, "text" for a CLI summary.
-            path: write to this file instead of displaying interactively.
+        Parameters
+        ----------
+        mode : str
+            "plot" for a matplotlib figure, "text" for a CLI summary.
+        path : str or None
+            Write to this file instead of displaying interactively.
         """
         if mode == "text":
             self._visualize_text(path)

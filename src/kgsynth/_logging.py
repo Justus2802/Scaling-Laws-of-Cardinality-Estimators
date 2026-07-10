@@ -32,15 +32,18 @@ _SUBPACKAGES = ("signature", "generator", "motif_counter")
 def get_logger(module_name: str) -> logging.Logger:
     """Return a child logger scoped to *module_name* under its subpackage root.
 
-    Args:
-        module_name: typically ``__name__`` of the calling module, e.g.
-            ``kgsynth.signature.block_f``.
+    Parameters
+    ----------
+    module_name : str
+        Typically ``__name__`` of the calling module, e.g.
+        ``kgsynth.signature.block_f``.
 
-    Returns:
-        A :class:`logging.Logger` whose name is truncated to start at the
-        first recognized subpackage component, e.g. ``signature.block_f``,
-        so verbosity can be configured per-subpackage regardless of the
-        ``kgsynth.`` prefix.
+    Returns
+    -------
+    logging.Logger
+        A logger whose name is truncated to start at the first recognized
+        subpackage component, e.g. ``signature.block_f``, so verbosity can be
+        configured per-subpackage regardless of the ``kgsynth.`` prefix.
     """
     parts = module_name.split(".")
     for pkg in _SUBPACKAGES:

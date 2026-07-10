@@ -1,6 +1,6 @@
 # Size dependence of the reduced signature features
 
-Which of the 99 reduced-signature features (`src/kgsynth/signature/`, blocks A/B/C/D/E/F)
+Which of the 124 reduced-signature features (`src/kgsynth/signature/`, blocks A/B/C/D/E/F)
 **scale with graph size** and which are **size-free**. This is the distinction the
 Stage-1 *conditional-on-size* model needs: extensive features must be conditioned on `V`;
 intensive ones form the size-free shape. See [signature.md](../signature.md) for the
@@ -37,11 +37,11 @@ Count thresholds and lengths that *drift upward* with size but do not scale line
 | `relation_zipf_xmin` | B | threshold over per-relation edge counts (∝ E) |
 | `class_size_xmin` | C | threshold over entities-per-class (∝ V) |
 | `cs_freq_vmax`, `inv_cs_freq_vmax` | D | max CS recurrence count (∝ V); `v_min` sits at the observed minimum (usually 1) |
-| `shortest_path_loc` (and `lo`/`hi`) | F | grows ~`log V` (small-world); `shape` stays size-free |
+| `shortest_path_mean`, `shortest_path_max` | F | grow ~`log V` (small-world); `shortest_path_var` stays roughly size-free |
 
 ## Size-independent (intensive — shape / exponent / ratio / vocab-bounded)
 
-The remaining ~74 features:
+The remaining features (the large majority):
 
 - **`mean_degree`** (A) — `E/V`, the deliberately size-stable edge handle.
 - **All exponents** — `out_degree_alpha`, `in_degree_alpha`, `relation_zipf_exponent`,
@@ -55,15 +55,16 @@ The remaining ~74 features:
 - **`subj_cooc_scale`, `obj_cooc_scale`** — V-normalised (`M/V`, implemented; see below), so
   the magnitude is the empirical joint `P(i,j)` and no longer scales with V.
 - **`subj_cooc_density`, `obj_cooc_density`** — nnz fractions ∈ (0,1].
-- **All skew-normal `(loc, scale, shape, lo, hi)`** for: object/subject multiplicity-α
-  (distributions over *exponents*; `lo`/`hi` are the fixed [1.4, 3.0] cutoffs), row
+- **All quantile-function levels `(q00 … q100)`** for: object/subject multiplicity-α
+  (distributions over *exponents*; `q00`/`q100` are the fixed [1.4, 3.0] cutoffs), row
   entropy (bounded by `ln R`), CS size and inverse-CS size (bounded by `R`).
 - **`a_obj`, `a_subj`** (B) — log-log OLS slopes.
 - **Block E template entropies** — `path_template_entropy_k2..k10`, `tree_template_entropy`:
   Shannon entropy of the label-sequence distribution, bounded by `≈ k·ln R` (vocabulary),
   not by `V` — it saturates as templates fill in, like the row / per-type entropies.
 - **`largest_component_fraction`, `clustering_coefficient`, `degree_assortativity`,
-  `shortest_path_shape`** (F) — bounded ratios / correlations.
+  `shortest_path_var`** (F) — bounded ratios / correlations (path-length variance stays
+  roughly size-stable while the mean/max drift ~`log V`).
 
 ## Features worth pinning down
 
@@ -89,8 +90,8 @@ expected count under a degree-preserving null), mirroring the `M/V` fix for the 
 
 `fit_truncated_powerlaw` (`_fits.py`) pins `v_min = arr.min()`, `v_max = arr.max()` and
 passes them as the `xmin`/`xmax` of `powerlaw.Fit`. So they are the **observed value range
-(truncation bounds)** of the two-step path-count set — the same kind of object as the
-skew-normal `lo`/`hi`, not a separate statistic. Measured values:
+(truncation bounds)** of the two-step path-count set — the same kind of object as a
+quantile function's `q00`/`q100` min/max cutoffs, not a separate statistic. Measured values:
 
 | Graph | V | R | `two_step_alpha` | `v_min` | `v_max` |
 |---|---|---|---|---|---|
@@ -210,8 +211,8 @@ existing generator path outweighs the symmetry/diagonal cost.
 
 - The reduction worked as intended: the extensive features are almost entirely the raw
   counts (`V, R, T, num_distinct_cs, inv_num_distinct_cs, num_components`, and the Block E motif counts) plus the
-  path-count cutoff (`two_step_vmax`). The `x_min` thresholds and `shortest_path_loc` are a
-  soft middle ground. Everything stored *as a distribution shape* is genuinely size-free —
+  path-count cutoff (`two_step_vmax`). The `x_min` thresholds and `shortest_path_mean`/`_max`
+  are a soft middle ground. Everything stored *as a distribution shape* is genuinely size-free —
   which is why Stage-1 can fit shape independently of `V`.
 - **Resolved:** `*_cooc_scale` was the last spectrum magnitude still V-scaled; it is now
   V-normalised (`M/V`) so `scale` is size-free with `rate` unchanged. A cleaner redefinition

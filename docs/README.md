@@ -9,7 +9,8 @@ build records) in [`notes/`](notes/).
 - **[signature.md](signature.md)** — the reduced, non-over-determined signature
   (`src/kgsynth/signature/`): the implemented module reference **and** the reasoning behind
   it (non-over-determination, the derivability criterion, the multiplicity↔degree
-  investigation, and the per-group G0–G6 justification). Start here.
+  investigation, and the per-group G0–G6 justification). Start here. Includes a
+  [Deviations from the proposal](signature.md#deviations-from-the-proposal) table.
 - **[generator.md](generator.md)** — the `kgsynth` generator (`src/kgsynth/generator/`): the three-stage
   algorithm (schema sampler → CS-first instantiation → Maslov–Sneppen refinement) step by step,
   which signature fields drive each step, the reduced-signature adapters, and the evolution/fixes
@@ -18,6 +19,12 @@ build records) in [`notes/`](notes/).
 - **[block-refactoring-guide.md](block-refactoring-guide.md)** — the `SignatureBlock` class
   pattern shared by every block (lifecycle methods, the `_NOT_CALCULATED` sentinel,
   property guards, `visualize` split, logging conventions, selective block computation).
+- **[plan/generation_implementation_plan.md](plan/generation_implementation_plan.md)**
+  *(historical plan — now implemented)* — the three-stage sampler against the reduced
+  signature, **realised** in the `src/kgsynth/generator/` package (Stage 1 schema, Stage 2
+  CS-first instantiation, Stage 3 motif refinement); see the status note atop that plan.
+  Kept as the record of how the generator was originally scoped; the live reference is
+  [generator.md](generator.md).
 
 A single `signature` package (`src/kgsynth/signature/`) provides the public Blocks A–F as the
 reduced, non-over-determined measurements. Each block is a single class in `block_<x>.py`
@@ -30,10 +37,6 @@ corpus `data/test_graphs/` (use `--graphs <name>...` to restrict to specific gra
 
 ## Plans (future)
 
-- **[plan/generation_implementation_plan.md](plan/generation_implementation_plan.md)** —
-  the three-stage sampler against the reduced signature. **Implemented** in the
-  `src/kgsynth/generator/` package (Stage 1 schema, Stage 2 CS-first instantiation, Stage 3 motif
-  refinement — all in scope now that reduced Block E exists); see the status note atop that plan.
 - **[plan/stage1_population_sampler.md](plan/stage1_population_sampler.md)** — the
   **doc-Stage-1 population sampler**: sampling a *novel* signature from the real-graph
   population (conditional-on-size). Evaluates the data-expansion proposals (more KGs, WCC
@@ -53,8 +56,9 @@ corpus `data/test_graphs/` (use `--graphs <name>...` to restrict to specific gra
   how the spec's three-stage generation algorithm maps onto the reduced signature, the
   reconciliations needed, and the best-effort gaps (future work).
 - **[notes/signature_measurement_plan.md](notes/signature_measurement_plan.md)** — the
-  build record / plan for the reduced signature (completed; realised as a coexisting
-  module). Its realised-module summary is mirrored in [signature.md](signature.md).
+  original build record / plan for the reduced signature (completed; **superseded historical
+  note** — it describes the early coexisting-module state and pre-fold-in feature counts). The
+  live module reference is [signature.md](signature.md).
 - **[notes/lod_laundromat_acquisition.md](notes/lod_laundromat_acquisition.md)** —
   evaluation of LOD-a-lot / LOD Laundromat as a doc-Stage-1 data source (plan §3b):
   splits the merged single-graph LOD-a-lot from the ~650 K-document LOD Laundromat, the

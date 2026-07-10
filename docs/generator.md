@@ -60,7 +60,7 @@ versioning a target signature independent of any single measured graph.
 
 Block F's `shortest_path_mean` / `shortest_path_max` are measured but **not** targeted — the
 Stage-2 path-length steering that consumed them was removed (see
-[§ Path-length steering](#path-length-steering)).
+[§ Path-length steering](#path-length-steering--removed)).
 
 **Validation-only (measured, deliberately *not* used constructively):** C `subj/obj_cooc_density`,
 `subj/obj_row_entropy_q`, `per_type_entropy_exp`; D `two_step_fit`; F
@@ -496,9 +496,8 @@ flag off.
 
 Consequence: **Block F's `shortest_path_mean` and `shortest_path_max` are measured but no longer
 targeted.** They remain in the signature and are reported by the roundtrip comparison as
-validation-only quantities, alongside the skew-normal `loc`/`scale`/`shape`, which were always
-emergent — determined by density (Block A) and degree structure (Block B) rather than steered
-directly.
+validation-only quantities, alongside `shortest_path_var` — all emergent, determined by density
+(Block A) and degree structure (Block B) rather than steered directly.
 
 The prior analysis, including the structural-undershoot root cause and the proposal to move
 steering into Stage 3's annealing loop, is kept for reference in

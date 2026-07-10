@@ -1,6 +1,7 @@
 # Path-length steering — problem analysis and open options
 
-> **Historical note.** The Stage-2 implementation described below
+> **Historical note — removed; see [§ Deviations](../signature.md#deviations-from-the-proposal).**
+> The Stage-2 implementation described below
 > (`_steer_path_lengths`, `PATH_STEERING_ENABLED`, and the `Schema.path_mean_target` /
 > `path_hi_target` fields) has been **removed** from the code. It was one-sided — shortcut
 > injection can only shorten paths — and had been disabled behind its flag. Block F's path
