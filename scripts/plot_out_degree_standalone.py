@@ -31,6 +31,7 @@ def main() -> None:
     parser.add_argument("--line-color", default="C1", help="Power-law fit line color (default: matplotlib tab:orange)")
     parser.add_argument("--figsize", nargs=2, type=float, default=(6, 3.2), metavar=("W", "H"),
                         help="Figure size in inches (default: 6x3.2, a flattened aspect ratio)")
+    parser.add_argument("--dpi", type=int, default=300, help="Output resolution (default: 300)")
     args = parser.parse_args()
 
     import matplotlib.pyplot as plt
@@ -45,7 +46,7 @@ def main() -> None:
     fig.tight_layout()
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(args.out, dpi=150, bbox_inches="tight")
+    fig.savefig(args.out, dpi=args.dpi, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved -> {args.out}")
 
