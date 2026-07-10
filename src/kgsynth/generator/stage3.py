@@ -24,6 +24,7 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 try:                       # POSIX-only: single-key stdin reads for manual early-exit
     import termios
@@ -213,6 +214,41 @@ class _SAState:
     path_h: float
 
 
+def _materialize_graph(
+    g: igraph.Graph,
+    content_edge_data: list[tuple[int, int, str]],
+    type_edge_data: list[tuple[int, int, str]],
+) -> igraph.Graph:
+    """Build an independent ``igraph.Graph`` snapshot from edge-tuple lists.
+
+    Shared by the final-output rebuild and checkpoint snapshots so both
+    produce structurally identical graphs (same vertex attributes, same edge
+    attribute schema) from whatever edge-tuple state is passed in.
+
+    Parameters
+    ----------
+    g : igraph.Graph
+        Original Stage-2 graph — supplies vertex count and attributes.
+    content_edge_data : list of (int, int, str)
+        Current content-edge ``(source, target, predicate)`` tuples.
+    type_edge_data : list of (int, int, str)
+        Unchanging ``rdf:type`` edge tuples.
+
+    Returns
+    -------
+    igraph.Graph
+        A new graph with ``g``'s vertex attributes and the given edges.
+    """
+    all_edges = content_edge_data + type_edge_data
+    snapshot = igraph.Graph(n=g.vcount(), directed=True)
+    for attr in g.vertex_attributes():
+        snapshot.vs[attr] = list(g.vs[attr])
+    if all_edges:
+        snapshot.add_edges([(s, o) for s, o, _ in all_edges])
+        snapshot.es["predicate"] = [p for _, _, p in all_edges]
+    return snapshot
+
+
 def refine(
     g: igraph.Graph,
     target_e: "BlockE",
@@ -227,6 +263,8 @@ def refine(
     adaptive_weights: bool = False,
     convergence_log: "Path | str | None" = None,
     swap_log: "Path | str | None" = None,
+    checkpoint_steps: "list[int] | None" = None,
+    checkpoint_callback: "Callable[[int, igraph.Graph], None] | None" = None,
 ) -> igraph.Graph:
     """Stage 3: Maslov-Sneppen rewiring + simulated annealing.
 
@@ -294,6 +332,27 @@ def refine(
         ``accepted``.  Delta cells are empty when a degree guard dropped the
         delta for that proposal.  Proposals discarded before any delta is
         computed (self-loop guard) produce no row.
+    checkpoint_steps : list of int, optional
+        Loop indices at which to materialize a graph snapshot and invoke
+        ``checkpoint_callback`` with it. ``0`` means the pre-loop graph,
+        before any swap is attempted. A step at or beyond where the loop
+        actually stopped (``budget``, or earlier on a manual escape) fires
+        with the same *best-so-far* graph this call returns — every other
+        step fires with the walk's *live current* state at that point (which
+        may be worse than the best seen, since SA accepts uphill moves).
+        Ignored if ``checkpoint_callback`` is ``None``, and never fires at all
+        if either early-return guard below is hit (too few content edges, or
+        no relation has ≥2 edges to swap) — in both cases the input graph
+        ``g`` is returned unrefined and no rewiring occurs to snapshot.
+    checkpoint_callback : callable, optional
+        ``(step: int, graph: igraph.Graph) -> None``, called once per step in
+        ``checkpoint_steps`` (in ascending order) with an ``igraph.Graph``
+        snapshot — for tracing how the graph evolves through the annealing
+        run (see ``scripts/signature_pca_trajectory.py``). Each snapshot is
+        an independent graph; mutating it does not affect the ongoing
+        rewiring, *except* that a trailing/final-step snapshot is the same
+        object this call returns (not a copy) — treat it as read-only if you
+        also use this function's return value.
 
     Returns
     -------
@@ -322,8 +381,17 @@ def refine(
         else:
             content_edge_data.append(entry)
 
+    # Steps at which to fire checkpoint_callback with a snapshot of the walk's
+    # current state; step 0 (pre-loop, before any swap) fires immediately.
+    _checkpoints = sorted(set(checkpoint_steps)) if checkpoint_callback and checkpoint_steps else []
+    if _checkpoints and _checkpoints[0] == 0:
+        checkpoint_callback(0, _materialize_graph(g, content_edge_data, type_edge_data))
+        _checkpoints = _checkpoints[1:]
+
     if len(content_edge_data) < 2:
         log.warning("Stage 3: <2 content edges — skipping refinement, returning input graph")
+        for _step in _checkpoints:
+            checkpoint_callback(_step, g)
         return g
 
     rel_to_idxs: dict[str, list[int]] = defaultdict(list)
@@ -333,6 +401,8 @@ def refine(
     swappable_rels = [r for r, lst in rel_to_idxs.items() if len(lst) >= 2]
     if not swappable_rels:
         log.warning("Stage 3: no relation has ≥2 edges to swap — skipping refinement")
+        for _step in _checkpoints:
+            checkpoint_callback(_step, g)
         return g
 
     n = g.vcount()
@@ -897,6 +967,11 @@ def refine(
             # pre-loop baseline written above.
             if CONVERGENCE_LOG_INTERVAL > 0 and step > 0 and step % CONVERGENCE_LOG_INTERVAL == 0:
                 _write_conv_row(step)
+            # _checkpoints is sorted ascending and step increases monotonically, so the
+            # next due checkpoint (if any) is always at index 0.
+            if _checkpoints and step == _checkpoints[0]:
+                checkpoint_callback(step, _materialize_graph(g, content_edge_data, type_edge_data))
+                _checkpoints = _checkpoints[1:]
             # Attempt targeted triangle-creating swap when triangles are below target.
             # The probability scales with how large the deficit is (max 50%).
             tri_deficit = target_tri - current.tri
@@ -1146,13 +1221,7 @@ def refine(
     )
 
     # Rebuild igraph from best snapshot, preserving vertex attributes
-    all_best = best_content + type_edge_data
-    g_out = igraph.Graph(n=g.vcount(), directed=True)
-    for attr in g.vertex_attributes():
-        g_out.vs[attr] = list(g.vs[attr])
-    if all_best:
-        g_out.add_edges([(s, o) for s, o, _ in all_best])
-        g_out.es["predicate"] = [p for _, _, p in all_best]
+    g_out = _materialize_graph(g, best_content, type_edge_data)
 
     # Unweighted error sum at the best snapshot: independent of adaptive_weights /
     # ADAPTIVE_WEIGHT_SCALE, so it's the fair metric for comparing runs across
@@ -1163,5 +1232,12 @@ def refine(
     g_out["stage3_best_accepted"] = best_accepted
     g_out["stage3_best_loss"] = round(best_loss, 6)
     g_out["stage3_best_unweighted_error_sum"] = round(best_unweighted_error_sum, 6)
+
+    # Any checkpoint step at or beyond where the loop actually stopped (the
+    # requested budget, or earlier on a manual escape) fires with the same
+    # graph this call returns — after the stage3_* attributes above are set,
+    # so a synchronous reader sees them too.
+    for _step in _checkpoints:
+        checkpoint_callback(_step, g_out)
 
     return g_out

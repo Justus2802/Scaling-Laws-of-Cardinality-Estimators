@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import igraph
+import yaml
 
-from ..signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
+from ..signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF, _BLOCK_CLASSES
 
 from .._logging import get_logger
 from .stage1 import sample_schema
@@ -64,6 +65,51 @@ class Signature:
         from ..kg_io import load_kg
         return cls.from_graph(load_kg(Path(path)))
 
+    @classmethod
+    def from_config(cls, path: "Path | str") -> "Signature":
+        """Load a target signature from a YAML config file.
+
+        The file holds one top-level key per block letter (``a``, ``b``, ``c``,
+        ``d``, ``e``, ``f``), each mapping to that block's serialized state —
+        the same shape each block's ``to_serializable()`` produces and
+        :meth:`to_config` writes — so a config can be hand-edited or produced
+        by re-saving a measured/cached signature. ``a``, ``c`` and ``e`` are
+        required; ``b``, ``d``, ``f`` are optional and default to ``None`` if
+        their key is absent, matching :class:`Signature`'s own optionality.
+
+        :param path: Path to the YAML config file.
+        :returns: The reconstructed target ``Signature``.
+        :raises KeyError: If a required block (``a``, ``c``, ``e``) is missing
+            (also raised for an empty or comment-only file, which parses to
+            no data at all).
+        """
+        data = yaml.safe_load(Path(path).read_text()) or {}
+        blocks: dict = {}
+        for letter, block_cls in _BLOCK_CLASSES.items():
+            if letter in data:
+                blocks[letter] = block_cls.from_serializable(data[letter])
+            elif letter in ("a", "c", "e"):
+                raise KeyError(f"Signature config {path} is missing required block {letter!r}")
+            else:
+                blocks[letter] = None
+        return cls(**blocks)
+
+    def to_config(self, path: "Path | str") -> None:
+        """Write this signature to a YAML config file readable by :meth:`from_config`.
+
+        :param path: Destination path for the YAML file.
+        """
+        data = {
+            letter: block.to_serializable()
+            for letter, block in zip(_BLOCK_CLASSES, self._blocks())
+            if block is not None
+        }
+        Path(path).write_text(yaml.safe_dump(data, sort_keys=False))
+
+    def _blocks(self) -> list:
+        """Return the six blocks in signature order (``a``..``f``), ``None`` where optional."""
+        return [self.a, self.b, self.c, self.d, self.e, self.f]
+
 
 class Generator:
     """Full three-stage KG generator.
@@ -97,6 +143,8 @@ class Generator:
         adaptive_weights: bool = False,
         convergence_log: "Path | str | None" = None,
         swap_log: "Path | str | None" = None,
+        checkpoint_steps: "list[int] | None" = None,
+        checkpoint_callback=None,
     ) -> igraph.Graph:
         """Generate one synthetic KG from the target signature.
 
@@ -128,6 +176,14 @@ class Generator:
         swap_log : Path or str, optional
             If given, write one CSV row per evaluated Stage-3 swap proposal
             (per-motif deltas, Δloss, accept decision — see ``stage3.refine``).
+        checkpoint_steps : list of int, optional
+            Stage-3 loop indices at which to snapshot the walk's current graph
+            and invoke ``checkpoint_callback`` with it (``0`` = the post-Stage-2
+            graph, before any rewiring). See ``stage3.refine`` for exact
+            semantics. Ignored if ``checkpoint_callback`` is ``None``.
+        checkpoint_callback : callable, optional
+            ``(step: int, graph: igraph.Graph) -> None``, called once per step
+            in ``checkpoint_steps``. See ``stage3.refine``.
 
         Returns
         -------
@@ -159,6 +215,8 @@ class Generator:
             adaptive_weights=adaptive_weights,
             convergence_log=convergence_log,
             swap_log=swap_log,
+            checkpoint_steps=checkpoint_steps,
+            checkpoint_callback=checkpoint_callback,
         )
         log.info("Generator: done — synthetic KG V=%d, E=%d", g_refined.vcount(), g_refined.ecount())
         return g_refined

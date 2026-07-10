@@ -204,7 +204,7 @@ def write_signature_outputs(
 __all__ = [
     "BlockA", "BlockB", "BlockC", "BlockD", "BlockE", "BlockF",
     "ReducedGraphSignature", "compute_reduced_signature", "write_signature_outputs",
-    "_ALL_BLOCKS",
+    "_ALL_BLOCKS", "_BLOCK_CLASSES",
     "QuantileFit", "QUANTILE_LEVELS", "ExpDecayFit", "TruncPowerLawFit", "ZipfFit",
     "fit_quantiles", "fit_exp_decay_rank", "fit_truncated_powerlaw",
     "fit_zipf", "fit_cs_size_offset",

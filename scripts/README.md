@@ -171,3 +171,27 @@ Loads all `signature.json` files from a corpus and plots component-wise value di
 python scripts/plot_signature_distributions.py
 python scripts/plot_signature_distributions.py --source my_sigs/ --out my_plots/
 ```
+
+### `plot_signature_pca.py`
+Fits a 2D PCA basis on the corpus's `signature.json` files (grey dots = real graphs), then projects one or more `signature_roundtrip.py` original/synthetic pairs into that space as a highlighted, arrow-connected pair — the arrow shows how far Stage 3 output drifts from its target. `--size-agnostic` drops raw size-dependent features (entity/motif counts, degree extrema) so the projection reflects structural shape rather than graph size. Provides `_find_corpus_signatures`/`_load_signature_json`/`_build_matrix`/`_fit_pca_2d`/`_project`/`_PAIR_COLOURS`, reused by `plot_sweep_pca.py` and `signature_pca_trajectory.py` below (the shared PCA-fitting math lives here once).
+
+```
+python scripts/plot_signature_pca.py wn18rr_v4
+python scripts/plot_signature_pca.py wn18rr_v4 fb237_v4_ind --size-agnostic
+```
+
+### `plot_sweep_pca.py`
+Projects a `sweep_collect.py` run (many synthetic seeds vs. one target) into the same corpus-fit PCA space as `plot_signature_pca.py`, showing the spread of independent generator draws around the target as a cloud rather than a single pair. Multiple graphs get distinct colours; multiple rewire budgets get distinct marker shapes. `--exclude` drops named corpus graphs from the PCA fit and the plotted cloud.
+
+```
+python scripts/plot_sweep_pca.py wn18rr_v4
+python scripts/plot_sweep_pca.py wn18rr_v4 swdf --budget 50000
+```
+
+### `signature_pca_trajectory.py`
+Runs one `signature_roundtrip.py`-style generation, but snapshots the graph right after Stage 2 and at evenly-spaced points through Stage 3's rewire budget (via `Generator.sample(checkpoint_steps=…, checkpoint_callback=…)` / `stage3.refine`'s matching parameters), measures each snapshot, and plots the resulting path through the corpus-fit PCA space toward the target. Also prints a per-step, per-block standardized-distance table (full feature space, not just the lossy 2D projection) so you can see which block is actually driving convergence.
+
+```
+python scripts/signature_pca_trajectory.py wn18rr_v4
+python scripts/signature_pca_trajectory.py wn18rr_v4 --num-checkpoints 5 --rewire-budget 20000
+```

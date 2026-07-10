@@ -164,6 +164,9 @@ kgsynth measure data/graphs/swdf/swdf.nt
 # Generate a synthetic graph from a cached target signature
 kgsynth generate swdf --seed 42 --rewire-budget 50000 --output swdf_synth.ttl
 
+# ...or from a hand-authored/saved YAML target instead of a corpus graph name
+kgsynth generate --config target.yaml --seed 42 --rewire-budget 50000
+
 # Compare two graphs feature by feature across the full 124-value signature
 kgsynth compare data/graphs/swdf/swdf.nt swdf_synth.ttl
 ```

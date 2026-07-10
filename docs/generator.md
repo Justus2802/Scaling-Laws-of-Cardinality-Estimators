@@ -27,6 +27,14 @@ g = Generator(Signature.from_file("target.ttl")).sample(seed=42, rewire_budget=5
 more faithful structure). `sample()` derives sub-seeds so the whole pipeline is reproducible
 from one integer: Stage 1 `seed`, Stage 2 `seed+1`, Stage 3 `seed+2`.
 
+A target signature can also come from a YAML file — `Signature.from_config(path)` and its inverse
+`sig.to_config(path)` — instead of measuring a graph. The file holds one top-level key per block
+letter (`a`..`f`), each mapping to that block's `to_serializable()` state (the same shape the
+tracked corpus's `block_*.json` files use, just YAML instead of JSON — PyYAML round-trips `NaN`
+natively, unlike stdlib `json`). `a`, `c`, `e` are required; `b`, `d`, `f` default to `None` if
+absent. This is the backing for `kgsynth generate --config <file>`, and for hand-editing or
+versioning a target signature independent of any single measured graph.
+
 ---
 
 ## Inputs — which signature fields drive generation
@@ -345,6 +353,18 @@ when a degree guard dropped that delta (guards are respected, never force-comput
 The log exists to measure per-swap motif *leverage* — how many proposals move each motif and by
 how much, and whether the leverage concentrates in hub swaps — to assess whether an approximate
 hub delta would be viable. Analyse with `scripts/swap_delta_viz.py`.
+
+**Checkpoints** (`checkpoint_steps`/`checkpoint_callback`, threaded through
+`Generator.sample(checkpoint_steps=…, checkpoint_callback=…)`). For tracing how the graph evolves
+through the annealing walk rather than only inspecting the final output: `checkpoint_callback(step,
+graph)` fires once per step in `checkpoint_steps` (sorted ascending) with an independent
+`igraph.Graph` snapshot of the walk's *current* state at that point — step `0` is the pre-loop,
+post-Stage-2 graph, before any swap is attempted. A step at or beyond where the loop actually
+stopped (the requested `budget`, or earlier on a manual escape) fires with the same graph `refine()`
+returns, so a trajectory's last point always matches the caller's final output. Both the checkpoint
+snapshots and the final output share one `_materialize_graph` helper, so they're structurally
+identical. Used by `scripts/signature_pca_trajectory.py` to plot a path through PCA space from the
+post-Stage-2 graph toward the target as rewiring progresses.
 
 > **Runtime note.** The incremental deltas are O(Δᵏ⁻¹) per *attempted* swap, so they dominate
 > Stage-3 cost on hub-heavy graphs. Lower `--rewire-budget` or disable a steering term (set its
