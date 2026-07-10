@@ -18,7 +18,7 @@ Code lives in the **`src/kgsynth/generator/`** package:
 | `_adapters.py` | reduced-signature reconstructions (see below) |
 | `_logging.py` | package logger (`generator.*`, INFO progress lines) |
 
-Public API (re-exported from `__init__.py`, unchanged by the refactor):
+Public API (re-exported from `__init__.py`):
 ```python
 from kgsynth import Signature, Generator
 g = Generator(Signature.from_file("target.ttl")).sample(seed=42, rewire_budget=5000)
@@ -58,9 +58,8 @@ versioning a target signature independent of any single measured graph.
 | F | `degree_assortativity` | Stage-3 target |
 | F | `num_components`, `largest_component_fraction` | Stage-2 connectivity target (nc, LCC fraction) |
 
-Block F's `shortest_path_mean` / `shortest_path_max` are measured but **not** targeted — the
-Stage-2 path-length steering that consumed them was removed (see
-[§ Path-length steering](#path-length-steering--removed)).
+Block F's `shortest_path_mean` / `shortest_path_max` are measured but **not** targeted (see
+[§ Path-length steering](#path-length-steering)).
 
 **Validation-only (measured, deliberately *not* used constructively):** C `subj/obj_cooc_density`,
 `subj/obj_row_entropy_q`, `per_type_entropy_exp`; D `two_step_fit`; F
@@ -82,8 +81,8 @@ needs. All randomness from one seeded `np.random.Generator`.
 3. **Types.** `type_weights = Zipf(T, class_size_fit.alpha)`, uniform fallback when α is NaN/`T` tiny.
 4. **`P(r|t)`.** Reconstruct a singular-value spectrum from `type_rel_spectrum_exp`
    (`scale·exp(−rate·k)`) and feed it to a low-rank random factorisation
-   (`_sample_type_relation_probs`). This uses `P(r|t)`'s **own** T×R spectrum — *not* the `M`
-   co-occurrence spectrum it used to be conflated with. No types (`T=0`) → empty `(0,R)` table.
+   (`_sample_type_relation_probs`). This uses `P(r|t)`'s **own** T×R spectrum, kept separate
+   from the `M` co-occurrence spectrum. No types (`T=0`) → empty `(0,R)` table.
 5. **CS structure (Block D).** `cs_num_templates = num_distinct_cs`;
    `cs_template_zipf = cs_freq_fit.alpha` (CS reuse skew) and
    `cs_template_vmax = cs_freq_fit.v_max` (reuse-draw truncation — the fitted α covers the
@@ -102,17 +101,17 @@ needs. All randomness from one seeded `np.random.Generator`.
    nodes draw from a power law with the fitted degree α truncated to
    `[p90, max]` (the `out/in_degree_p90` / `out/in_degree_max` scalars pin the
    tail), the remaining 90% from a Poisson body clipped at p90 whose mean is
-   solved so the overall mean matches `E/V`. These replace the old extreme-value
-   max-degree caps — the whole distribution (body, p90, max) is targeted rather
-   than a single hard bound. When the p90/max scalars are unavailable (stale
-   signatures) the targets are `None` and Stage 2 wires without degree steering.
+   solved so the overall mean matches `E/V`. The whole distribution (body, p90,
+   max) is targeted, not just a single hard bound. When the p90/max scalars are
+   absent (Block B not measured) the targets are `None` and Stage 2 wires without
+   degree steering.
 
 ---
 
 ## Stage 2 — CS-first instantiation (`instantiate`)
 
 Builds the graph by sampling characteristic sets first, then wiring edges per relation. This is
-where most of the fidelity fixes live.
+where most of the structural fidelity is established.
 
 1. **Budget split.** `content_E = E − n_type_edges` (one `rdf:type` edge per entity when `T>0`).
 2. **CS size source.** Each CS's *size* is drawn from `cs_size_q` (`sample_quantiles_trunc`,
@@ -126,9 +125,9 @@ where most of the fidelity fixes live.
    *Group path* (when `subj_group_probs` / `obj_group_probs` are set in Schema):
    - Assign each entity to a co-occurrence group drawn from the Zipf-weighted group distribution.
    - Build one template pool per group, sized ∝ group weight via `_allocate_quotas` (largest-remainder
-     method: distributes `cs_num_templates` slots exactly, with floor 1 per group; the old
-     `max(1, round(w_g · total))` per-group formulation inflated the total when many groups had
-     small weights). Applied to both forward (`_fwd_quotas`) and inverse (`_inv_quotas`) pools.
+     method: distributes `cs_num_templates` slots exactly, with floor 1 per group — a naive
+     `max(1, round(w_g · total))` would inflate the total when many groups have small weights).
+     Applied to both forward (`_fwd_quotas`) and inverse (`_inv_quotas`) pools.
    - Assign entities within each group to templates via `_assign_templates`.
    - (Inverse side mirrors this using `obj_group_probs`.)
 
@@ -383,8 +382,8 @@ post-Stage-2 graph toward the target as rewiring progresses.
 
 ## Reduced-signature adapters (`_adapters.py`)
 
-The reduced blocks store distribution *parameters*, not the raw moments the generator originally
-read. These helpers reconstruct what Stage 1/2 need (NaN-safe; NaN → neutral fallback):
+The reduced blocks store distribution *parameters*, not raw moments. These helpers reconstruct
+the concrete quantities Stage 1/2 need (NaN-safe; NaN → neutral fallback):
 
 - `_quantile_mean(fit)` — mean of a quantile-function fit via `np.trapezoid` (e.g. `cs_size_mean`).
 - `_functionality_from_alpha(fit)` — `1/ζ(α)` = fraction of single-valued slots, from the
@@ -397,42 +396,34 @@ read. These helpers reconstruct what Stage 1/2 need (NaN-safe; NaN → neutral f
 
 ---
 
-## Evolution & fixes (why the code looks the way it does)
+## Design notes — why the wiring is what it is
 
-In roughly the order they were made:
+The load-bearing design choices behind the Stage-1/2 wiring:
 
-1. **Reduced-signature consumption + package split.** The monolithic `generator.py` was converted
-   to read the reduced blocks and split into the `stage*`/`schema`/`pipeline`/`_adapters` modules.
-   Stage 1/2 reads that lacked a direct attribute are reconstructed in `_adapters.py`.
-2. **`P(r|t)` de-conflation.** Stage 1 reconstructs `P(r|t)` from its **own** `type_rel_spectrum_exp`
-   instead of borrowing the `M` co-occurrence spectrum.
-3. **Measured relation Zipf.** Relation weights use the measured `relation_zipf` exponent rather
-   than a hard-coded 2.0 (restores brief §Stage-1 behaviour).
-4. **Per-relation multiplicity-then-PA with edge conservation.** Replaced the per-entity
-   `geometric(mean_functionality)` + global-throttle wiring with the per-relation `multinomial`
-   allocation — wiring per-relation α (out-side) and the G2b `a_obj` offset, hitting the relation
-   budget exactly.
-5. **Faithful in-side allocation.** Replaced the hard inverse-functionality cap (which collapsed
-   subject-multiplicity to `{1,2}`) with a per-relation **subject-multiplicity** allocation from
-   `subj_alpha` × PA. The old cap is gone.
-6. **Realizability cap + redistribute (budget-collapse fix).** With `α_subj<2` (infinite mean) or
-   superlinear PA (`in_pa>1`, condensation), the in-side `multinomial` dumped almost all of
-   `|edges_r|` onto one object → the excess was unplaceable duplicates → the budget collapsed
-   (e.g. 14,554 → 6,159). Capping each object at `|S_r|` and redistributing the overflow restored it
-   (→ ~0.99 of budget).
-7. **`num_distinct_cs` fix.** Distinct templates alone weren't enough: a too-steep rank-Zipf
-   assignment left most templates unused, and out-side multinomial zeros shrank realised CSs.
-   Fixed with (a) distinct templates by rejection + size-escape, (b) **floored** entity→template
-   assignment (≥1 entity per template) + power-law reuse tail, (c) **out-side floor** (every subject
-   of `r` gets ≥1 edge). Realised `num_distinct_cs` on fb237-like went 229 → ~1030 (target 1298).
-8. **Symmetric inverse CS + `a_subj` wiring.** Restored `inv_num_distinct_cs` + `inv_cs_freq` to the
-   reduced Block D (Block D 16→19; total signature 96→99) and added inverse-CS templates (object
-   side) — so edges are matched within `S_r × O_r` and the in-side weight gains the
-   `inv_cs_size^a_subj` G2b factor. The old hard inverse-functionality cap is replaced by the in-side
-   allocation; the out-side gains a symmetric cap at `|O_r|`. Re-measured `a_subj` tracks target
-   (e.g. 0.6 → ~0.65).
-9. **Configurable constants.** All tuning magic numbers hoisted to module-level constants at the top
-   of `stage1.py` / `stage2.py` / `stage3.py`.
+- **`P(r|t)` from its own spectrum.** Stage 1 reconstructs `P(r|t)` from `type_rel_spectrum_exp`
+  (the T×R spectrum), kept separate from the `M` co-occurrence spectrum — they are different
+  quantities, so one cannot target the other.
+- **Measured relation Zipf.** Relation weights use the measured `relation_zipf` exponent, not a
+  fixed value.
+- **Per-relation multiplicity + edge conservation.** Out-side wiring allocates each relation's
+  edges by `multinomial` on per-relation α (`obj_alpha`) and the G2b `a_obj` CS-size offset,
+  hitting each relation's edge budget `|edges_r| = freq(r)·E` exactly. In-side allocation draws
+  per-relation **subject**-multiplicity from `subj_alpha` × preferential attachment.
+- **Realizability cap + redistribute.** With `α_subj<2` (infinite mean) or superlinear PA
+  (`in_pa>1`), the in-side `multinomial` would concentrate nearly all of `|edges_r|` on one
+  object, leaving unplaceable duplicates and collapsing the edge budget. Each object is capped at
+  `|S_r|` (the out-side symmetrically at `|O_r|`) and the overflow redistributed, so the realised
+  edge count stays near the budget.
+- **CS templating for `num_distinct_cs`.** Reaching the target distinct-CS count needs three
+  floors working together: (a) distinct templates drawn by rejection + size-escape, (b) a floored
+  entity→template assignment (≥1 entity per template) with a power-law reuse tail, and (c) an
+  out-side floor (every subject of `r` gets ≥1 edge). Without them a too-steep rank-Zipf leaves
+  most templates unused and out-side multinomial zeros shrink the realised CSs.
+- **Symmetric inverse CS + `a_subj`.** Block D's `inv_num_distinct_cs` / `inv_cs_freq` and the
+  inverse-CS templates (object side) let edges be matched within `S_r × O_r`, and the in-side
+  weight gains the `inv_cs_size^a_subj` G2b offset — the object-side mirror of `a_obj`.
+- **Tuning constants** for each stage are module-level at the top of
+  `stage1.py` / `stage2.py` / `stage3.py`.
 
 ---
 
@@ -444,9 +435,9 @@ In roughly the order they were made:
 relation co-occurrence matrix, where M_subj[r1,r2] = # entities using both r1 and r2). Without
 explicit targeting, M_subj's spectrum, density, and row-entropy distribution are not reproduced.
 
-The generator's CS assignment previously used `P(r|t)` (driven by `type_rel_spectrum_exp`, the
-T×R spectrum) as the sole source of entity relation diversity. `P(r|t)`'s spectrum is a different
-quantity from M_subj's spectrum — using one to target the other doesn't work.
+Entity relation diversity is driven by the co-occurrence groups (below), not by `P(r|t)`:
+`P(r|t)`'s spectrum (driven by `type_rel_spectrum_exp`, the T×R matrix) is a different quantity
+from M_subj's spectrum, so it cannot be used to target M_subj's spectrum, density, or row entropy.
 
 ### Mechanism
 
@@ -480,36 +471,30 @@ uses the full available signal without over-extrapolating.
 | `subj/obj_cooc_density` | Indirectly: group prototype spread × CS size |
 | `subj/obj_row_entropy_q` | Indirectly: group prototype concentration |
 
-`per_type_entropy_exp` and class sizes now emerge from post-hoc type assignment (no longer
-directly controlled).
+`per_type_entropy_exp` and class sizes emerge from the post-hoc type assignment — they are not
+directly controlled.
 
 ---
 
-## Path-length steering — removed
+## Path-length steering
 
-Stage 2 once injected hub shortcuts to pull mean shortest-path length and diameter toward the
-Block F targets (`_steer_path_lengths`, gated behind `PATH_STEERING_ENABLED`). **It has been
-removed.** The mechanism was *one-sided*: shortcuts can only ever shorten paths, never lengthen
-them, so a graph whose paths were already too short had no correction available. It had been
-disabled behind the flag for some time, and the test asserting its diameter cap failed with the
-flag off.
+**Block F's `shortest_path_mean` / `shortest_path_max` / `shortest_path_var` are measured but not
+steered.** They are emergent — determined by density (Block A) and degree structure (Block B) —
+and are reported by the roundtrip comparison as validation-only quantities.
 
-Consequence: **Block F's `shortest_path_mean` and `shortest_path_max` are measured but no longer
-targeted.** They remain in the signature and are reported by the roundtrip comparison as
-validation-only quantities, alongside `shortest_path_var` — all emergent, determined by density
-(Block A) and degree structure (Block B) rather than steered directly.
-
-The prior analysis, including the structural-undershoot root cause and the proposal to move
-steering into Stage 3's annealing loop, is kept for reference in
-[notes/path_length_steering.md](notes/path_length_steering.md).
+Path lengths are not targeted because the only cheap post-hoc lever, injecting hub shortcuts, is
+*one-sided*: shortcuts can shorten paths but never lengthen them, and the synthetic graph almost
+always undershoots (its paths are already too short), so the lever has nothing to do. The
+structural-undershoot analysis and a sketch for moving path steering into Stage 3's annealing loop
+(if it is ever wanted) are in [notes/path_length_steering.md](notes/path_length_steering.md).
 
 ---
 
 ## Known limitations / open items
 
 - **Block F path lengths are unsteered.** `shortest_path_mean` / `shortest_path_max` are
-  measured and reported but no target drives them, since the one-sided Stage-2 shortcut
-  injection was removed (see [§ Path-length steering](#path-length-steering--removed)).
+  measured and reported but no target drives them (see
+  [§ Path-length steering](#path-length-steering)).
 - **Co-occurrence density and row-entropy not analytically pinned.** These emerge from
   group prototype concentration and CS size but have no independent control knob. Remaining
   deviations require either softmax temperature tuning per group or Stage-3 obj-side steering.

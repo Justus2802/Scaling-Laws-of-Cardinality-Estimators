@@ -6,7 +6,7 @@
 > `path_hi_target` fields) has been **removed** from the code. It was one-sided — shortcut
 > injection can only shorten paths — and had been disabled behind its flag. Block F's path
 > statistics are now measured but not targeted; see
-> [generator.md § Path-length steering](../generator.md#path-length-steering--removed).
+> [generator.md § Path-length steering](../generator.md#path-length-steering).
 > This document is retained for its root-cause analysis and for
 > § "Option B — Stage 3 SA loss term", which remains the way forward if path-length targeting
 > is ever revisited. Sections "Current implementation" and "File map" describe code that no

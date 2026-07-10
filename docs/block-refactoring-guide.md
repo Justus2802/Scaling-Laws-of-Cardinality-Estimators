@@ -1,18 +1,15 @@
-# Block Refactoring Guide
+# The `SignatureBlock` Pattern
 
-## Pattern: Dataclass + Free Function → Single Class
+Every block is a **single class** in `block_<x>.py` that owns its state, computation, and
+presentation:
 
-### Before
-```
-@dataclass BlockX          # holds results, requires all fields at construction
-def block_x(g) -> BlockX   # computes and returns a fully-populated BlockX
-helper_fn(g) -> ...        # module-level private helper
-```
-
-### After
 ```
 class BlockX               # owns state, computation, and presentation
 ```
+
+This is deliberately one class rather than a dataclass plus free functions: a class can hold
+partially-computed state (the `_NOT_CALCULATED` sentinel below), keep the pre-fit raw data for
+`visualize`, and expose one uniform lifecycle across all six blocks.
 
 Three public methods form the full lifecycle:
 
@@ -189,41 +186,31 @@ The per-signature `INFO` convention means each named feature in a block's signat
 
 ## Selective Block Computation
 
-`compute_signature()` accepts an optional `blocks` list that controls which blocks are run:
+`compute_reduced_signature()` accepts an optional `blocks` list that controls which blocks are run:
 
 ```python
 # compute only blocks A and F
-sig = compute_signature("graph.ttl", blocks=["a", "f"])
+sig = compute_reduced_signature("graph.ttl", blocks=["a", "f"])
 
 # sig.b, sig.c, sig.d, sig.e are None
 # sig.as_vector() still returns the full-length vector — skipped positions are NaN
 vec = sig.as_vector()
 ```
 
-`GraphSignature` fields are `Optional[BlockX]` (default `None`). `as_vector()` calls
+`ReducedGraphSignature` fields are `Optional[BlockX]` (default `None`). `as_vector()` calls
 `BlockX.get_na_vec()` for each `None` field, keeping the vector length fixed regardless
 of which blocks were computed.
 
 ---
 
-## Call Site Updates
+## Adding or invoking a block
 
-Replace all occurrences of the old pattern:
-
-```python
-from kgsynth.signature import BlockX, block_x
-b = block_x(g)
-```
-
-with:
+A block is constructed and run in one call, then queried:
 
 ```python
 from kgsynth.signature import BlockX
 b = BlockX().calculate(g)
 ```
 
-Files to check per block: `src/kgsynth/signature/__init__.py`, `tests/test_signature_block_x.py`, `scripts/`.
-
-In `__init__.py`:
-- Remove `block_x` from the import line and from `__all__`
-- Change `b=block_x(g)` → `b=BlockX().calculate(g)` in `compute_signature()`
+`compute_reduced_signature()` in `src/kgsynth/signature/__init__.py` wires each block this way;
+a new block is registered by adding its class to `_BLOCK_CLASSES` / `_ALL_BLOCKS` there.
