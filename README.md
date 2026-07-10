@@ -153,12 +153,32 @@ approach still falls short of the real-graph targets.
 
 ```bash
 pip install -e .
-
-# Measure a real graph into data/graphs/<name>/signature/
-python scripts/measure_signature_reduced.py <graph_name>
-
-# Generate a synthetic graph from a cached target signature and compare
-python scripts/signature_roundtrip.py <graph_name> --rewire-budget 5000
 ```
+
+That installs the `kgsynth` package and its CLI:
+
+```bash
+# Measure a real graph into a signature/ dir next to it
+kgsynth measure data/graphs/swdf/swdf.nt
+
+# Generate a synthetic graph from a cached target signature
+kgsynth generate swdf --seed 42 --rewire-budget 50000 --output swdf_synth.ttl
+
+# Compare two graphs feature by feature across the full 124-value signature
+kgsynth compare data/graphs/swdf/swdf.nt swdf_synth.ttl
+```
+
+From Python, per the project proposal:
+
+```python
+from kgsynth import Signature, Generator
+
+target = Signature.from_file("some_real_graph.ttl")                    # measure
+synthetic = Generator(target).sample(seed=42, rewire_budget=100_000)   # generate
+```
+
+The full measure → generate → re-measure → compare round-trip, with Stage-3 convergence
+logging and per-block Wasserstein distances, lives in
+`python scripts/signature_roundtrip.py <graph_name> --rewire-budget 5000`.
 
 Run the test suite with `pytest`.

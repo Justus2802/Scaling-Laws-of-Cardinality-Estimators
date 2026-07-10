@@ -2,6 +2,18 @@
 
 Helper scripts for data acquisition, signature measurement, graph generation, and experiment analysis. All scripts are run from the repo root via `python scripts/<name>.py`.
 
+> For the three core operations — measure a KG, generate a synthetic one, compare two — prefer the
+> installed CLI (`pip install -e .`):
+>
+> ```
+> kgsynth measure  data/graphs/swdf/swdf.nt
+> kgsynth generate swdf --seed 42 --rewire-budget 50000
+> kgsynth compare  graph_a.ttl graph_b.ttl
+> ```
+>
+> The scripts below remain the place for research workflows the CLI deliberately doesn't cover:
+> parameter sweeps, Stage-3 convergence logging, and diagnostic plots.
+
 ## Data Acquisition
 
 ### `get_data.py`
