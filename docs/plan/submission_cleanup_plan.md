@@ -242,6 +242,45 @@ entries (B33 → B31), `fit_cs_size_offset` in `_fits.py`, `Schema.a_obj`/`.a_su
 ([stage1.py:358-359,458-461](src/generator/stage1.py#L358)), the Stage 2 weighting itself, and a
 corpus regeneration.
 
+2.13 **Pin `xmin=1` in the shared power-law fitter — the fitted exponent gets applied outside the
+range it was fit to.** *(Found this session; same shape as 2.10/2.11 — a measurement/usage
+mismatch, not a hypothetical.)* [`_utils.py:_fit_powerlaw`](src/kgsynth/signature/_utils.py#L36)
+calls `powerlaw.Fit(positive, discrete=True)` with no `xmin`, so it runs the standard
+Clauset–Shalizi–Newman search: `alpha` is fit to describe only the tail `x ≥ xmin`, wherever the
+KS-optimal cutoff happens to land. But every consumer applies that `alpha` to the **whole**
+distribution, not just the fitted tail:
+- [`_adapters.py:sample_degree_sequence`](src/kgsynth/generator/_adapters.py#L93) truncates the
+  body 90% of nodes to `[1, p90]` using `out_degree_fit.alpha`/`in_degree_fit.alpha` — its own
+  docstring calls `[1, p90]` "the fit's own body range," true only if `xmin == 1`.
+- [`stage1.py:249`](src/kgsynth/generator/stage1.py#L249) uses Block C's `class_size_fit.alpha`
+  the same way.
+- `fit_zipf` ([`_fits.py:224`](src/kgsynth/signature/_fits.py#L224), Block B relation-usage) and
+  the per-relation `obj_alpha_q`/`subj_alpha_q` quantile fits
+  ([`block_b.py:204,208`](src/kgsynth/signature/block_b.py#L204)) go through `_fit_powerlaw` too
+  — same exposure. Verify each consumer's actual sampling range before assuming it's fine; don't
+  extrapolate from the degree case alone.
+
+Fix: pin `xmin=1` (the domain minimum after the existing `data > 0` filter — literal `xmin=0` is
+invalid for a discrete power law) inside `_fit_powerlaw`, forcing the MLE over the whole range
+instead of an auto-searched tail. **Precedent already in this codebase:**
+[`_fits.py:fit_truncated_powerlaw`](src/kgsynth/signature/_fits.py#L190) does exactly this for
+Block D's two-step pair-count distribution, and block_d.py's module docstring gives the rationale
+almost verbatim — *"pinning the range removes the free-xmin instability that made the fits
+incomparable across graphs."*
+
+Expected side effects — not regressions, don't chase them as bugs:
+- `alpha` values shift and each fit's own `ks` will generally worsen: CSN excludes the low-range
+  body specifically because it's usually not power-law shaped, and pinning forces the fit to cover
+  it anyway.
+- `D_lognormal`/`D_exponential`/`D_truncated` stay apples-to-apples, since one
+  `powerlaw.Fit(xmin=1)` call pins `xmin` across every candidate distribution together.
+- `out_degree_xmin`/`in_degree_xmin`/`relation_zipf_xmin`/`class_size_xmin` become constants
+  (`= 1.0`) — already unread by the generator, now provably uninformative. Flag as a **candidate
+  for removal under the standing guardrail** (Context section); don't drop unilaterally here.
+- Changes measured values across the tracked corpus. **Do not regenerate separately** — bundle
+  into the single corpus regeneration already planned at 5.3, alongside 2.5's key rename, so the
+  corpus is rewritten once, not twice.
+
 ---
 
 ## Stage 3 — Small code additions (½ day)
@@ -336,7 +375,7 @@ KG from a target signature and compare per-block distances*.
 5.3 Emit `data/signatures/<kg_name>.json` in the flat layout §3.3 step 3 names, via an
 **aggregator** over the existing per-graph `data/graphs/<name>/signature/` tree — that layout
 was a deliberate choice and stays. Regenerate the corpus so it picks up the public JSON keys
-from 2.5.
+from 2.5 and the pinned-`xmin` fit values from 2.13 — one regeneration pass, not two.
 
 5.4 Add `ruff` (line-length 100; ~70 lines exceed it today).
 
@@ -484,7 +523,7 @@ lands has to be rebased across the move.
 |---|---|---|
 | 0 | 1 | Includes the already-made steering removal; write its CHANGELOG entry retroactively. |
 | 1 | 2 | (a) `pyproject` + `git mv` + import rewrite + `sys.path` removal + `conftest` — **must be atomic**, the tree does not import between the move and the rewrite. (b) the CLI. |
-| 2 | 1 per item, or 1 | Items are independent; 2.5 (JSON keys) touches the tracked corpus, so keep it alone. |
+| 2 | 1 per item, or 1 | Items are independent; 2.5 (JSON keys) and 2.13 (fit values) both touch the tracked corpus — land their code changes as their own commit(s), but the actual regen for both happens once, together, at 5.3. |
 | 3 | 2 | `from_config`; PCA integration. |
 | 4 | 1 | Docs only. |
 | 5 | 2–3 | README + examples; tooling (`ruff`, `conftest`); the CC diamond TODO. |
