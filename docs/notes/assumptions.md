@@ -73,7 +73,18 @@ where V(F) is the endpoint set of edge-subset F. The sum iterates over all 2^|E_
 When star counting runs through the colour-coding sampler (`CCMotifCounter.count_stars`), `cc_run_stars` estimates induced k-stars (k=2..10) for graphs too large for the exact counter. It is the same unbiased colour-coding estimator as before — per colouring it weights centres by their colourful-star DP value, samples `_STAR_SAMPLES` centres, draws one leaf per colour, and accepts the sample iff the K=k+1 vertices form an induced star — but the per-centre sampling loop is now **fully vectorised** over all samples. Leaves are drawn with one batched uniform draw per colour using a per-(node, colour) CSR-style neighbour grouping (`offsets`/`dst_sorted` from an `argsort` of `node*K + nbr_colour`), and the induced-star test is a batched `searchsorted` adjacency lookup against a sorted edge-key array. Two equivalences make the batched test exact: (1) the K sampled vertices have K distinct colours, so they are always distinct nodes; (2) the centre is adjacent to every leaf by construction, so the original degree-sequence check `deg == [1]*k + [k]` reduces to "the K vertices span exactly k edges" (no leaf-leaf edge). The estimator is statistically identical to the previous implementation (same sampling distribution, different RNG stream), just much faster — the old per-centre Python loop dominated CC runtime. The reference implementation is retained as `cc_run_stars_loop` for benchmarking; tests in `tests/test_generator_motif_counter.py::TestCCStars` validate both against `ExactMotifCounter.count_stars` by averaging over seeds.
 
 ### Custom motif counters are cross-checked against igraph on real KGs
-`tests/test_signature_block_e_vs_library.py` verifies the hand-rolled counters (triangle, 4-cycle, diamond, K4, tailed triangle) against igraph's `motifs_randesu` library counter, for every graph listed in `tests/block_e_verification_graphs.csv`. The size-3/size-4 isomorphism-class indices are resolved by degree sequence via `Graph.Isoclass` rather than hardcoded, so the check is robust to igraph reordering classes between versions. Triangles and star counts are exact at any size and checked exactly (stars against the degree-based `C(deg, k)` definition, with a 1e-9 relative tolerance because Block E's vectorized float64 formula loses exact-integer precision past 2⁵³ — e.g. 9-stars on a degree-307 hub). The four 4-node motifs are exact below `_LARGE_N` and color-coding *estimates* above it; in the estimated regime they are compared within a coarse relative tolerance (`_ESTIMATE_REL_TOL`), and the per-graph relative error plus the library-vs-Block-E runtimes are printed (run with `pytest -s`). The library ground truth runs in a child process (`tests/_block_e_library_oracle.py`) under a clean 300s wall-clock timeout — `motifs_randesu` is a GIL-holding C call, so a subprocess (not a thread) is needed to interrupt a runaway enumeration and fail the subtest gracefully; a higher `pytest-timeout` backstop in `pytest.ini` (360s, thread method) covers any other hang. Missing files are skipped so the suite stays green without the large datasets.
+`tests/test_signature_block_e_vs_library.py` verifies the hand-rolled counters against igraph's `motifs_randesu` library counter, for every graph listed in `tests/block_e_verification_graphs.csv`. The size-3/size-4 isomorphism-class indices are resolved by degree sequence via `Graph.Isoclass` rather than hardcoded, so the check is robust to igraph reordering classes between versions.
+
+The module checks two counters with two different strengths, because they carry different guarantees:
+
+- **`ExactMotifCounter`** — exhaustive enumeration of triangles and the 4-node graphlets (4-cycle, diamond, K4, tailed triangle). Compared to the library ground truth with **exact equality**. This is the load-bearing assertion: it is what certifies the custom enumeration on real, non-toy graphs.
+- **`HybridMotifCounter`** (as configured in `signature.block_e.MOTIF_COUNTER`) — what Block E actually ships. It routes triangles to the exact backend but **k=4 to the colour-coding sampler**, so its 4-node counts are *estimates at every graph size*, not just on large graphs. They are bounded within `_ESTIMATE_REL_TOL` (plus an absolute floor for tiny true counts) and the per-graph relative error is printed (run with `pytest -s`). The diamond gets its own factor-of-two bound `_DIAMOND_REL_TOL`, because the CC estimator over-counts it by ~50% regardless of sample budget — see `KNOWN_CC_DIAMOND_BIAS` in `tests/test_hybrid_motif_counter.py`.
+
+Graphs in the manifest must be small enough for exhaustive `motifs_randesu` enumeration to finish inside the 300s oracle budget. That rules out hub-heavy graphs: fb237_v4 (n=4707, max degree 1050) needs ~336s, since one degree-1050 hub contributes C(1050,3) ≈ 1.9e8 induced 4-subgraphs by itself; wn18rr_v4 (n=3861, max degree 68) needs 0.02s.
+
+The test canonicalises vertex order (sorting by vertex name) before counting. This is required for the colour-coding checks to be reproducible: `load_kg` numbers vertices in rdflib's hash-ordered iteration order, so the same file yields a different vertex numbering on every interpreter run unless `PYTHONHASHSEED` is pinned. Exact counts are invariant under vertex relabelling; seeded estimates are not.
+
+The library ground truth runs in a child process (`tests/_block_e_library_oracle.py`) under a clean 300s wall-clock timeout — `motifs_randesu` is a GIL-holding C call, so a subprocess (not a thread) is needed to interrupt a runaway enumeration and fail the subtest gracefully; a higher `pytest-timeout` backstop in `pytest.ini` (360s, thread method) covers any other hang. Missing files are skipped so the suite stays green without the large datasets, but `test_at_least_one_graph_resolves` fails if *every* manifest row is missing — the cross-check must never again report green while verifying nothing.
 
 ### Path templates follow directed edges and stop at literal targets
 `_build_out_adj` only adds edges whose **target** is not a literal. A walk that would enter a literal node is a dead end (literals have no outgoing edges), so stopping there avoids wasted samples. The walk still records the relation that led to the literal.
@@ -156,8 +167,17 @@ Only `lcc.vs` entries with `is_literal == False` are eligible as sources or targ
 ## Block E — Motif counting
 
 ### 5-node graphlets: exact enumeration with degree-based fallback
-`HybridMotifCounter.count_motifsk(g, 5)` delegates to `ExactMotifCounter.count_motifsk(g, 5)`,
-which calls the `count_motifs5_escape` helper (`motif_counter/_common.py`).  It enumerates all
+
+> ⚠️ **This describes `ExactMotifCounter`, not what Block E currently runs.**
+> `HybridMotifCounter.count_motifsk(g, 5)` no longer delegates to the exact path: commit
+> `c8fdd4e` changed the call inside its `try:` from `self._exact` to `self._cc`, leaving a
+> `try`/`except RuntimeError` whose two branches are identical. So k=5 (and hence
+> `five_cycle_count`) is a colour-coding *estimate*. Restoring the exact path changes
+> `five_cycle_count` across the tracked corpus, so it is a deliberate decision, not a
+> drive-by fix.
+
+`ExactMotifCounter.count_motifsk(g, 5)`
+calls the `count_motifs5_escape` helper (`motif_counter/_common.py`).  It enumerates all
 5-node connected induced subgraphs exactly by DFS-expanding connected partial sets anchored at
 the minimum-index node (each 5-set visited once, no sampling).  Inspired by ESCAPE (Pinar,
 Seshadhri, Vishal — WWW 2017) but implemented entirely in Python via adjacency set iteration

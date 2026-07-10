@@ -23,11 +23,11 @@ log = get_logger(__name__)
 
 _SAMPLE_BUDGET = 100_000  # default walk samples for path/tree templates
 _MAX_K         = 10       # longest path template walk
-_LARGE_N       = 50_000   # above this, structural counts switch to CC sampling
 
 # Counter used for all motif measurement in BlockE.calculate().
-# HybridMotifCounter: exact for k≤4 and (when max_degree ≤ 50) k=5 via ESCAPEFiveNodeCounter;
-# falls back to CC sampling for k=5 on dense graphs, and always uses CC for k≥6.
+# HybridMotifCounter: exact for triangles and k≤3; CC sampling for k≥4. The 3-/4-node
+# counts below are therefore exact only for triangles — the rest are estimates at
+# every graph size (see tests/test_signature_block_e_vs_library.py).
 MOTIF_COUNTER: MotifCounter = HybridMotifCounter(n_samples=_SAMPLE_BUDGET, seed=1)
 
 
@@ -111,8 +111,10 @@ class BlockE(SignatureBlock):
     ) -> "BlockE":
         """Compute reduced Block E (motif distribution).
 
-        Exact counts for 3- and 4-node motifs on the undirected simplification;
-        5/6-node and path/tree templates via the color-coding counter.
+        Triangles are counted exactly on the undirected simplification. The 4-node
+        motifs, 5/6-cycles and path/tree templates all come from the color-coding
+        counter and are estimates; the diamond estimate in particular is biased high
+        (see ``KNOWN_CC_DIAMOND_BIAS`` in tests/test_hybrid_motif_counter.py).
 
         Parameters
         ----------

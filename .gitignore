@@ -59,6 +59,9 @@ Thumbs.db
 *.tsv
 *.nt
 *.csv
+# ...but the Block E oracle manifest is source, not data: without it the
+# cross-check has no graphs to verify and reports green having checked nothing.
+!tests/block_e_verification_graphs.csv
 *.parquet
 *.h5
 *.hdf5
