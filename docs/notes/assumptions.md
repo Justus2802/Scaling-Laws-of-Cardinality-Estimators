@@ -1,5 +1,24 @@
 # Implementation Assumptions
 
+## Loading — `load_kg` numbers vertices deterministically
+
+`load_kg` iterates `sorted(rdf_graph)` rather than `rdf_graph` directly. This is load-bearing,
+not cosmetic: rdflib walks its store in hash order and Python randomises string hashing per
+process, so the unsorted loop assigned a **different vertex numbering on every interpreter run**.
+
+Exact motif counts are invariant under vertex relabelling, so the whole exact-counting test
+suite passed regardless and never flagged it. But every seeded sampler indexes into those
+vertices — Block E's colour-coding estimator and Block F's shortest-path pair sampling
+(`default_rng(42)` drawing indices into a vertex list) — so measuring the same file twice with
+the same seed returned different Block E and Block F values. On wn18rr_v4 the diamond estimate
+came out 720 / 706 / 708 across three processes.
+
+Sorting costs ~4 µs per triple (+0.8s on swdf's 242k triples, +3.4s on AIDS's 802k), paid once
+per load, against signature measurements that run for minutes. `tests/test_kg_io.py::TestLoadKGDeterminism`
+pins the property by loading the same file under three `PYTHONHASHSEED` values in subprocesses —
+subprocesses because the hash seed is fixed at interpreter start, so two loads inside one process
+agree even when the bug is present.
+
 ## Block A — Size and Density
 
 ### Literals are excluded from |V|
@@ -168,13 +187,12 @@ Only `lcc.vs` entries with `is_literal == False` are eligible as sources or targ
 
 ### 5-node graphlets: exact enumeration with degree-based fallback
 
-> ⚠️ **This describes `ExactMotifCounter`, not what Block E currently runs.**
-> `HybridMotifCounter.count_motifsk(g, 5)` no longer delegates to the exact path: commit
-> `c8fdd4e` changed the call inside its `try:` from `self._exact` to `self._cc`, leaving a
-> `try`/`except RuntimeError` whose two branches are identical. So k=5 (and hence
-> `five_cycle_count`) is a colour-coding *estimate*. Restoring the exact path changes
-> `five_cycle_count` across the tracked corpus, so it is a deliberate decision, not a
-> drive-by fix.
+> **Note.** This describes `ExactMotifCounter`, not what Block E runs. `HybridMotifCounter`
+> is exact only for k≤3 and colour-codes everything from k=4 up, so `five_cycle_count` is
+> an estimate. Routing k=5 to the exact path would make no difference on real KGs anyway:
+> the `_ESCAPE_MAX_DEGREE` guard (50) rejects every graph in the corpus — the *smallest*
+> max-degree among them is wn18rr_v4's 68, and AIDS reaches 184,493 — so ESCAPE would
+> raise `RuntimeError` and fall back to CC in every case.
 
 `ExactMotifCounter.count_motifsk(g, 5)`
 calls the `count_motifs5_escape` helper (`motif_counter/_common.py`).  It enumerates all

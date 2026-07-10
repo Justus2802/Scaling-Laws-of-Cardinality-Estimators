@@ -1,10 +1,14 @@
 import os
+import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from kg_io import load_kg, save_kg
+
+_SRC_DIR = os.path.join(os.path.dirname(__file__), "..", "src")
 
 TTL_SAMPLE = """\
 @prefix ex: <http://example.org/> .
@@ -144,6 +148,58 @@ class TestSaveKG(unittest.TestCase):
         g = load_kg(src)
         with self.assertRaises(ValueError):
             save_kg(g, os.path.join(self.tmp, "out.xml"), fmt="xml")
+
+
+class TestLoadKGDeterminism(unittest.TestCase):
+    """load_kg must number vertices identically on every interpreter run.
+
+    rdflib iterates its store in hash order, and Python randomises string hashing
+    per process, so iterating it directly gave a different vertex numbering each
+    run. Exact motif counts are invariant under vertex relabelling and so never
+    caught it, but every seeded sampler that indexes into vertices — Block E's
+    colour-coding, Block F's shortest-path sampling — silently returned different
+    values for the same file and the same seed.
+
+    This must run in *subprocesses*: ``PYTHONHASHSEED`` is fixed once at
+    interpreter start, so two loads inside one process agree even when the bug is
+    present.
+    """
+
+    _PROBE = textwrap.dedent(
+        """
+        import hashlib, sys
+        sys.path.insert(0, sys.argv[1])
+        from kg_io import load_kg
+        g = load_kg(sys.argv[2])
+        payload = repr(g.get_edgelist()) + repr(g.vs["name"])
+        print(hashlib.md5(payload.encode()).hexdigest())
+        """
+    )
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmp, "sample.ttl")
+        with open(self.path, "w") as f:
+            f.write(TTL_SAMPLE)
+
+    def _fingerprint(self, hash_seed: str) -> str:
+        env = dict(os.environ, PYTHONHASHSEED=hash_seed)
+        proc = subprocess.run(
+            [sys.executable, "-c", self._PROBE, _SRC_DIR, self.path],
+            capture_output=True, text=True, env=env, timeout=120,
+        )
+        self.assertEqual(proc.returncode, 0, f"probe failed:\n{proc.stderr}")
+        return proc.stdout.strip()
+
+    def test_vertex_order_is_stable_across_hash_seeds(self):
+        seeds = ["0", "1", "12345"]
+        fingerprints = {s: self._fingerprint(s) for s in seeds}
+        self.assertEqual(
+            len(set(fingerprints.values())),
+            1,
+            "load_kg produced different graphs under different PYTHONHASHSEED values: "
+            f"{fingerprints}",
+        )
 
 
 if __name__ == "__main__":

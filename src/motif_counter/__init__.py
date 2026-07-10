@@ -14,7 +14,7 @@ count_motifsk_escape    — exact k-node graphlet counter (ESCAPE, k=5/6)
 MotifCounter            — abstract base class
 CCMotifCounter          — colour-coding implementation (sampling-based)
 ExactMotifCounter       — exact enumeration for k ≤ 6 (ESCAPE for k=5/6)
-HybridMotifCounter      — exact for k ≤ 5 (ESCAPE), CC for k ≥ 6
+HybridMotifCounter      — exact for k ≤ 3, CC for k ≥ 4
 
 Incremental SA delta helpers live in ``generator.local_updates``.
 """

@@ -70,6 +70,11 @@ def load_kg(path: str | Path) -> igraph.Graph:
     already enforces this at parse time, but the loader also guards against
     duplicates explicitly so the contract holds for any input source.
 
+    Triples are inserted in sorted order, so vertex and edge indices are a
+    deterministic function of the file contents. Downstream seeded samplers
+    (Block E colour-coding, Block F path sampling) index into those vertices,
+    and would otherwise return different values on every interpreter run.
+
     Vertices carry:
         name         – URI string (or blank-node id like "_:b0")
         is_literal   – True for RDF literal objects
@@ -88,7 +93,8 @@ def load_kg(path: str | Path) -> igraph.Graph:
     except Exception as exc:
         raise ValueError(f"'{path}' is not valid Turtle or N-Triples content") from exc
 
-    # Collect unique nodes (preserve insertion order for stable vertex indices)
+    # Collect unique nodes. Insertion order follows the sorted triple order below, so
+    # vertex indices are stable across processes.
     node_index: dict[str, int] = {}
     vertex_attrs: list[dict] = []
 
@@ -114,7 +120,11 @@ def load_kg(path: str | Path) -> igraph.Graph:
 
     seen_triples: set[tuple[int, int, str]] = set()
     edges: list[tuple[int, int, str]] = []
-    for s, p, o in rdf_graph:
+    # Sorted, not raw: rdflib iterates its store in hash order, which Python randomises
+    # per process. Iterating it directly would number vertices differently on every run,
+    # so seeded samplers (Block E's colour-coding, Block F's path sampling) would return
+    # different values for the same file and the same seed. Costs ~4 µs/triple.
+    for s, p, o in sorted(rdf_graph):
         si = _ensure_vertex(s)
         oi = _ensure_vertex(o)
         triple = (si, oi, str(p))

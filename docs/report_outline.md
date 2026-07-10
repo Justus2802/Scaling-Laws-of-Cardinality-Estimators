@@ -91,8 +91,8 @@ by `docs/generator.md`.
 - Motif-counting backend feeding Block E: `src/motif_counter/` — `_base.py` (ABC),
   `exact_motif_counter.py` (exact triangle/4-node/ESCAPE 5-node counting),
   `cc_motif_counter.py` (color-coding sampler, Bressan et al. 2021, for large/dense
-  graphs), `hybrid_motif_counter.py` (exact for k≤4 and k=5 when max degree ≤ 50, else CC;
-  always CC for k≥6 — the `MOTIF_COUNTER` Block E actually uses). Worth a short
+  graphs), `hybrid_motif_counter.py` (exact for k≤3, CC for k≥4 — the `MOTIF_COUNTER`
+  Block E actually uses, so every motif count above a triangle is an estimate). Worth a short
   "accuracy vs. tractability" note here, expanded on in §5.5's counter-benchmark item —
   since every motif feature the signature and the evaluation depend on is only as
   trustworthy as this counting layer.
