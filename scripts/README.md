@@ -47,6 +47,15 @@ python scripts/measure_all_raw.py --blocks e             # re-measure Block E on
 python scripts/measure_all_raw.py --graphs aids fb237_v4  # only these graphs
 ```
 
+### `aggregate_signatures.py`
+Copies each graph's combined `signature.json` from the nested per-graph tree (`data/graphs/<name>/signature/`, `data/test_graphs/<name>/signature/`) into the flat public layout `data/signatures/<name>.json` (one `{"source", "features"}` file per graph, 124 features each). Pure copy/normalise — does **not** re-measure. Run it after a corpus re-measurement to refresh the flat copies.
+
+```
+python scripts/aggregate_signatures.py                 # all corpus graphs
+python scripts/aggregate_signatures.py swdf fb237_v4   # only these
+python scripts/aggregate_signatures.py --out-dir /tmp/sigs
+```
+
 ## Graph Generation & Round-trip
 
 ### `sample_signature.py`
