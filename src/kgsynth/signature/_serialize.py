@@ -66,10 +66,22 @@ def decode(obj: object) -> object:
 
 
 def encode_state(state: dict) -> dict:
-    """Encode a block's ``__dict__`` (str-keyed) into a JSON object."""
-    return {key: encode(value) for key, value in state.items()}
+    """Encode a block's ``__dict__`` (str-keyed) into a JSON object.
+
+    Block attributes are private (single leading underscore); that underscore is
+    stripped from the JSON keys so the exported file exposes public field names
+    (``triangle_count``, not ``_triangle_count``). :func:`decode_state` restores it.
+    """
+    return {(key[1:] if key.startswith("_") else key): encode(value)
+            for key, value in state.items()}
 
 
 def decode_state(data: dict) -> dict:
-    """Decode an :func:`encode_state` payload back into a block ``__dict__``."""
-    return {key: decode(value) for key, value in data.items()}
+    """Decode an :func:`encode_state` payload back into a block ``__dict__``.
+
+    Re-adds the leading underscore that :func:`encode_state` strips. Keys that
+    already start with ``_`` are left as-is, so block files written before the
+    underscore strip still load (they are rewritten on the next corpus regen).
+    """
+    return {(key if key.startswith("_") else f"_{key}"): decode(value)
+            for key, value in data.items()}

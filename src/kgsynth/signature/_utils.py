@@ -43,6 +43,10 @@ def _fit_powerlaw(data: np.ndarray) -> PowerLawStats:
     would produce noise. Skipping also avoids the package's stdout chatter,
     division-by-zero warnings, and per-call overhead on long-tail relations.
 
+    The fit is pinned at ``xmin=1`` (see the call site), so the reported
+    ``xmin`` is always 1.0 and ``alpha`` is the MLE over the full positive
+    range rather than an auto-searched tail.
+
     Returns a PowerLawStats with:
       - alpha, xmin, ks from `fit.power_law` (the power-law fit itself)
       - D_lognormal, D_exponential, D_truncated from each alternative's own KS
@@ -58,7 +62,12 @@ def _fit_powerlaw(data: np.ndarray) -> PowerLawStats:
              np.errstate(divide="ignore", invalid="ignore"), \
              contextlib.redirect_stdout(io.StringIO()):
             warnings.simplefilter("ignore")
-            fit = powerlaw.Fit(positive, discrete=True, verbose=False)
+            # Pin xmin=1 (the domain minimum after the `data > 0` filter) so the
+            # fitted alpha describes the whole range its consumers sample from,
+            # not an auto-searched Clauset-Shalizi-Newman tail that then gets
+            # extrapolated down to the body. Mirrors fit_truncated_powerlaw's
+            # pinning for Block D. See docs/signature.md (deviations) / plan 2.13.
+            fit = powerlaw.Fit(positive, discrete=True, xmin=1, verbose=False)
             return PowerLawStats(
                 alpha=float(fit.power_law.alpha),
                 xmin=float(fit.power_law.xmin),
