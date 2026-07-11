@@ -185,3 +185,36 @@ logging and per-block Wasserstein distances, lives in
 `python scripts/signature_roundtrip.py <graph_name> --rewire-budget 5000`.
 
 Run the test suite with `pytest`.
+
+## Limitations
+
+Known limitations of the current implementation, so results are read with the right
+expectations:
+
+- **Deliberate deviations from the proposal.** A handful of signature/API choices differ
+  from the proposal by design (dropped algebraically-derivable Block-A features, no
+  per-feature standard errors on the signature, no `sample(num_triples=…)`, Block-E induced
+  star counts dropped in favour of characteristic sets). Each is documented, with the *what /
+  what-we-do / why*, in the **[Deviations from the proposal](docs/signature.md#deviations-from-the-proposal)**
+  table in `docs/signature.md`.
+- **Block F path lengths are measured, not steered.** `shortest_path_max/mean/var` are part
+  of the signature and reported in the round-trip comparison, but the Stage-2 path-length
+  steering that once targeted them was removed (it was disabled dead code). The generator hits
+  them only incidentally, via the degree sequence and connectivity structure it *does* steer —
+  so expect Block F path features to land approximately, not on target.
+- **The colour-coding diamond count is biased high.** Block E's 4-node motif counts come from
+  a colour-coding sampler, and the diamond graphlet (K4 minus an edge) is systematically
+  over-counted (~+60%), a bias that does not shrink with sample budget. It is self-consistent
+  across the round-trip — the target and the re-measure share the estimator, so the comparison
+  is fair — and Stage 3's per-swap diamond delta is exact; only the absolute diamond *level* is
+  biased. Use `ExactMotifCounter` directly for an unbiased count on a specific graph. Tracked as
+  `KNOWN_CC_DIAMOND_BIAS` in `tests/test_hybrid_motif_counter.py`.
+- **Generation is reproducible from a seed within a process, but the corpus is not yet
+  bit-for-bit regenerable across machines.** `Generator.sample(seed=…)` derives all sub-seeds
+  from one integer, so a given process reproduces its own output. However, `load_kg` currently
+  numbers vertices in rdflib's hash-ordered iteration order, which varies across processes
+  unless `PYTHONHASHSEED` is pinned; exact motif counts are invariant to that relabelling but
+  seeded *sampled* estimates (Block E colour-coding) are not. A one-line fix (sort vertices at
+  load) is deferred because it renumbers vertices and therefore has to land together with the
+  single planned corpus re-measurement. Until then, treat the tracked corpus signatures as
+  reproducible-in-distribution, not byte-identical.
