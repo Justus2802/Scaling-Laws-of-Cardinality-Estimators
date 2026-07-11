@@ -52,6 +52,10 @@ def _make_block_c(
     c._type_rel_spectrum_exp = spectrum
     c._subj_cooc_exp = subj_cooc if subj_cooc is not None else nan_exp_decay()
     c._obj_cooc_exp  = obj_cooc  if obj_cooc  is not None else nan_exp_decay()
+    # Pair-level multiplicity targets a complete reduced Block C always carries
+    # (1.0 = simple graph, no repeated/reversed pairs); sample_schema reads them.
+    c._edge_multiplicity = 1.0
+    c._bidirectional_ratio = 1.0
     return c
 
 

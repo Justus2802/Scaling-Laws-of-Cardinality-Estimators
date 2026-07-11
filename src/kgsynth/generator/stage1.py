@@ -119,52 +119,6 @@ def _sample_type_relation_probs(
     return P
 
 
-def _build_type_rel_probs_from_measured(
-    type_relation_conditional: dict[str, dict[str, float]],
-    num_types: int,
-    num_relations: int,
-    relation_weights: np.ndarray,
-) -> np.ndarray:
-    """Build P(r|t) from measured type_relation_conditional via rank mapping.
-
-    Sorts real types by activity (descending) and real relations by aggregate
-    frequency (descending), then maps them positionally onto schema indices.
-    This preserves co-occurrence structure without requiring URI alignment.
-
-    The reduced Block C does not expose a measured ``type_relation_conditional``
-    dict, so for reduced-signature inputs this path is unused and Stage 1 always
-    falls back to the low-rank synthesis above.
-    """
-    if not type_relation_conditional or num_types == 0 or num_relations == 0:
-        return np.tile(relation_weights, (num_types, 1))
-
-    real_types = sorted(
-        type_relation_conditional,
-        key=lambda t: sum(type_relation_conditional[t].values()),
-        reverse=True,
-    )
-    rel_agg: dict[str, float] = {}
-    for probs in type_relation_conditional.values():
-        for rel, p in probs.items():
-            rel_agg[rel] = rel_agg.get(rel, 0.0) + p
-    real_rels = sorted(rel_agg, key=lambda r: rel_agg[r], reverse=True)
-
-    P = np.zeros((num_types, num_relations), dtype=float)
-    for t_idx in range(num_types):
-        real_t = real_types[t_idx % len(real_types)]
-        src = type_relation_conditional[real_t]
-        for r_idx in range(num_relations):
-            real_r = real_rels[r_idx % len(real_rels)]
-            P[t_idx, r_idx] = src.get(real_r, 0.0)
-
-    row_sums = P.sum(axis=1, keepdims=True)
-    zero_mask = (row_sums.ravel() == 0)
-    P[zero_mask] = relation_weights
-    row_sums[row_sums == 0] = 1.0
-    P /= row_sums
-    return P
-
-
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -257,22 +211,15 @@ def sample_schema(
         type_weights = np.array([], dtype=float)
 
     # --- Type-relation probability table ---
-    # Use measured P(r|t) directly when available (full-block inputs); reduced
-    # Block C provides none, so synthesise from the P(r|t) type-relation
-    # spectrum — its *own* T×R singular spectrum, not the R×R co-occurrence
-    # spectrum the generator used to conflate it with.
-    trc = getattr(c, "type_relation_conditional", None) or {}
-    if trc:
-        type_relation_probs = _build_type_rel_probs_from_measured(
-            trc, num_types, num_relations, relation_weights,
-        )
-    else:
-        target_svs = _reconstruct_singular_values(c.type_rel_spectrum_exp)
-        if num_types > 0 and target_svs.size == 0:
-            log.info("Stage 1: no P(r|t) spectrum — uniform per-type relation weights")
-        type_relation_probs = _sample_type_relation_probs(
-            num_types, num_relations, relation_weights, target_svs, rng,
-        )
+    # The reduced Block C exposes no measured P(r|t) dict, so synthesise it from
+    # the P(r|t) type-relation spectrum — its *own* T×R singular spectrum, not the
+    # R×R co-occurrence spectrum the generator used to conflate it with.
+    target_svs = _reconstruct_singular_values(c.type_rel_spectrum_exp)
+    if num_types > 0 and target_svs.size == 0:
+        log.info("Stage 1: no P(r|t) spectrum — uniform per-type relation weights")
+    type_relation_probs = _sample_type_relation_probs(
+        num_types, num_relations, relation_weights, target_svs, rng,
+    )
 
     # --- Co-occurrence group prototypes from Block C spectra ---
     # subj_cooc_exp / obj_cooc_exp are the exp-decay fits of the V-normalised
@@ -383,16 +330,15 @@ def sample_schema(
     target_num_components = int(f.num_components) if f is not None else DEFAULT_NUM_COMPONENTS
     target_lcc = float(f.largest_component_fraction) if f is not None else DEFAULT_LCC
 
-    # Block C pair-level edge multiplicity (overlap) targets; NaN / not-measured
-    # (stale signatures) → 1.0, the neutral legacy near-simple graph.
-    def _ratio(getter) -> float:
-        try:
-            v = float(getter())
-        except Exception:  # noqa: BLE001 — NotCalculated on stale caches → neutral
-            return 1.0
+    # Block C pair-level edge multiplicity (overlap) targets. A current-format
+    # Block C always carries these; read them directly so a missing value raises
+    # loudly rather than being masked. A NaN value is a real measurement outcome
+    # (a graph with zero content/undirected edges — see BlockC.calculate) and
+    # clamps to 1.0, the neutral near-simple target, as does any value < 1.0.
+    def _clamp_ratio(v: float) -> float:
         return v if (v == v and v >= 1.0) else 1.0
-    edge_multiplicity = _ratio(lambda: c.edge_multiplicity)
-    bidirectional_ratio = _ratio(lambda: c.bidirectional_ratio)
+    edge_multiplicity = _clamp_ratio(float(c.edge_multiplicity))
+    bidirectional_ratio = _clamp_ratio(float(c.bidirectional_ratio))
 
     # Per-relation reciprocity (Block B): assign each synthetic relation symmetric
     # (~recip_symmetric_value) or asymmetric (0) by a Bernoulli draw on
@@ -412,12 +358,12 @@ def sample_schema(
     # (ties broken toward the higher-frequency side) rather than defaulting to 0.
     relation_reciprocity = None
     if b is not None:
-        try:
-            frac_symmetric = np.asarray(b.recip_symmetric_frac, dtype=float)
-            symmetric_value = float(b.recip_symmetric_value)
-        except Exception:  # noqa: BLE001 — NotCalculated on stale caches → asymmetric
-            frac_symmetric = None
-        if frac_symmetric is not None and np.isfinite(frac_symmetric).any():
+        # Block B is present, so it carries reciprocity — read directly. A bin
+        # being NaN (a data gap: no relation landed in it) is handled below by
+        # borrowing the nearest non-empty bin, not by a stale-file fallback.
+        frac_symmetric = np.asarray(b.recip_symmetric_frac, dtype=float)
+        symmetric_value = float(b.recip_symmetric_value)
+        if np.isfinite(frac_symmetric).any():
             n_bins = frac_symmetric.size
             valid = np.where(np.isfinite(frac_symmetric))[0]
             filled = frac_symmetric.copy()

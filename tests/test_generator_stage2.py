@@ -36,6 +36,10 @@ def _make_block_c(num_classes=3, class_size_zipf=2.0) -> BlockC:
     c._type_rel_spectrum_exp = ExpDecayFit(rate=0.5, scale=100.0)
     c._subj_cooc_exp = nan_exp_decay()
     c._obj_cooc_exp  = nan_exp_decay()
+    # Pair-level multiplicity targets a complete reduced Block C always carries
+    # (1.0 = simple graph, no repeated/reversed pairs); sample_schema reads them.
+    c._edge_multiplicity = 1.0
+    c._bidirectional_ratio = 1.0
     return c
 
 
@@ -51,6 +55,11 @@ def _make_block_b(
     b._subj_alpha_q = _q(subj_alpha, 0.3, 1.4, 3.0)
     b._a_obj = a_obj
     b._a_subj = 0.2
+    # Reciprocity a complete reduced Block B always carries; all-NaN frac models
+    # "no reciprocity signal" so sample_schema leaves relation_reciprocity None
+    # (all-asymmetric) — the reciprocity tests use _make_block_b_reciprocal instead.
+    b._recip_symmetric_frac = np.full(6, float("nan"))
+    b._recip_symmetric_value = float("nan")
     return b
 
 
