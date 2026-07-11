@@ -108,8 +108,13 @@ class BlockD(SignatureBlock):
 
         cs_sizes = np.fromiter((len(cs) for cs in cs_of.values()), dtype=float, count=len(cs_of)) \
             if cs_of else np.array([], dtype=float)
-        inv_cs_sizes = np.fromiter((len(cs) for cs in inv_cs_of.values()), dtype=float, count=len(inv_cs_of)) \
-            if inv_cs_of else np.array([], dtype=float)
+        inv_cs_sizes = (
+            np.fromiter(
+                (len(cs) for cs in inv_cs_of.values()), dtype=float, count=len(inv_cs_of)
+            )
+            if inv_cs_of
+            else np.array([], dtype=float)
+        )
         self._cs_sizes = cs_sizes
         self._inv_cs_sizes = inv_cs_sizes
 
@@ -129,7 +134,9 @@ class BlockD(SignatureBlock):
             self._cs_freq_fit = nan_trunc_powerlaw()
         if inv_cs_of:
             inv_freq = Counter(inv_cs_of.values())
-            self._inv_cs_freq_counts = np.fromiter(inv_freq.values(), dtype=float, count=len(inv_freq))
+            self._inv_cs_freq_counts = np.fromiter(
+                inv_freq.values(), dtype=float, count=len(inv_freq)
+            )
             self._inv_cs_freq_fit = fit_truncated_powerlaw(self._inv_cs_freq_counts)
         else:
             self._inv_cs_freq_counts = np.array([], dtype=float)
@@ -229,7 +236,8 @@ class BlockD(SignatureBlock):
 
     @staticmethod
     def _compute_inv_cs(g: igraph.Graph) -> dict[int, frozenset[str]]:
-        """Single g.es pass → inv_cs_of[v_idx] = frozenset of incoming predicates (non-literals only)."""
+        """Single g.es pass → inv_cs_of[v_idx] = frozenset of incoming predicates
+        (non-literals only)."""
         inv_cs_of: defaultdict[int, set[str]] = defaultdict(set)
         is_literal: list[bool] = g.vs["is_literal"]
         for e in g.es:
@@ -275,12 +283,17 @@ class BlockD(SignatureBlock):
         lines = [
             "=== Reduced Block D: Characteristic Sets & Two-step (G3) ===",
             f"  num_distinct_cs    : {self.num_distinct_cs}",
-            f"  CS frequency       : trunc. power-law(alpha={cf.alpha:.4f}, range=[{cf.v_min:.0f},{cf.v_max:.0f}])",
-            f"  CS size            : quantiles(median={cs.q50:.1f}, IQR=[{cs.q25:.1f},{cs.q75:.1f}], range=[{cs.q0:.1f},{cs.q100:.1f}])",
+            f"  CS frequency       : trunc. power-law(alpha={cf.alpha:.4f}, "
+            f"range=[{cf.v_min:.0f},{cf.v_max:.0f}])",
+            f"  CS size            : quantiles(median={cs.q50:.1f}, "
+            f"IQR=[{cs.q25:.1f},{cs.q75:.1f}], range=[{cs.q0:.1f},{cs.q100:.1f}])",
             f"  inv_num_distinct_cs: {self.inv_num_distinct_cs}",
-            f"  inverse-CS freq    : trunc. power-law(alpha={icf.alpha:.4f}, range=[{icf.v_min:.0f},{icf.v_max:.0f}])",
-            f"  inverse-CS size    : quantiles(median={inv.q50:.1f}, IQR=[{inv.q25:.1f},{inv.q75:.1f}], range=[{inv.q0:.1f},{inv.q100:.1f}])",
-            f"  two-step path count: trunc. power-law(alpha={ts.alpha:.4f}, range=[{ts.v_min:.0f},{ts.v_max:.0f}])",
+            f"  inverse-CS freq    : trunc. power-law(alpha={icf.alpha:.4f}, "
+            f"range=[{icf.v_min:.0f},{icf.v_max:.0f}])",
+            f"  inverse-CS size    : quantiles(median={inv.q50:.1f}, "
+            f"IQR=[{inv.q25:.1f},{inv.q75:.1f}], range=[{inv.q0:.1f},{inv.q100:.1f}])",
+            f"  two-step path count: trunc. power-law(alpha={ts.alpha:.4f}, "
+            f"range=[{ts.v_min:.0f},{ts.v_max:.0f}])",
         ]
         text = "\n".join(lines)
         if path is None:
@@ -312,7 +325,9 @@ class BlockD(SignatureBlock):
             ax.set_title("Inverse CS size (fit: quantiles)")
 
             ax = axes[0, 2]
-            if not overlay_truncated_powerlaw(ax, pair_counts, self.two_step_fit, label="path counts"):
+            if not overlay_truncated_powerlaw(
+                ax, pair_counts, self.two_step_fit, label="path counts"
+            ):
                 ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
             ax.set_xlabel("path count per (q, p)")
             ax.set_ylabel("P(X ≥ x)")

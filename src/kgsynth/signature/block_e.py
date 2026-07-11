@@ -204,11 +204,17 @@ class BlockE(SignatureBlock):
                 self._path_template_entropy[_k] = _e
             log.info(
                 "Block E: computed path_template_zipf (k=2..10 alphas=%s)",
-                [round(self._path_template_zipf.get(k, float("nan")), 4) for k in range(2, _MAX_K + 1)],
+                [
+                    round(self._path_template_zipf.get(k, float("nan")), 4)
+                    for k in range(2, _MAX_K + 1)
+                ],
             )
             log.info(
                 "Block E: computed path_template_entropy (k=2..10 entropies=%s)",
-                [round(self._path_template_entropy.get(k, float("nan")), 4) for k in range(2, _MAX_K + 1)],
+                [
+                    round(self._path_template_entropy.get(k, float("nan")), 4)
+                    for k in range(2, _MAX_K + 1)
+                ],
             )
 
             # Tree templates: Zipf + entropy of how total motif counts scale across k.
@@ -219,7 +225,9 @@ class BlockE(SignatureBlock):
                 for _k in _cc_by_k
                 if sum(_cc_by_k[_k].values()) > 0
             }
-            self._tree_template_zipf, self._tree_template_entropy = self._template_stats(_totals_by_k)
+            self._tree_template_zipf, self._tree_template_entropy = self._template_stats(
+                _totals_by_k
+            )
             log.info(
                 "Block E: computed tree_template stats (zipf_alpha=%.4f, entropy=%.4f)",
                 self._tree_template_zipf, self._tree_template_entropy,
@@ -314,7 +322,9 @@ class BlockE(SignatureBlock):
             xmin  = float(np.min(pos))
             tail  = pos[pos >= xmin]
             denom = float(np.sum(np.log(tail / xmin)))
-            zipf  = float(np.clip(1.0 + tail.size / denom, 1.01, 50.0)) if denom > 0 else float("nan")
+            zipf  = (
+                float(np.clip(1.0 + tail.size / denom, 1.01, 50.0)) if denom > 0 else float("nan")
+            )
         p = freqs / freqs.sum()
         p = p[p > 0]
         entropy = -float(np.sum(p * np.log(p)))
@@ -341,7 +351,10 @@ class BlockE(SignatureBlock):
             lines.append(f"  {k:>3}  {z:>10.4f}  {e:>10.4f}")
 
         lines.append("\n--- Tree templates ---")
-        lines.append(f"  zipf_alpha={self.tree_template_zipf:.4f}  entropy={self.tree_template_entropy:.4f}")
+        lines.append(
+            f"  zipf_alpha={self.tree_template_zipf:.4f}  "
+            f"entropy={self.tree_template_entropy:.4f}"
+        )
 
         text = "\n".join(lines)
         if path is None:

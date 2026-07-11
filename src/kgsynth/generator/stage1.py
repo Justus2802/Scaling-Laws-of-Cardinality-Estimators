@@ -379,7 +379,11 @@ def sample_schema(
                               0, n_bins - 1)
             p_sym = filled[bin_idx]
             is_sym = rng.random(num_relations) < p_sym
-            recip_ordered = np.where(is_sym, symmetric_value if np.isfinite(symmetric_value) else 0.9, 0.0)
+            recip_ordered = np.where(
+                is_sym,
+                symmetric_value if np.isfinite(symmetric_value) else 0.9,
+                0.0,
+            )
             relation_reciprocity = np.empty(num_relations, dtype=float)
             relation_reciprocity[order] = recip_ordered
 

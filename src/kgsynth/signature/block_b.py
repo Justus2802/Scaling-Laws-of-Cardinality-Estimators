@@ -167,8 +167,12 @@ class BlockB(SignatureBlock):
 
         # Per-relation (subject→#objects) and (object→#subjects) counts, plus the
         # forward/inverse CS of every entity, in a single edge pass.
-        subj_obj_count: defaultdict[str, defaultdict[int, int]] = defaultdict(lambda: defaultdict(int))
-        obj_subj_count: defaultdict[str, defaultdict[int, int]] = defaultdict(lambda: defaultdict(int))
+        subj_obj_count: defaultdict[str, defaultdict[int, int]] = defaultdict(
+            lambda: defaultdict(int)
+        )
+        obj_subj_count: defaultdict[str, defaultdict[int, int]] = defaultdict(
+            lambda: defaultdict(int)
+        )
         cs_of: defaultdict[int, set[str]] = defaultdict(set)
         inv_cs_of: defaultdict[int, set[str]] = defaultdict(set)
         rel_edge_counts: defaultdict[str, int] = defaultdict(int)
@@ -383,11 +387,16 @@ class BlockB(SignatureBlock):
         ss = self.subj_alpha_q
         lines = [
             "=== Reduced Block B: Relation Frequency & Multiplicity (G1/G2/G2b) ===",
-            f"  out-degree fit : alpha={self.out_degree_fit.alpha:.4f}  xmin={self.out_degree_fit.xmin}",
-            f"  in-degree fit  : alpha={self.in_degree_fit.alpha:.4f}  xmin={self.in_degree_fit.xmin}",
-            f"  relation Zipf  : exponent={self.relation_zipf.exponent:.4f}  xmin={self.relation_zipf.x_min}",
-            f"  obj  mult-alpha quantiles: median={s.q50:.3f} IQR=[{s.q25:.3f},{s.q75:.3f}] cutoffs=[{s.q0:.2f},{s.q100:.2f}]",
-            f"  subj mult-alpha quantiles: median={ss.q50:.3f} IQR=[{ss.q25:.3f},{ss.q75:.3f}] cutoffs=[{ss.q0:.2f},{ss.q100:.2f}]",
+            f"  out-degree fit : alpha={self.out_degree_fit.alpha:.4f}  "
+            f"xmin={self.out_degree_fit.xmin}",
+            f"  in-degree fit  : alpha={self.in_degree_fit.alpha:.4f}  "
+            f"xmin={self.in_degree_fit.xmin}",
+            f"  relation Zipf  : exponent={self.relation_zipf.exponent:.4f}  "
+            f"xmin={self.relation_zipf.x_min}",
+            f"  obj  mult-alpha quantiles: median={s.q50:.3f} "
+            f"IQR=[{s.q25:.3f},{s.q75:.3f}] cutoffs=[{s.q0:.2f},{s.q100:.2f}]",
+            f"  subj mult-alpha quantiles: median={ss.q50:.3f} "
+            f"IQR=[{ss.q25:.3f},{ss.q75:.3f}] cutoffs=[{ss.q0:.2f},{ss.q100:.2f}]",
             f"  CS-size offset : a_obj={self.a_obj:.4f}  a_subj={self.a_subj:.4f}",
             f"  out-degree     : max={self.out_degree_max}  p90={self.out_degree_p90:.1f}",
             f"  in-degree      : max={self.in_degree_max}  p90={self.in_degree_p90:.1f}",

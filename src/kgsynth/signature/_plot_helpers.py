@@ -178,7 +178,11 @@ def overlay_truncated_powerlaw(ax, values: np.ndarray, fit, *,
     n = sorted_vals.size
     ccdf = np.arange(n, 0, -1) / n
     ax.loglog(sorted_vals, ccdf, "o", markersize=3, color=color, label=label, alpha=0.7)
-    if np.isfinite([fit.alpha, fit.v_min, fit.v_max]).all() and fit.alpha > 0 and fit.v_min < fit.v_max:
+    if (
+        np.isfinite([fit.alpha, fit.v_min, fit.v_max]).all()
+        and fit.alpha > 0
+        and fit.v_min < fit.v_max
+    ):
         alpha, v_min, v_max = fit.alpha, fit.v_min, fit.v_max
         p_vmin = float((values >= v_min).sum()) / n
         xs = np.logspace(np.log10(v_min), np.log10(v_max), 200)

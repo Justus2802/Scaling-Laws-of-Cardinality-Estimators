@@ -51,7 +51,9 @@ class TestBlockBSmallFixtures(unittest.TestCase):
             "@prefix ex: <http://example.org/> .\nex:a ex:p ex:b . ex:a ex:q ex:c .\n",
         ]:
             with self.subTest(ttl=ttl):
-                self.assertEqual(len(BlockB().calculate(self._load_ttl(ttl)).as_vector()), _VECTOR_LEN)
+                self.assertEqual(
+                    len(BlockB().calculate(self._load_ttl(ttl)).as_vector()), _VECTOR_LEN
+                )
 
 
 class TestBlockBPowerLawFit(unittest.TestCase):

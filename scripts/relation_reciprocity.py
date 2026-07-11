@@ -66,8 +66,11 @@ def _measure(name: str, top: int):
         if s == o or is_lit[s] or is_lit[o]:
             continue
         r = e["predicate"]
-        cs[s].add(r); inv_cs[o].add(r)
-        Sr[r].add(s); Or[r].add(o); edges[r].add((s, o))
+        cs[s].add(r)
+        inv_cs[o].add(r)
+        Sr[r].add(s)
+        Or[r].add(o)
+        edges[r].add((s, o))
         dir_pairs.add((s, o))
 
     n_edges = sum(len(v) for v in edges.values())
@@ -135,13 +138,15 @@ def main() -> None:
         rows.append(summary)
         with open(args.out / f"{name}_per_relation.csv", "w", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=list(per_rel[0]))
-            w.writeheader(); w.writerows(per_rel)
+            w.writeheader()
+        w.writerows(per_rel)
     if not rows:
         raise SystemExit("no graphs measured")
 
     with open(args.out / "reciprocity_summary.csv", "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=list(rows[0]))
-        w.writeheader(); w.writerows(rows)
+        w.writeheader()
+        w.writerows(rows)
 
     print(f"\n{'graph':>14}  {'overall':>8}  {'bidir_pair':>10}  {'symm_edge%':>10}  "
           f"{'midband%':>9}  {'CS∩invCS jac':>12}")

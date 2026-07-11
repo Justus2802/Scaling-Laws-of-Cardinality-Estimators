@@ -214,7 +214,9 @@ def instantiate(
         size = float(vals[0]) if vals is not None else float(rng.poisson(fallback_cs_mean))
         return max(1, int(round(size)))
 
-    def _cap_redistribute(m: np.ndarray, cap, w: np.ndarray, hard_cap: np.ndarray | None = None) -> None:
+    def _cap_redistribute(
+        m: np.ndarray, cap, w: np.ndarray, hard_cap: np.ndarray | None = None
+    ) -> None:
         """Cap each count and redistribute overflow by weights ``w``.
 
         ``cap`` is a scalar upper bound (used for |S_r| / |O_r| side caps).
@@ -225,7 +227,11 @@ def instantiate(
         """
         if m.size == 0:
             return
-        caps = np.minimum(cap, hard_cap) if hard_cap is not None else np.full(m.shape, cap, dtype=np.int64)
+        caps = (
+            np.minimum(cap, hard_cap)
+            if hard_cap is not None
+            else np.full(m.shape, cap, dtype=np.int64)
+        )
         if (caps <= 0).all():
             m[:] = 0
             return
@@ -390,7 +396,9 @@ def instantiate(
             for g in range(n_sg):
                 probs_g = schema.subj_group_probs[g].copy()
                 nz_g = int((probs_g > 0).sum())
-                group_fwd_pools.append(_build_distinct(probs_g, nz_g, schema.cs_size_q, _fwd_quotas[g]))
+                group_fwd_pools.append(
+                    _build_distinct(probs_g, nz_g, schema.cs_size_q, _fwd_quotas[g])
+                )
             buckets_sg: dict[int, list[int]] = {}
             for v in range(actual_V):
                 buckets_sg.setdefault(int(entity_subj_group[v]), []).append(v)
@@ -445,8 +453,12 @@ def instantiate(
             untyped = _build_distinct(probs, nz, schema.cs_size_q, max(1, schema.cs_num_templates))
             _assign_templates(list(range(actual_V)), untyped, schema.cs_template_zipf,
                               entity_cs, reuse_vmax=schema.cs_template_vmax)
-        used = len({frozenset(int(x) for x in entity_cs[v]) for v in range(actual_V) if len(entity_cs[v])})
-        log.info("Stage 2: forward CS (target %d distinct, realised %d)", schema.cs_num_templates, used)
+        used = len(
+            {frozenset(int(x) for x in entity_cs[v]) for v in range(actual_V) if len(entity_cs[v])}
+        )
+        log.info(
+            "Stage 2: forward CS (target %d distinct, realised %d)", schema.cs_num_templates, used
+        )
     else:
         log.info("Stage 2: forward CS in per-entity mode (no Block D templates)")
         for v in range(actual_V):
@@ -468,7 +480,9 @@ def instantiate(
             for g in range(n_og):
                 probs_g = schema.obj_group_probs[g].copy()
                 nz_g = int((probs_g > 0).sum())
-                group_inv_pools.append(_build_distinct(probs_g, nz_g, schema.inv_cs_size_q, _inv_quotas[g]))
+                group_inv_pools.append(
+                    _build_distinct(probs_g, nz_g, schema.inv_cs_size_q, _inv_quotas[g])
+                )
             buckets_og: dict[int, list[int]] = {}
             for v in range(actual_V):
                 buckets_og.setdefault(int(entity_obj_group[v]), []).append(v)
@@ -477,7 +491,8 @@ def instantiate(
                                   schema.inv_cs_template_zipf, entity_inv_cs,
                                   reuse_vmax=schema.inv_cs_template_vmax)
             inv_used = len({frozenset(int(x) for x in entity_inv_cs[v])
-                            for v in range(actual_V) if entity_inv_cs[v] is not None and len(entity_inv_cs[v])})
+                            for v in range(actual_V)
+                            if entity_inv_cs[v] is not None and len(entity_inv_cs[v])})
             log.info("Stage 2: group inverse CS (target %d templates, realised %d)",
                      schema.inv_cs_num_templates, inv_used)
         else:
@@ -770,7 +785,9 @@ def instantiate(
             # multinomial above can still over-allocate to a single node within one
             # relation pass (all edges placed before in_degrees is updated), so the
             # excess is redistributed proportionally to nodes with remaining quota.
-            global_cap = np.maximum(tgt_in[obj_ids] - (in_degrees[obj_ids] - 1.0), 0).astype(np.int64)
+            global_cap = np.maximum(
+                tgt_in[obj_ids] - (in_degrees[obj_ids] - 1.0), 0
+            ).astype(np.int64)
             _cap_redistribute(m_in, n_sr, w_in, hard_cap=global_cap)
 
         # Reciprocity: guarantee both an out-stub AND an in-stub of r for a ρ_r-sized

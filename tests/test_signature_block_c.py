@@ -101,7 +101,9 @@ class TestBlockCSmallFixtures(unittest.TestCase):
             + "".join(f"ex:s{i} ex:p ex:o{i} .\n" for i in range(20)),
         ]:
             with self.subTest(ttl=ttl[:60]):
-                self.assertEqual(len(BlockC().calculate(self._load_ttl(ttl)).as_vector()), _VECTOR_LEN)
+                self.assertEqual(
+                    len(BlockC().calculate(self._load_ttl(ttl)).as_vector()), _VECTOR_LEN
+                )
 
 
 class TestBlockCSerialize(unittest.TestCase):

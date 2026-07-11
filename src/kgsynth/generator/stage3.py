@@ -24,7 +24,10 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:          # for the quoted forward-ref annotations only (no runtime import)
+    from ..signature import BlockE, BlockF
 
 try:                       # POSIX-only: single-key stdin reads for manual early-exit
     import termios
@@ -37,8 +40,17 @@ import igraph
 import numpy as np
 
 from ._constants import _RDF_TYPE
-from ..motif_counter import ExactMotifCounter, HybridMotifCounter, MotifCounter  # CCMotifCounter available as swap-in
-from .local_updates import _adj_inc, _adj_dec, _triangle_node_delta, _motif4_delta, _cycle_delta, _star_count_delta, _tree_entropy_delta, _path_entropy_delta, _entropy_from_freq
+from ..motif_counter import HybridMotifCounter, MotifCounter  # CCMotifCounter available as swap-in
+from .local_updates import (
+    _adj_inc,
+    _adj_dec,
+    _triangle_node_delta,
+    _motif4_delta,
+    _cycle_delta,
+    _tree_entropy_delta,
+    _path_entropy_delta,
+    _entropy_from_freq,
+)
 from .._logging import get_logger
 from .stage2 import _connect_components
 
@@ -479,7 +491,9 @@ def refine(
     # fast O(Δ²) path (valid when the paw is not among them).
     _m4_types = frozenset(_motif4_targets)
 
-    current_motifs4 = initial_motif_counter.count_motifs4(_build_und_graph()) if _motif4_targets else {}
+    current_motifs4 = (
+        initial_motif_counter.count_motifs4(_build_und_graph()) if _motif4_targets else {}
+    )
 
     # ----------------------------------------- 5/6-cycle targets
     # As with 4-node motifs, only steer a cycle size when its loss weight is
@@ -553,7 +567,9 @@ def refine(
     # with the first swapped relation.  We track k=2 and k=3 only.
     # path_template_entropy is a dict {k: float} on BlockE; use k=3 as the target.
     _pte_dict = getattr(target_e, "path_template_entropy", None) or {}
-    _target_path_entropy_k3 = float(_pte_dict.get(3, float("nan")) if isinstance(_pte_dict, dict) else float("nan"))
+    _target_path_entropy_k3 = float(
+        _pte_dict.get(3, float("nan")) if isinstance(_pte_dict, dict) else float("nan")
+    )
     use_path_entropy = (
         not math.isnan(_target_path_entropy_k3)
         and _target_path_entropy_k3 > 0
@@ -618,9 +634,13 @@ def refine(
         if use_cc:
             terms["cc"] = _rel(st.cc, target_cc, max(1e-9, target_cc))
         if use_tree_entropy:
-            terms["tree_entropy"] = _rel(st.tree_h, _target_tree_entropy, max(1e-9, _target_tree_entropy))
+            terms["tree_entropy"] = _rel(
+                st.tree_h, _target_tree_entropy, max(1e-9, _target_tree_entropy)
+            )
         if use_path_entropy:
-            terms["path_entropy_k3"] = _rel(st.path_h, _target_path_entropy_k3, max(1e-9, _target_path_entropy_k3))
+            terms["path_entropy_k3"] = _rel(
+                st.path_h, _target_path_entropy_k3, max(1e-9, _target_path_entropy_k3)
+            )
         return terms
 
     # Base weight per active error-term stem; parallels _error_terms so the loss is a
@@ -1009,14 +1029,19 @@ def refine(
                 # it the dominant per-swap cost on dense graphs.  Skipped swaps carry
                 # the motif4 counts over unchanged — the motif4 loss terms cancel in
                 # the accept test, as with the cycle guard.
-                if max(len(adj[s1]), len(adj[o1]), len(adj[s2]), len(adj[o2])) > MOTIF4_DELTA_MAX_DEGREE:
+                if (
+                    max(len(adj[s1]), len(adj[o1]), len(adj[s2]), len(adj[o2]))
+                    > MOTIF4_DELTA_MAX_DEGREE
+                ):
                     motif4_delta_dropped += 1
                     _m4d = None  # guard-dropped: swap log leaves the motif4 cells empty
                     new_motifs4 = current.motifs4
                 else:
                     motif4_delta_computed += 1
                     _m4d = _motif4_delta(adj, s1, o1, s2, o2, types=_m4_types)
-                    new_motifs4 = {k: current.motifs4.get(k, 0) + _m4d.get(k, 0) for k in _motif4_targets}
+                    new_motifs4 = {
+                        k: current.motifs4.get(k, 0) + _m4d.get(k, 0) for k in _motif4_targets
+                    }
             else:
                 _m4d = None
                 new_motifs4 = current.motifs4

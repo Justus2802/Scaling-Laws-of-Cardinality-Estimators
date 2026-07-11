@@ -105,16 +105,22 @@ def _classify4(adj: list, a: int, b: int, w: int, x: int) -> "tuple | None":
     four nodes do not induce a connected 4-node motif.  Treats ``adj`` keys as a
     simple graph.
     """
-    e_ab = b in adj[a]; e_aw = w in adj[a]; e_ax = x in adj[a]
-    e_bw = w in adj[b]; e_bx = x in adj[b]; e_wx = x in adj[w]
+    e_ab = b in adj[a]
+    e_aw = w in adj[a]
+    e_ax = x in adj[a]
+    e_bw = w in adj[b]
+    e_bx = x in adj[b]
+    e_wx = x in adj[w]
     m = e_ab + e_aw + e_ax + e_bw + e_bx + e_wx
     if m == 6:
         return (3, 3, 3, 3)
     if m == 5:
         return (2, 2, 3, 3)
     if m == 4:
-        da = e_ab + e_aw + e_ax; db = e_ab + e_bw + e_bx
-        dw = e_aw + e_bw + e_wx; dx = e_ax + e_bx + e_wx
+        da = e_ab + e_aw + e_ax
+        db = e_ab + e_bw + e_bx
+        dw = e_aw + e_bw + e_wx
+        dx = e_ax + e_bx + e_wx
         return (2, 2, 2, 2) if min(da, db, dw, dx) == 2 else _PAW_DS
     return None  # m <= 3: tree/disconnected, not a tracked motif
 
@@ -136,7 +142,8 @@ def _motifs4_through_pairs(adj: list, pairs, types: frozenset) -> dict[frozenset
     for a, b in pairs:
         na, nb = adj[a], adj[b]
         cand = (set(na) | set(nb))
-        cand.discard(a); cand.discard(b)
+        cand.discard(a)
+        cand.discard(b)
         cand = list(cand)
         for i in range(len(cand)):
             w = cand[i]
@@ -176,11 +183,15 @@ def _motif4_delta(
     """
     pairs = ((s1, o1), (s2, o2), (s1, o2), (s2, o1))
     before = Counter(_motifs4_through_pairs(adj, pairs, types).values())
-    _adj_dec(adj, s1, o1); _adj_dec(adj, s2, o2)
-    _adj_inc(adj, s1, o2); _adj_inc(adj, s2, o1)
+    _adj_dec(adj, s1, o1)
+    _adj_dec(adj, s2, o2)
+    _adj_inc(adj, s1, o2)
+    _adj_inc(adj, s2, o1)
     after = Counter(_motifs4_through_pairs(adj, pairs, types).values())
-    _adj_dec(adj, s1, o2); _adj_dec(adj, s2, o1)
-    _adj_inc(adj, s1, o1); _adj_inc(adj, s2, o2)
+    _adj_dec(adj, s1, o2)
+    _adj_dec(adj, s2, o1)
+    _adj_inc(adj, s1, o1)
+    _adj_inc(adj, s2, o2)
 
     return {
         ds: after[ds] - before[ds]
@@ -365,8 +376,12 @@ def _induced_cycles_through_pair_mitm(
         ):
             raise _DegreeGuardExceeded
 
-        A = set(adj[a]); A.discard(a); A.discard(b)
-        B = set(adj[b]); B.discard(a); B.discard(b)
+        A = set(adj[a])
+        A.discard(a)
+        A.discard(b)
+        B = set(adj[b])
+        B.discard(a)
+        B.discard(b)
         AB = A - B          # arc-start candidates near a that are not chords to b
         BA = B - A          # arc-start candidates near b that are not chords to a
         by_len: dict[int, list] = {L: [] for L in range(1, kmax)}

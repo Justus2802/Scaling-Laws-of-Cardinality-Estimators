@@ -394,13 +394,18 @@ class BlockC(SignatureBlock):
         lines = [
             "=== Reduced Block C: Schema & Co-occurrence (G3) ===",
             f"  num_classes        : {self.num_classes}",
-            f"  class size power-law: alpha={self.class_size_fit.alpha:.4f}  xmin={self.class_size_fit.xmin}",
-            f"  subj co-occurrence : exp(rate={self.subj_cooc_exp.rate:.3f}, scale={self.subj_cooc_exp.scale:.3f})  density={self.subj_cooc_density:.4f}",
-            f"  obj  co-occurrence : exp(rate={self.obj_cooc_exp.rate:.3f}, scale={self.obj_cooc_exp.scale:.3f})  density={self.obj_cooc_density:.4f}",
+            f"  class size power-law: alpha={self.class_size_fit.alpha:.4f}  "
+            f"xmin={self.class_size_fit.xmin}",
+            f"  subj co-occurrence : exp(rate={self.subj_cooc_exp.rate:.3f}, "
+            f"scale={self.subj_cooc_exp.scale:.3f})  density={self.subj_cooc_density:.4f}",
+            f"  obj  co-occurrence : exp(rate={self.obj_cooc_exp.rate:.3f}, "
+            f"scale={self.obj_cooc_exp.scale:.3f})  density={self.obj_cooc_density:.4f}",
             f"  subj row entropy   : quantiles(median={s.q50:.3f}, IQR=[{s.q25:.3f},{s.q75:.3f}])",
             f"  obj  row entropy   : quantiles(median={o.q50:.3f}, IQR=[{o.q25:.3f},{o.q75:.3f}])",
-            f"  P(r|t) spectrum    : exp(rate={self.type_rel_spectrum_exp.rate:.3f}, scale={self.type_rel_spectrum_exp.scale:.3f})",
-            f"  per-type entropy   : exp(rate={self.per_type_entropy_exp.rate:.3f}, scale={self.per_type_entropy_exp.scale:.3f})",
+            f"  P(r|t) spectrum    : exp(rate={self.type_rel_spectrum_exp.rate:.3f}, "
+            f"scale={self.type_rel_spectrum_exp.scale:.3f})",
+            f"  per-type entropy   : exp(rate={self.per_type_entropy_exp.rate:.3f}, "
+            f"scale={self.per_type_entropy_exp.scale:.3f})",
         ]
         text = "\n".join(lines)
         if path is None:
@@ -415,21 +420,52 @@ class BlockC(SignatureBlock):
 
             # Row 0: spectra (raw singular values + exp-decay fit).
             for ax, svs, fit, title in [
-                (axes[0, 0], self._subj_singular_values, self.subj_cooc_exp, "Subject co-occurrence spectrum"),
-                (axes[0, 1], self._obj_singular_values, self.obj_cooc_exp, "Object co-occurrence spectrum"),
-                (axes[0, 2], self._type_rel_singular_values, self.type_rel_spectrum_exp, "P(r|t) spectrum"),
+                (
+                    axes[0, 0],
+                    self._subj_singular_values,
+                    self.subj_cooc_exp,
+                    "Subject co-occurrence spectrum",
+                ),
+                (
+                    axes[0, 1],
+                    self._obj_singular_values,
+                    self.obj_cooc_exp,
+                    "Object co-occurrence spectrum",
+                ),
+                (
+                    axes[0, 2],
+                    self._type_rel_singular_values,
+                    self.type_rel_spectrum_exp,
+                    "P(r|t) spectrum",
+                ),
             ]:
-                drew = overlay_exp_decay_rank(ax, self._require("svs", svs), fit, label="singular values")
+                drew = overlay_exp_decay_rank(
+                    ax, self._require("svs", svs), fit, label="singular values"
+                )
                 if not drew:
-                    ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
+                    ax.text(
+                        0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes
+                    )
                 ax.set_xlabel("rank")
                 ax.set_ylabel("singular value")
                 ax.set_title(title)
 
             # Row 1: row entropies (quantiles) and per-type entropy (exp-decay).
             for ax, ent, fit, title, color in [
-                (axes[1, 0], self._subj_row_entropies, self.subj_row_entropy_q, "Subject row entropy", "steelblue"),
-                (axes[1, 1], self._obj_row_entropies, self.obj_row_entropy_q, "Object row entropy", "darkorange"),
+                (
+                    axes[1, 0],
+                    self._subj_row_entropies,
+                    self.subj_row_entropy_q,
+                    "Subject row entropy",
+                    "steelblue",
+                ),
+                (
+                    axes[1, 1],
+                    self._obj_row_entropies,
+                    self.obj_row_entropy_q,
+                    "Object row entropy",
+                    "darkorange",
+                ),
             ]:
                 drew = overlay_quantiles(ax, self._require("ent", ent), fit, color=color)
                 if not drew:

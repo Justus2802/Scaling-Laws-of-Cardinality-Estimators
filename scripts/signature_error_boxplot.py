@@ -33,7 +33,8 @@ Usage
 -----
     python scripts/signature_error_boxplot.py wn18rr_v4
     python scripts/signature_error_boxplot.py wn18rr_v4 --synth-dir signature_synth_20260706_184120
-    python scripts/signature_error_boxplot.py wn18rr_v4 --out data/graph_population/error_boxplot.png
+    python scripts/signature_error_boxplot.py wn18rr_v4 \
+        --out data/graph_population/error_boxplot.png
     python scripts/signature_error_boxplot.py wn18rr_v4 --exclude   # disable exclusion
 """
 
@@ -158,7 +159,11 @@ def _block_errors(letter: str, tblk: object, sblk: object) -> dict[str, float]:
     errs: dict[str, float] = {}
 
     dist_fits = tblk.distribution_fits() if hasattr(tblk, "distribution_fits") else []
-    sdist_fits = dict((n, f) for n, f, _ in sblk.distribution_fits()) if hasattr(sblk, "distribution_fits") else {}
+    sdist_fits = (
+        dict((n, f) for n, f, _ in sblk.distribution_fits())
+        if hasattr(sblk, "distribution_fits")
+        else {}
+    )
     for name, tfit, kind in dist_fits:
         sfit = sdist_fits.get(name)
         if sfit is None:
@@ -216,7 +221,9 @@ _DIST_PARAM_FEATURES: dict[str, set[str]] = {
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("graph", help="Corpus graph name (e.g. 'wn18rr_v4').")
     parser.add_argument("--graphs-dir", default=None,
                         help="Corpus root holding <graph>/signature/. Default: "

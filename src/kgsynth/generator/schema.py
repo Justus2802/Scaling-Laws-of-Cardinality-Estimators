@@ -53,7 +53,8 @@ class Schema:
     # hit these — degree-neutral, since it only correlates which pending stub a
     # subject pairs with. See docs/notes/motif_reachability_and_edge_multiplicity.md.
     edge_multiplicity: float = 1.0       # directed content edges / distinct directed pairs (≥1)
-    bidirectional_ratio: float = 1.0     # distinct directed pairs / distinct undirected pairs ([1,2])
+    bidirectional_ratio: float = 1.0     # distinct directed pairs / distinct undirected pairs
+    # (in [1,2])
     # Per-relation reciprocity (Block B recip_symmetric_frac/recip_symmetric_value,
     # looked up by each relation's own frequency rank in Stage 1 — not an independent
     # marginal draw), one value in [0,1] per relation, indexed like `relations`.
@@ -82,7 +83,8 @@ class Schema:
     # old wiring — Stage 2 falls back to uniform per-subject weights when these are NaN.
     obj_alpha_q: tuple = field(default_factory=lambda: _NAN_Q)   # per-relation obj-mult α quantiles
     a_obj: float = 0.0                   # G2b cs_size^a out-degree offset (0 → no effect)
-    subj_alpha_q: tuple = field(default_factory=lambda: _NAN_Q)  # per-relation subj-mult α quantiles
+    # per-relation subj-mult α quantiles
+    subj_alpha_q: tuple = field(default_factory=lambda: _NAN_Q)
     a_subj: float = 0.0                  # G2b inv_cs_size^a in-degree offset (0 → no effect)
     cs_size_q: tuple = field(default_factory=lambda: _NAN_Q)     # forward CS-size quantiles
     # Inverse CS (object side), symmetric to forward CS. 0 templates → every object
@@ -98,7 +100,11 @@ class Schema:
     # When set, Stage 2 uses these to generate entity CSes (instead of type_relation_probs)
     # and assigns types post-hoc via log P(CS|t) argmax.  None → fall back to the
     # type-based CS path (existing behaviour).  See docs/generator.md §"Co-occurrence groups".
-    subj_group_probs: np.ndarray | None = None    # (COOC_NUM_GROUPS, |R|) forward group prototypes
-    subj_group_weights: np.ndarray | None = None  # (COOC_NUM_GROUPS,) Zipf weights from subj spectrum
-    obj_group_probs: np.ndarray | None = None     # (COOC_NUM_GROUPS, |R|) inverse group prototypes
-    obj_group_weights: np.ndarray | None = None   # (COOC_NUM_GROUPS,) Zipf weights from obj spectrum
+    # (COOC_NUM_GROUPS, |R|) forward group prototypes
+    subj_group_probs: np.ndarray | None = None
+    # (COOC_NUM_GROUPS,) Zipf weights from subj spectrum
+    subj_group_weights: np.ndarray | None = None
+    # (COOC_NUM_GROUPS, |R|) inverse group prototypes
+    obj_group_probs: np.ndarray | None = None
+    # (COOC_NUM_GROUPS,) Zipf weights from obj spectrum
+    obj_group_weights: np.ndarray | None = None

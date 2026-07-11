@@ -18,7 +18,7 @@ def _rich_ttl() -> str:
     """A small but non-degenerate KG: types, multiplicities and two-step paths."""
     ex = "http://example.org/"
     lines = [f"@prefix ex: <{ex}> .",
-             f"@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> ."]
+             "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> ."]
     types = ["Person", "City", "Company"]
     rels = ["knows", "livesIn", "worksAt", "bornIn", "visited"]
     rng = np.random.default_rng(0)

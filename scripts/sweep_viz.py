@@ -29,7 +29,6 @@ from pathlib import Path
 
 _REPO = Path(__file__).resolve().parent.parent
 from kgsynth.signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF  # noqa: E402
-from kgsynth.generator import Generator, Signature as GenSignature  # noqa: E402
 from kgsynth.generator.stage1 import sample_schema  # noqa: E402
 
 _LETTERS = ("a", "b", "c", "d", "e", "f")
@@ -119,7 +118,9 @@ def _rel_err(target_val: float, synth_val: float) -> float | None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("jsonl", type=Path, help="JSONL file produced by sweep_collect.py")
     parser.add_argument("--features", nargs="+", metavar="NAME",
                         help="Feature names to plot (from feature_names() of each "

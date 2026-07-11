@@ -6,7 +6,7 @@ from itertools import combinations
 import igraph
 
 from ._base import MotifCounter
-from ._common import count_motifs5_escape, count_motifsk_escape, _count_motifs4_through_edge
+from ._common import count_motifsk_escape, _count_motifs4_through_edge
 
 
 class ExactMotifCounter(MotifCounter):

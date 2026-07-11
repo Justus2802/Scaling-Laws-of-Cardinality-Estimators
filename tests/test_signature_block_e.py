@@ -212,14 +212,17 @@ class TestBlockEVectorLength(unittest.TestCase):
         graphs = [
             "@prefix ex: <http://example.org/> .\nex:a ex:p ex:b .\n",
             "@prefix ex: <http://example.org/> .\nex:a ex:p ex:b . ex:b ex:q ex:c .\n",
-            "@prefix ex: <http://example.org/> .\nex:a ex:p ex:b . ex:b ex:q ex:c . ex:c ex:r ex:a .\n",
+            "@prefix ex: <http://example.org/> .\n"
+            "ex:a ex:p ex:b . ex:b ex:q ex:c . ex:c ex:r ex:a .\n",
             "@prefix ex: <http://example.org/> .\n"
             + "".join(f"ex:s{i} ex:p ex:o{i} .\n" for i in range(20)),
         ]
         for ttl in graphs:
             with self.subTest(ttl=ttl[:60]):
                 g = self._load_ttl(ttl)
-                self.assertEqual(len(BlockE().calculate(g, sample_budget=1_000).as_vector()), _VECTOR_LEN)
+                self.assertEqual(
+                    len(BlockE().calculate(g, sample_budget=1_000).as_vector()), _VECTOR_LEN
+                )
 
     def test_vector_length_empty_graph(self):
         g = igraph.Graph(directed=True)

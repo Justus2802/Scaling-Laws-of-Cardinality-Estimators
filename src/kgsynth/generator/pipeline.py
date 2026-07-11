@@ -218,5 +218,9 @@ class Generator:
             checkpoint_steps=checkpoint_steps,
             checkpoint_callback=checkpoint_callback,
         )
-        log.info("Generator: done — synthetic KG V=%d, E=%d", g_refined.vcount(), g_refined.ecount())
+        log.info(
+            "Generator: done — synthetic KG V=%d, E=%d",
+            g_refined.vcount(),
+            g_refined.ecount(),
+        )
         return g_refined

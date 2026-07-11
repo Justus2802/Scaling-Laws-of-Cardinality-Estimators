@@ -57,7 +57,9 @@ def _sig_from_dict(data: dict) -> Signature:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("graph", help="Graph name in the corpus (e.g. fb237_v4_ind)")
     parser.add_argument("--budgets", nargs="+", type=int, default=[500, 2000, 5000, 10_000],
                         metavar="N", help="rewire_budget values to sweep")

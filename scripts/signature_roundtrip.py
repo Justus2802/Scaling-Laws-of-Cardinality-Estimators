@@ -231,7 +231,10 @@ def main():
         graph_dir = kg_path.parent
     elif args.graph:
         search_dirs = [Path(args.graphs_dir)] if args.graphs_dir else DEFAULT_SEARCH_DIRS
-        print(f"Loading   : cached target signature for '{args.graph}' from {[str(d) for d in search_dirs]}")
+        print(
+            f"Loading   : cached target signature for '{args.graph}' "
+            f"from {[str(d) for d in search_dirs]}"
+        )
         target_sig, tblocks, found_graph_dir = load_target_from_corpus(args.graph, search_dirs)
         default_out = found_graph_dir / f"{args.graph}_synth_{run_ts}.ttl"
         graph_label = args.graph
@@ -271,13 +274,20 @@ def main():
               f"{executed_steps}/{args.rewire_budget} steps executed")
         # Auto-named logs encode the planned budget (rb<N>); relabel to what
         # actually ran so the filename doesn't overstate the run.
-        conv_log_path = _rename_to_executed_budget(conv_log_path, args.rewire_budget, executed_steps)
-        swap_log_path = _rename_to_executed_budget(swap_log_path, args.rewire_budget, executed_steps)
+        conv_log_path = _rename_to_executed_budget(
+            conv_log_path, args.rewire_budget, executed_steps
+        )
+        swap_log_path = _rename_to_executed_budget(
+            swap_log_path, args.rewire_budget, executed_steps
+        )
     if conv_log_path is not None:
         print(f"  convergence log → {conv_log_path}")
     if swap_log_path is not None:
         print(f"  swap log → {swap_log_path}")
-    print(f"  best loss {g_synth['stage3_best_loss']:.6f} reached at accepted swap {g_synth['stage3_best_accepted']}")
+    print(
+        f"  best loss {g_synth['stage3_best_loss']:.6f} "
+        f"reached at accepted swap {g_synth['stage3_best_accepted']}"
+    )
 
     # ── Step 3: save synthetic graph ─────────────────────────────────────────
     save_kg(g_synth, out_path)

@@ -16,7 +16,9 @@ class MotifCounter(ABC):
     """
 
     # 4-node connected motif types (sorted degree sequences).
-    MOTIF4_DS: frozenset[tuple] = frozenset({(2, 2, 2, 2), (2, 2, 3, 3), (3, 3, 3, 3), (1, 2, 2, 3)})
+    MOTIF4_DS: frozenset[tuple] = frozenset(
+        {(2, 2, 2, 2), (2, 2, 3, 3), (3, 3, 3, 3), (1, 2, 2, 3)}
+    )
 
     # σ_H: number of directed spanning P_k paths for each graphlet type H.
     # Used by cc_run to convert raw sample proportions to estimated counts.

@@ -24,8 +24,10 @@ def main() -> None:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("block_b_json", type=Path, help="Path to a measured block_b.json")
     parser.add_argument("--out", type=Path, required=True, help="Output PNG path")
-    parser.add_argument("--dot-color", default="C0", help="Data-point color (default: matplotlib tab:blue)")
-    parser.add_argument("--line-color", default="C1", help="Power-law fit line color (default: matplotlib tab:orange)")
+    parser.add_argument("--dot-color", default="C0",
+                        help="Data-point color (default: matplotlib tab:blue)")
+    parser.add_argument("--line-color", default="C1",
+                        help="Power-law fit line color (default: matplotlib tab:orange)")
     parser.add_argument("--figsize", nargs=2, type=float, default=(6, 3.2), metavar=("W", "H"),
                         help="Figure size in inches (default: 6x3.2, a flattened aspect ratio)")
     parser.add_argument("--dpi", type=int, default=300, help="Output resolution (default: 300)")

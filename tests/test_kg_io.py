@@ -14,10 +14,11 @@ ex:Alice ex:age "30"^^<http://www.w3.org/2001/XMLSchema#integer> .
 ex:Bob   ex:name "Bob"@en .
 """
 
-NT_SAMPLE = """\
-<http://example.org/Alice> <http://example.org/knows> <http://example.org/Bob> .
-<http://example.org/Alice> <http://example.org/age> "30"^^<http://www.w3.org/2001/XMLSchema#integer> .
-"""
+NT_SAMPLE = (
+    '<http://example.org/Alice> <http://example.org/knows> <http://example.org/Bob> .\n'
+    '<http://example.org/Alice> <http://example.org/age> '
+    '"30"^^<http://www.w3.org/2001/XMLSchema#integer> .\n'
+)
 
 
 class TestLoadKG(unittest.TestCase):
@@ -60,7 +61,9 @@ class TestLoadKG(unittest.TestCase):
         literals = [v for v in g.vs if v["is_literal"]]
         self.assertEqual(len(literals), 2)
 
-        int_lit = next(v for v in literals if v["literal_datatype"] and "integer" in v["literal_datatype"])
+        int_lit = next(
+            v for v in literals if v["literal_datatype"] and "integer" in v["literal_datatype"]
+        )
         self.assertEqual(int_lit["literal_value"], "30")
 
         lang_lit = next(v for v in literals if v["literal_lang"] == "en")

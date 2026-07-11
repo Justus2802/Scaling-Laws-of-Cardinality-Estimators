@@ -75,7 +75,7 @@ def _build(graph: str, seed: int):
     rel2idx = defaultdict(list)
     for i, (_, _, p) in enumerate(content):
         rel2idx[p].append(i)
-    swappable = [r for r, l in rel2idx.items() if len(l) >= 2]
+    swappable = [r for r, idxs in rel2idx.items() if len(idxs) >= 2]
     return adj, content, rel2idx, swappable
 
 
@@ -159,8 +159,10 @@ def _rel_std_delta(adj, s1, o1, s2, o2, k, Ks, R, rng, max_set):
     before = _union_cycles(adj, pairs, k)
     if len(before) > max_set:
         return None
-    _adj_dec(adj, s1, o1); _adj_dec(adj, s2, o2)
-    _adj_inc(adj, s1, o2); _adj_inc(adj, s2, o1)
+    _adj_dec(adj, s1, o1)
+    _adj_dec(adj, s2, o2)
+    _adj_inc(adj, s1, o2)
+    _adj_inc(adj, s2, o1)
     after = _union_cycles(adj, pairs, k)
     too_big = len(after) > max_set
     dm = max(len(adj[s1]), len(adj[o1]), len(adj[s2]), len(adj[o2]))
@@ -179,8 +181,10 @@ def _rel_std_delta(adj, s1, o1, s2, o2, k, Ks, R, rng, max_set):
             denom = abs(exact) if exact else float("nan")
             out[K] = (exact, float(ed.std() / denom) if exact else float("nan"))
         res = (dm, out)
-    _adj_dec(adj, s1, o2); _adj_dec(adj, s2, o1)
-    _adj_inc(adj, s1, o1); _adj_inc(adj, s2, o2)
+    _adj_dec(adj, s1, o2)
+    _adj_dec(adj, s2, o1)
+    _adj_inc(adj, s1, o1)
+    _adj_inc(adj, s2, o2)
     return res
 
 
@@ -188,11 +192,15 @@ def _ht_draw_before(adj_after, before_set, hubdeg, K, rng, s1, o1, s2, o2):
     """H-T draw for the BEFORE set while ``adj_after`` currently holds the swapped
     graph: temporarily revert the swap so in-cycle neighbours are looked up on the
     before-graph, then re-apply."""
-    _adj_dec(adj_after, s1, o2); _adj_dec(adj_after, s2, o1)
-    _adj_inc(adj_after, s1, o1); _adj_inc(adj_after, s2, o2)
+    _adj_dec(adj_after, s1, o2)
+    _adj_dec(adj_after, s2, o1)
+    _adj_inc(adj_after, s1, o1)
+    _adj_inc(adj_after, s2, o2)
     val = _ht_draw(adj_after, before_set, hubdeg, K, rng)
-    _adj_dec(adj_after, s1, o1); _adj_dec(adj_after, s2, o2)
-    _adj_inc(adj_after, s1, o2); _adj_inc(adj_after, s2, o1)
+    _adj_dec(adj_after, s1, o1)
+    _adj_dec(adj_after, s2, o2)
+    _adj_inc(adj_after, s1, o2)
+    _adj_inc(adj_after, s2, o1)
     return val
 
 

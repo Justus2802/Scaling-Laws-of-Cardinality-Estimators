@@ -121,12 +121,14 @@ def cc_run(
                 nbrs = adj[v]
                 dv   = len(nbrs)
                 if dv == 0:
-                    for i in idxs: valid[i] = False
+                    for i in idxs:
+                        valid[i] = False
                     continue
                 nw  = dp_levels[bk_level - 1][nbrs, sp].astype(np.float64)
                 tot = nw.sum()
                 if tot == 0:
-                    for i in idxs: valid[i] = False
+                    for i in idxs:
+                        valid[i] = False
                     continue
                 chosen = nbrs[rng.choice(dv, size=len(idxs), p=nw / tot)]
                 for j, i in enumerate(idxs):

@@ -175,7 +175,9 @@ class TestBlockEAgainstLibrary(unittest.TestCase):
         The relative error is reported on stdout (visible with ``pytest -s``) so
         the sampler's accuracy can be inspected as graphs are added.
         """
-        rel_err = abs(estimate - expected) / expected if expected else (0.0 if not estimate else math.inf)
+        rel_err = (
+            abs(estimate - expected) / expected if expected else (0.0 if not estimate else math.inf)
+        )
         print(
             f"[estimate] {msg}: cc={estimate} exact={expected} "
             f"rel_err={rel_err:.2%} (tol {rel_tol:.0%}+{_ESTIMATE_ABS_TOL:g})"

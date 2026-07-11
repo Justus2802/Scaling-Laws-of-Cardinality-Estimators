@@ -55,7 +55,11 @@ _COLORS = ["#4477AA", "#EE6677", "#228833", "#CCBB44", "#66CCEE", "#AA3377", "#B
 _ACCEPTED_C, _REJECTED_C, _ZERO_C = _COLORS[0], _COLORS[1], "#999999"
 
 
-def _load(path: Path) -> tuple[list[str], dict[str, np.ndarray], np.ndarray, np.ndarray, np.ndarray, "np.ndarray | None"]:
+def _load(
+    path: Path,
+) -> tuple[
+    list[str], dict[str, np.ndarray], np.ndarray, np.ndarray, np.ndarray, "np.ndarray | None"
+]:
     """Read the swap log.
 
     :returns: (motif column names, {motif: float array with NaN for guard-dropped
@@ -180,8 +184,12 @@ def _loss_metrics(d_loss: np.ndarray, accepted: np.ndarray) -> dict:
         "neutral_pct": _pct(neutral),             # Δloss==0
         "harmful_pct": _pct(harmful),             # Δloss>0
         "accepted_pct": _pct(accepted),
-        "accept_rate_improving": round(float(accepted[improving].mean()), 4) if improving.any() else float("nan"),
-        "accept_rate_harmful": round(float(accepted[harmful].mean()), 4) if harmful.any() else float("nan"),
+        "accept_rate_improving": (
+            round(float(accepted[improving].mean()), 4) if improving.any() else float("nan")
+        ),
+        "accept_rate_harmful": (
+            round(float(accepted[harmful].mean()), 4) if harmful.any() else float("nan")
+        ),
         "mean_improvement_useful": round(float(imp.mean()), 6) if imp.size else float("nan"),
         "median_improvement_useful": round(float(np.median(imp)), 6) if imp.size else float("nan"),
         "max_improvement_useful": round(float(imp.max()), 6) if imp.size else float("nan"),
@@ -421,7 +429,8 @@ def main():
     axL.set_xlabel("loss delta (Δloss)  ← useful | harmful →")
     axL.set_ylabel("proposals (%)")
     axL.set_title(f"useful {loss_m['useful_pct']:.0f}% (accepted & Δloss<0) · "
-                  f"improving {loss_m['improving_pct']:.0f}% · harmful {loss_m['harmful_pct']:.0f}%",
+                  f"improving {loss_m['improving_pct']:.0f}% · "
+                  f"harmful {loss_m['harmful_pct']:.0f}%",
                   fontsize=10)
     axL.grid(True, alpha=0.25)
     axL.legend(fontsize=8)

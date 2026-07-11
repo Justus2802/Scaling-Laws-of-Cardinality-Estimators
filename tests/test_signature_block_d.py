@@ -100,7 +100,9 @@ class TestBlockDSmallFixtures(unittest.TestCase):
         ]
         for ttl in graphs:
             with self.subTest(ttl=ttl[:60]):
-                self.assertEqual(len(BlockD().calculate(self._load_ttl(ttl)).as_vector()), _VECTOR_LEN)
+                self.assertEqual(
+                    len(BlockD().calculate(self._load_ttl(ttl)).as_vector()), _VECTOR_LEN
+                )
 
     def test_not_calculated_raises(self):
         d = BlockD()

@@ -183,7 +183,7 @@ def main() -> None:
         print(f"{r['graph']:>14}  {r['orig_rho']:>9.3f}  {r['synth_rho']:>9.3f}  "
               f"{r['orig_parallel']:>9.3f}  {r['synth_parallel']:>9.3f}  "
               f"{r['orig_bidir']:>10.3f}  {r['synth_bidir']:>11.3f}  {r['inflation']:>9.3f}")
-    print(f"\nrho ≈ 1 ⇒ no pair overlap.  edge infl = synthetic simple edges / original.")
+    print("\nrho ≈ 1 ⇒ no pair overlap.  edge infl = synthetic simple edges / original.")
     print(f"→ {csv_path}")
 
 

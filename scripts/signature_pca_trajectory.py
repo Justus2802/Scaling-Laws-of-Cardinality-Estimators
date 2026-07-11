@@ -25,6 +25,7 @@ import argparse
 import logging
 from pathlib import Path
 
+import igraph
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes, mark_inset
@@ -38,7 +39,7 @@ from kgsynth.motif_counter import HybridMotifCounter
 from kgsynth.corpus import DEFAULT_SEARCH_DIRS, load_target_from_corpus
 from plot_signature_pca import (
     _find_corpus_signatures, _load_signature_json, _build_matrix,
-    _fit_pca_2d, _project, _SIZE_DEPENDENT_FEATURES,
+    _fit_pca_2d, _project,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -74,7 +75,9 @@ def _measure_snapshot(g, sample_budget: int) -> dict[str, float]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("graph", help="Corpus graph name (e.g. 'wn18rr_v4').")
     parser.add_argument("--graphs-dir", default=None,
                         help="Corpus root holding <graph>/signature/. Default: "
@@ -101,7 +104,10 @@ def main() -> None:
 
     # ── Step 1: target signature + Stage-2 output (checkpoint 0) ─────────────
     search_dirs = [Path(args.graphs_dir)] if args.graphs_dir else DEFAULT_SEARCH_DIRS
-    print(f"Loading   : cached target signature for '{args.graph}' from {[str(d) for d in search_dirs]}")
+    print(
+        f"Loading   : cached target signature for '{args.graph}' "
+        f"from {[str(d) for d in search_dirs]}"
+    )
     target_sig, _tblocks, _graph_dir = load_target_from_corpus(args.graph, search_dirs)
 
     # Checkpoint step indices: 0 is the post-Stage-2 graph (no rewiring yet),
@@ -246,7 +252,8 @@ def main() -> None:
 
     mode_suffix = "_size_agnostic" if args.size_agnostic else ""
     out_path = Path(args.out) if args.out else (
-        _REPO / "data" / "graph_population" / f"signature_pca_trajectory_{args.graph}{mode_suffix}.png"
+        _REPO / "data" / "graph_population"
+        / f"signature_pca_trajectory_{args.graph}{mode_suffix}.png"
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=150)

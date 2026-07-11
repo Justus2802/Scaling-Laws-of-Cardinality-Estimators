@@ -35,13 +35,16 @@ _DEFAULT_SCALES = [1, 2, 5, 10, 15, 20, 30, 50, 75, 100, 150, 200]
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("graph", help="Graph name in the corpus (e.g. 'wn18rr_v4')")
     parser.add_argument("--graphs-dir", default=None,
                         help="Corpus root holding <graph>/signature/. "
                              "Default: searches data/graphs/ then data/test_graphs/.")
     parser.add_argument("--scales", nargs="+", type=float, default=_DEFAULT_SCALES,
-                        metavar="X", help=f"ADAPTIVE_WEIGHT_SCALE candidates (default: {_DEFAULT_SCALES})")
+                        metavar="X",
+                        help=f"ADAPTIVE_WEIGHT_SCALE candidates (default: {_DEFAULT_SCALES})")
     parser.add_argument("--rewire-budget", type=int, default=100_000,
                         help="Stage 3 swap budget per candidate (default: 100000).")
     parser.add_argument("--initial-temp", type=float, default=0.05)

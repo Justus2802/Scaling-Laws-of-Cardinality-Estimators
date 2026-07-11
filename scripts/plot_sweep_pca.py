@@ -65,7 +65,9 @@ def _load_sweep(graph: str, sweep_dir: Path, budget_filter: int | None) -> list[
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("graphs", nargs="+",
                         help="Corpus graph name(s) matching a sweep_collect.py run "
                              "(e.g. 'wn18rr_v4' 'swdf'). Each gets its own colour.")
@@ -100,7 +102,10 @@ def main() -> None:
         raise SystemExit("No corpus signatures found under data/graphs/ or data/test_graphs/")
     for graph in args.graphs:
         if graph not in corpus_signatures:
-            raise SystemExit(f"'{graph}' has no cached corpus signature. Available: {sorted(corpus_signatures)}")
+            raise SystemExit(
+                f"'{graph}' has no cached corpus signature. "
+                f"Available: {sorted(corpus_signatures)}"
+            )
 
     excluded = set(args.exclude)
     unknown_excludes = excluded - set(corpus_signatures)
@@ -109,7 +114,9 @@ def main() -> None:
                           f"Available: {sorted(corpus_signatures)}")
     plotted_and_excluded = excluded & set(args.graphs)
     if plotted_and_excluded:
-        raise SystemExit(f"Cannot exclude {sorted(plotted_and_excluded)} — being plotted as a target graph.")
+        raise SystemExit(
+            f"Cannot exclude {sorted(plotted_and_excluded)} — being plotted as a target graph."
+        )
     if excluded:
         print(f"Excluding : {sorted(excluded)} (dropped from PCA fit)")
     corpus_names = sorted(name for name in corpus_signatures if name not in excluded)
@@ -175,7 +182,8 @@ def main() -> None:
     mode_suffix = "_size_agnostic" if args.size_agnostic else ""
     graphs_suffix = "_".join(args.graphs)
     out_path = Path(args.out) if args.out else (
-        _REPO / "data" / "graph_population" / f"signature_pca_sweep_{graphs_suffix}{mode_suffix}.png"
+        _REPO / "data" / "graph_population"
+        / f"signature_pca_sweep_{graphs_suffix}{mode_suffix}.png"
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=150)

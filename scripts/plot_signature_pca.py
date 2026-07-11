@@ -34,7 +34,6 @@ Usage
 
 import argparse
 import json
-import sys
 import warnings
 from pathlib import Path
 
@@ -133,7 +132,9 @@ def _build_matrix(
     return mat, names
 
 
-def _fit_pca_2d(mat: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def _fit_pca_2d(
+    mat: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Mean-impute, z-score, and PCA-project a feature matrix to 2D.
 
     :param mat: ``(n_samples, n_features)`` raw feature matrix, NaNs allowed.
@@ -173,7 +174,9 @@ def _project(feature_dict: dict, names: list[str], impute: np.ndarray, mean: np.
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument(
         "graphs", nargs="+",
         help="Corpus graph name(s) with a cached signature_synth/ roundtrip result "
@@ -239,7 +242,9 @@ def main() -> None:
     ax.set_xlabel("PC1")
     ax.set_ylabel("PC2")
     title_suffix = " — size-agnostic" if args.size_agnostic else ""
-    ax.set_title(f"Signature vectors in PCA space: original vs. synthetic (roundtrip){title_suffix}")
+    ax.set_title(
+        f"Signature vectors in PCA space: original vs. synthetic (roundtrip){title_suffix}"
+    )
     ax.legend(fontsize=8, loc="best")
     ax.grid(alpha=0.2)
     fig.tight_layout()

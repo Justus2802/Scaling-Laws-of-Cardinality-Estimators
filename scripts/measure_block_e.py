@@ -95,7 +95,8 @@ def main() -> None:
     parser.add_argument("graphs", nargs="*", help="Graph names (default: all under --graphs-dir)")
     parser.add_argument("--graphs-dir", default=str(_REPO / "data" / "graphs"))
     parser.add_argument("--format", default="png", dest="fmt", choices=["png", "pdf", "svg"])
-    parser.add_argument("--force", action="store_true", help="Recompute even if block_e.json exists")
+    parser.add_argument("--force", action="store_true",
+                        help="Recompute even if block_e.json exists")
     args = parser.parse_args()
 
     root = Path(args.graphs_dir)

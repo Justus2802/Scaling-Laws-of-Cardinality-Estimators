@@ -313,7 +313,8 @@ def _summarise(out_dir: Path) -> None:
             "neighbourhoods (`MOTIF4_DELTA_MAX_DEGREE`). For cycles it is shown for comparison",
             "only: the implemented cycle guard checks every DFS-expanded node:",
             "",
-            "| guard | proposals passing | mean c5+c6 of passing (s) | c5+c6 s/attempt | mean motif4 of passing (s) | motif4 s/attempt |",
+            "| guard | proposals passing | mean c5+c6 of passing (s) | c5+c6 s/attempt "
+            "| mean motif4 of passing (s) | motif4 s/attempt |",
             "|---|---|---|---|---|---|",
         ]
         for guard in (20, 50, 100, 200, None):

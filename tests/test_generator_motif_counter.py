@@ -193,13 +193,20 @@ class TestMotif4Delta(unittest.TestCase):
         return {ds: c//_DIV[ds] for ds,c in counts.items() if ds in _DIV and c>0}
 
     def _apply_swap(self, a: list[dict], s1:int, o1:int, s2:int, o2:int) -> None:
-        def inc(u,v): a[u][v]=a[u].get(v,0)+1; a[v][u]=a[v].get(u,0)+1
+        def inc(u,v):
+            a[u][v]=a[u].get(v,0)+1
+            a[v][u]=a[v].get(u,0)+1
         def dec(u,v):
-            a[u][v]-=1;
-            if not a[u][v]: del a[u][v]
-            a[v][u]-=1;
-            if not a[v][u]: del a[v][u]
-        dec(s1,o1); dec(s2,o2); inc(s1,o2); inc(s2,o1)
+            a[u][v]-=1
+            if not a[u][v]:
+                del a[u][v]
+            a[v][u]-=1
+            if not a[v][u]:
+                del a[v][u]
+        dec(s1,o1)
+        dec(s2,o2)
+        inc(s1,o2)
+        inc(s2,o1)
 
     def _check_delta(self, n, edges, s1, o1, s2, o2, types=None):
         a_before = _adj(n, edges)
@@ -308,13 +315,20 @@ class TestTriangleDelta(unittest.TestCase):
     """_triangle_node_delta must match brute-force triangle recount (aggregate + per node)."""
 
     def _apply_swap(self, a: list[dict], s1, o1, s2, o2) -> None:
-        def inc(u, v): a[u][v] = a[u].get(v, 0) + 1; a[v][u] = a[v].get(u, 0) + 1
+        def inc(u, v):
+            a[u][v] = a[u].get(v, 0) + 1
+            a[v][u] = a[v].get(u, 0) + 1
         def dec(u, v):
             a[u][v] -= 1
-            if not a[u][v]: del a[u][v]
+            if not a[u][v]:
+                del a[u][v]
             a[v][u] -= 1
-            if not a[v][u]: del a[v][u]
-        dec(s1, o1); dec(s2, o2); inc(s1, o2); inc(s2, o1)
+            if not a[v][u]:
+                del a[v][u]
+        dec(s1, o1)
+        dec(s2, o2)
+        inc(s1, o2)
+        inc(s2, o1)
 
     def _check(self, n, edges, s1, o1, s2, o2):
         a = _adj(n, edges)
@@ -435,13 +449,20 @@ class TestCycleDelta(unittest.TestCase):
     """_cycle_delta should match the difference of full induced-cycle counts."""
 
     def _apply_swap(self, a: list[dict], s1, o1, s2, o2) -> None:
-        def inc(u, v): a[u][v] = a[u].get(v, 0) + 1; a[v][u] = a[v].get(u, 0) + 1
+        def inc(u, v):
+            a[u][v] = a[u].get(v, 0) + 1
+            a[v][u] = a[v].get(u, 0) + 1
         def dec(u, v):
             a[u][v] -= 1
-            if not a[u][v]: del a[u][v]
+            if not a[u][v]:
+                del a[u][v]
             a[v][u] -= 1
-            if not a[v][u]: del a[v][u]
-        dec(s1, o1); dec(s2, o2); inc(s1, o2); inc(s2, o1)
+            if not a[v][u]:
+                del a[v][u]
+        dec(s1, o1)
+        dec(s2, o2)
+        inc(s1, o2)
+        inc(s2, o1)
 
     def _check(self, n, edges, s1, o1, s2, o2):
         a_before = _adj(n, edges)

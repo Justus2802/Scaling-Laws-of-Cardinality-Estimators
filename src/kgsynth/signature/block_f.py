@@ -257,7 +257,8 @@ class BlockF(SignatureBlock):
             f"  largest_component_fraction: {self.largest_component_fraction:.4f}",
             f"  clustering_coefficient    : {self.clustering_coefficient:.4f}",
             f"  degree_assortativity      : {self.degree_assortativity:.4f}",
-            f"  shortest path             : max={self.shortest_path_max:.1f}, mean={self.shortest_path_mean:.3f}, var={self.shortest_path_var:.3f}",
+            f"  shortest path             : max={self.shortest_path_max:.1f}, "
+            f"mean={self.shortest_path_mean:.3f}, var={self.shortest_path_var:.3f}",
         ]
         text = "\n".join(lines)
         if path is None:
@@ -274,7 +275,12 @@ class BlockF(SignatureBlock):
                 int_max = int(finite.max())
                 bins = max(1, int_max)
                 ax.hist(finite, bins=bins, label="sampled distances")
-                ax.axvline(self.shortest_path_mean, color="red", linestyle="--", label=f"mean={self.shortest_path_mean:.2f}")
+                ax.axvline(
+                    self.shortest_path_mean,
+                    color="red",
+                    linestyle="--",
+                    label=f"mean={self.shortest_path_mean:.2f}",
+                )
                 ax.legend()
             else:
                 ax.text(0.5, 0.5, "no path data", ha="center", va="center", transform=ax.transAxes)
