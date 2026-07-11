@@ -57,6 +57,7 @@ import unittest
 
 import igraph
 import numpy as np
+import pytest
 from kgsynth.motif_counter import ExactMotifCounter, HybridMotifCounter
 from kgsynth.signature.block_e import _SAMPLE_BUDGET
 from _block_e_library_oracle import load_graph
@@ -67,7 +68,7 @@ _ORACLE = os.path.join(os.path.dirname(__file__), "_block_e_library_oracle.py")
 
 # Wall-clock budget for the library ground-truth child process, per graph.
 # On timeout the child is killed and the subtest fails cleanly. Keep this below
-# the pytest-timeout backstop in pytest.ini so the clean failure trips first.
+# the class's @pytest.mark.timeout backstop so the clean failure trips first.
 _ORACLE_TIMEOUT_S = 300
 
 # Degree sequences identifying each 4-node graphlet, keyed by the Block E feature
@@ -136,8 +137,18 @@ def _shipped_counter() -> HybridMotifCounter:
     return HybridMotifCounter(n_samples=_SAMPLE_BUDGET, seed=1)
 
 
+@pytest.mark.timeout(360, method="thread")
 class TestBlockEAgainstLibrary(unittest.TestCase):
-    """Verify the custom motif counters against igraph library counts."""
+    """Verify the custom motif counters against igraph library counts.
+
+    Carries the suite's only pytest-timeout backstop (360s, applied here rather
+    than suite-wide in pytest.ini): this is the one test that can hang, on a
+    GIL-holding igraph ``motifs_randesu`` C call. ``method="thread"`` because the
+    default signal-based timeout cannot interrupt that call mid-flight. The
+    library ground truth also runs in a child process under its own cleaner
+    ``_ORACLE_TIMEOUT_S`` (300s) limit; this backstop only fires if something
+    outside that subprocess hangs.
+    """
 
     def _run_oracle(self, path: str, fmt: str, name: str) -> dict:
         """Run the library ground-truth oracle in a child process, killing it

@@ -40,7 +40,16 @@ C6_DS = MotifCounter.C6_DS
 # budget; the other 4-node graphlets (P4, paw, C4, K4) converge correctly. The
 # pre-existing Exact-vs-CC test never caught this because its Petersen fixture is
 # diamond-free. test_fuzz_motifs4 therefore excludes the diamond from the tight
-# assertion and only bounds it loosely. TODO: fix the CC diamond estimator.
+# assertion and only bounds it loosely.
+#
+# This is a documented known limitation, not an open bug to chase before
+# submission: the diamond count is a Block E feature that Stage 3 does steer, but
+# its target is measured with the same biased estimator, so target and re-measure
+# share the bias and the round-trip comparison stays self-consistent. See the
+# README "Limitations" section. Callers needing an unbiased diamond count on a
+# specific graph should use ExactMotifCounter directly (tractable below the
+# HybridMotifCounter degree guard). The loose bound below exists to catch a gross
+# regression in the estimator, not to validate its accuracy.
 
 
 def _rand_edges(rng: np.random.Generator, n: int, p: float) -> list[tuple[int, int]]:
