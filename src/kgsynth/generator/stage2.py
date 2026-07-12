@@ -3,7 +3,7 @@
 Turns a Schema into an igraph.Graph by
   - using the Schema's |V| and |E| targets,
   - deriving each entity's type from its realised characteristic set (post-hoc
-    argmax over P(r|t); type_weights only breaks ties for empty-CS entities),
+    argmax over P(r|t)),
   - sampling each entity's characteristic set from its co-occurrence group
     prototype (Block C subj_cooc_exp/obj_cooc_exp) so the co-occurrence
     structure matches the target, reusing a pool of Block-D-sized CS templates,
@@ -375,15 +375,15 @@ def instantiate(
     # Post-hoc type assignment: score each entity's realised CS against P(r|t)
     # and assign the highest-likelihood type.  This makes type labels emerge from
     # relation usage (the real causal direction) rather than being set independently.
+    # entity_cs[v] is never empty here: every subj_group_probs row is strictly positive
+    # (softmax(logits) * relation_weights, both >0 for every relation), every group's
+    # template quota is floored at ≥1 by _allocate_quotas, and _build_distinct/
+    # _assign_templates given a positive quota and nonzero support always produce a
+    # non-empty template — so there is no "no CS to score" case to fall back from.
     if num_types > 0:
         log_ptr = np.log(np.maximum(schema.type_relation_probs, 1e-12))  # (T, R)
         for v in range(actual_V):
-            cs = entity_cs[v]
-            assert cs is not None and len(cs) > 0, "TEMP-REACHABILITY-CHECK: empty CS hit"
-            if cs is None or len(cs) == 0:
-                entity_types[v] = int(rng.choice(num_types, p=schema.type_weights))
-            else:
-                entity_types[v] = int(np.argmax(log_ptr[:, cs].sum(axis=1)))
+            entity_types[v] = int(np.argmax(log_ptr[:, entity_cs[v]].sum(axis=1)))
         log.info("Stage 2: post-hoc type assignment from CS (log P(CS|type) argmax)")
 
     # --- 3b. Inverse CS membership (in-relations per entity), symmetric to forward ---
