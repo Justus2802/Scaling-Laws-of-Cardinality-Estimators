@@ -39,11 +39,10 @@ from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
+from kgsynth.corpus import DEFAULT_SEARCH_DIRS, REPO_ROOT
 
-_REPO = Path(__file__).resolve().parent.parent
 
 # Corpus directories scanned for original-graph signatures (PCA basis + grey dots).
-_CORPUS_DIRS = [_REPO / "data" / "graphs", _REPO / "data" / "test_graphs"]
 
 # Distinct colours for multiple roundtrip pairs.
 _PAIR_COLOURS = ["#C44E52", "#4C72B0", "#55A868", "#8172B3", "#DD8452", "#937860"]
@@ -82,7 +81,7 @@ def _load_signature_json(path: Path) -> dict[str, float]:
 def _find_corpus_signatures() -> dict[str, Path]:
     """Map graph name -> its ``signature/signature.json`` path, across corpus dirs."""
     found: dict[str, Path] = {}
-    for corpus_dir in _CORPUS_DIRS:
+    for corpus_dir in DEFAULT_SEARCH_DIRS:
         if not corpus_dir.is_dir():
             continue
         for graph_dir in sorted(corpus_dir.iterdir()):
@@ -197,7 +196,8 @@ def main() -> None:
 
     corpus_signatures = _find_corpus_signatures()
     if not corpus_signatures:
-        raise SystemExit(f"No corpus signatures found under {[str(d) for d in _CORPUS_DIRS]}")
+        roots = [str(d) for d in DEFAULT_SEARCH_DIRS]
+        raise SystemExit(f"No corpus signatures found under {roots}")
 
     print(f"Corpus    : {len(corpus_signatures)} graphs — {sorted(corpus_signatures)}")
     corpus_names = sorted(corpus_signatures)
@@ -250,7 +250,8 @@ def main() -> None:
     fig.tight_layout()
 
     default_name = "signature_pca_size_agnostic.png" if args.size_agnostic else "signature_pca.png"
-    out_path = Path(args.out) if args.out else _REPO / "data" / "graph_population" / default_name
+    out_path = (Path(args.out) if args.out
+                else REPO_ROOT / "data" / "graph_population" / default_name)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=150)
     plt.close(fig)

@@ -1,10 +1,15 @@
 # Documentation
 
-Map of this project's docs. **Implemented** documentation lives at the top level;
-**future plans** in [`plan/`](plan/); **notes** (analyses, observations, assumptions,
-build records) in [`notes/`](notes/).
+Map of this project's docs — every file under `docs/` is listed here.
 
-## Implemented
+| Section | What lives there |
+|---|---|
+| **Reference** (top level) | The implemented system: what it measures, how it generates. |
+| [`notes/`](notes/) | Investigations: analyses, empirical observations, corpus surveys. |
+| [`plan/`](plan/) | Forward-looking work that is **not** implemented yet. |
+| [`archive/`](archive/) | Superseded / historical records. Do not treat as current. |
+
+## Reference — the implemented system
 
 - **[signature.md](signature.md)** — the reduced, non-over-determined signature
   (`src/kgsynth/signature/`): the implemented module reference **and** the reasoning behind
@@ -19,29 +24,15 @@ build records) in [`notes/`](notes/).
 - **[block-refactoring-guide.md](block-refactoring-guide.md)** — the `SignatureBlock` class
   pattern shared by every block (lifecycle methods, the `_NOT_CALCULATED` sentinel,
   property guards, `visualize` split, logging conventions, selective block computation).
-- **[plan/generation_implementation_plan.md](plan/generation_implementation_plan.md)**
-  *(historical plan — now implemented)* — the original implementation plan for the three-stage
-  sampler, realised in `src/kgsynth/generator/`; kept for reference. The live reference is
-  [generator.md](generator.md).
+- **[report_outline.md](report_outline.md)** — outline for the written report: pipeline
+  architecture, the signature concept, and the evaluation/validation methodology. Stage 1/2/3
+  algorithmic detail is deliberately out of scope there and lives in [generator.md](generator.md).
 
-A single `signature` package (`src/kgsynth/signature/`) provides the public Blocks A–F as the
-reduced, non-over-determined measurements. Each block is a single class in `block_<x>.py`; the
-`test_signature_block_*` tests exercise these blocks directly. `scripts/measure_signature.py`
-(or the installed `kgsynth measure` CLI) produces this signature and writes a `signature/`
-directory next to each graph file (`data/graphs/<name>/signature/`).
-`scripts/measure_all_raw.py` runs it over all raw KGs in `data/graphs/` and the test
-corpus `data/test_graphs/` (use `--graphs <name>...` to restrict to specific graphs).
+Measuring a graph writes a `signature/` directory next to it (`data/graphs/<name>/signature/`),
+via the `kgsynth measure` CLI or its script wrapper. See [`scripts/README.md`](../scripts/README.md)
+for the measurement, sweep and plotting tooling.
 
-## Plans (future)
-
-- **[plan/stage1_population_sampler.md](plan/stage1_population_sampler.md)** — the
-  **doc-Stage-1 population sampler**: sampling a *novel* signature from the real-graph
-  population (conditional-on-size). Evaluates the data-expansion proposals (more KGs, WCC
-  splitting, subgraph cutting, size conditioning, component grouping), the p ≫ n reality of
-  the current 6 measurements, and a recommended scaling-law pipeline. Blocked on acquiring
-  more (esp. typed) real KGs.
-
-## Notes
+## Notes — investigations
 
 - **[notes/signature_observations.md](notes/signature_observations.md)** — empirical
   observations from the signature distribution plots; the basis for which distribution
@@ -49,24 +40,15 @@ corpus `data/test_graphs/` (use `--graphs <name>...` to restrict to specific gra
 - **[notes/assumptions.md](notes/assumptions.md)** — per-block measurement assumptions and
   the reasoning behind each measurement choice (literal handling, CS/co-occurrence
   definitions, sampling, …).
+- **[notes/signature_size_dependence.md](notes/signature_size_dependence.md)** — which of the
+  124 features are **extensive** (scale with graph size) and which are **intensive** (size-free).
+  The split the Stage-1 conditional-on-size model needs.
+- **[notes/counter_benchmark.md](notes/counter_benchmark.md)** — the exact-vs-colour-coding
+  motif-counter comparison per motif size, and the CC counter's adaptive sample-size feature.
+  Data collected by `scripts/cc_variance.py`.
 - **[notes/generation_algorithm_fit.md](notes/generation_algorithm_fit.md)** — analysis of
   how the spec's three-stage generation algorithm maps onto the reduced signature, the
   reconciliations needed, and the best-effort gaps (future work).
-- **[notes/signature_measurement_plan.md](notes/signature_measurement_plan.md)** —
-  **superseded historical note**: the original build plan for the reduced signature, kept as a
-  record. Its feature counts and representations are out of date; the live module reference is
-  [signature.md](signature.md).
-- **[notes/lod_laundromat_acquisition.md](notes/lod_laundromat_acquisition.md)** —
-  evaluation of LOD-a-lot / LOD Laundromat as a doc-Stage-1 data source (plan §3b):
-  splits the merged single-graph LOD-a-lot from the ~650 K-document LOD Laundromat, the
-  per-document meta-dataset find, and the case against using it for the population fit
-  (document ≠ KG, laundered structure, wrong population). Recommends meta-dataset for
-  exploration/validation only; acquire fit rows from the named typed §3b sources.
-- **[notes/data_source_evaluation.md](notes/data_source_evaluation.md)** — evaluation of the
-  *named* §3b sources (Bio2RDF, DBpedia, YAGO, DBLP, GeoNames, OGB, PrimeKG, …) as
-  population draws, split by the two sub-goals they serve — the type-block gate (needs
-  rich-typed sources) vs the non-type spread of 58 features (any real KG, typed or not).
-  Tiered verdict + acquisition order; Bio2RDF is the top typed-gate source.
 - **[notes/stage3_steering_analysis.md](notes/stage3_steering_analysis.md)** — why Stage 3
   is slow on hub-heavy graphs (`fb237_v4`) and why per-swap motif steering barely moves the
   loss. Delta-cost profiling (6-cycle delta ≥94 %), the node-level/endpoint degree guards and
@@ -96,3 +78,43 @@ corpus `data/test_graphs/` (use `--graphs <name>...` to restrict to specific gra
   simple-edge inflation cut roughly in half on fb237/wn18rr/aids (e.g. wn18rr +45%→+24%);
   bidirectional attainment ~45–50% of target, capped by a genuine stub-multiplicity ceiling
   (documented, not further chased). Survey via `scripts/relation_reciprocity.py`.
+- **[notes/lod_laundromat_acquisition.md](notes/lod_laundromat_acquisition.md)** —
+  evaluation of LOD-a-lot / LOD Laundromat as a doc-Stage-1 data source (plan §3b):
+  splits the merged single-graph LOD-a-lot from the ~650 K-document LOD Laundromat, the
+  per-document meta-dataset find, and the case against using it for the population fit
+  (document ≠ KG, laundered structure, wrong population). Recommends meta-dataset for
+  exploration/validation only; acquire fit rows from the named typed §3b sources.
+- **[notes/data_source_evaluation.md](notes/data_source_evaluation.md)** — evaluation of the
+  *named* §3b sources (Bio2RDF, DBpedia, YAGO, DBLP, GeoNames, OGB, PrimeKG, …) as
+  population draws, split by the two sub-goals they serve — the type-block gate (needs
+  rich-typed sources) vs the non-type spread of 58 features (any real KG, typed or not).
+  Tiered verdict + acquisition order; Bio2RDF is the top typed-gate source.
+
+## Plans — not implemented
+
+- **[plan/stage1_population_sampler.md](plan/stage1_population_sampler.md)** — the
+  **doc-Stage-1 population sampler**: sampling a *novel* signature from the real-graph
+  population (conditional-on-size). Evaluates the data-expansion proposals (more KGs, WCC
+  splitting, subgraph cutting, size conditioning, component grouping), the p ≫ n reality of
+  the current 6 measurements, and a recommended scaling-law pipeline. Blocked on acquiring
+  more (esp. typed) real KGs.
+
+## Archive — historical, superseded
+
+Kept as a record of how the work was scoped and what was tried. **Their numbers, file paths
+and APIs are out of date**; the live references are [signature.md](signature.md) and
+[generator.md](generator.md).
+
+- **[archive/signature_measurement_plan.md](archive/signature_measurement_plan.md)** — the
+  original build plan for the reduced signature (69 features, skew-normal fits, Block E deferred).
+  Superseded: the signature now has 124 features with quantile functions.
+- **[archive/generation_implementation_plan.md](archive/generation_implementation_plan.md)** —
+  the original implementation plan for the three-stage sampler, now realised in
+  `src/kgsynth/generator/`.
+- **[archive/path_length_steering.md](archive/path_length_steering.md)** — the Stage-2
+  path-length steering analysis. The implementation it describes was **removed** (one-sided and
+  disabled); retained for its root-cause analysis and the Stage-3-loss-term option, which remains
+  the way forward if path targeting is ever revisited.
+- **[archive/submission_cleanup_plan.md](archive/submission_cleanup_plan.md)** — the plan that
+  packaged the repo as installable `kgsynth` (pyproject, CLI, examples, README). Essentially
+  complete; the one open item is the deferred corpus re-measurement.

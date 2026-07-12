@@ -19,7 +19,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
-ROOT = Path(__file__).parent.parent
+from kgsynth.corpus import REPO_ROOT
 
 # Per-letter subplot colour, shared by both signatures.
 _BLOCK_COLOURS: dict[str, str] = {
@@ -43,7 +43,7 @@ def _block_config() -> tuple[list[tuple[str, type, str, str]], Path]:
         ("e", BlockE, "Block E — Motifs"),
         ("f", BlockF, "Block F — Connectivity"),
     ]
-    sig_out = ROOT / "data" / "graphs"
+    sig_out = REPO_ROOT / "data" / "graphs"
     return [(c, cls, title, _BLOCK_COLOURS[c]) for c, cls, title in blocks], sig_out
 
 
@@ -176,7 +176,7 @@ def main() -> None:
     blocks, sig_out = _block_config()
     if args.source is not None:
         sig_out = args.source
-    out_dir = args.out if args.out is not None else ROOT / "data" / "graph_population"
+    out_dir = args.out if args.out is not None else REPO_ROOT / "data" / "graph_population"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Scanning : {sig_out}")

@@ -25,7 +25,6 @@ from pathlib import Path
 
 import numpy as np
 
-_REPO = Path(__file__).resolve().parent.parent
 from kgsynth.generator import Generator, Signature
 from kgsynth.kg_io import load_kg, save_kg
 from kgsynth.signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
@@ -33,7 +32,7 @@ from kgsynth.signature import ReducedGraphSignature, write_signature_outputs
 from kgsynth.signature import _distance
 import kgsynth.signature.block_e as _block_e
 from kgsynth.motif_counter import HybridMotifCounter
-from kgsynth.corpus import DEFAULT_SEARCH_DIRS, load_target_from_corpus
+from kgsynth.corpus import DEFAULT_SEARCH_DIRS, REPO_ROOT, load_target_from_corpus
 
 # Sample budget for the synthetic graph's final re-measurement (Block E motif CC
 # sampling + path/tree walks). Lower than the 100k Block-E default to keep the
@@ -44,8 +43,8 @@ _FINAL_SAMPLE_BUDGET = 20_000
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 # Where auto-named Stage 3 convergence / swap-proposal CSVs are written.
-_CONVERGENCE_LOG_DIR = _REPO / "experiments" / "convergence_logs"
-_SWAP_LOG_DIR = _REPO / "experiments" / "swap_delta_logs"
+_CONVERGENCE_LOG_DIR = REPO_ROOT / "experiments" / "convergence_logs"
+_SWAP_LOG_DIR = REPO_ROOT / "experiments" / "swap_delta_logs"
 
 
 def _auto_log_path(log_dir: Path, prefix: str, graph_label: str, args,

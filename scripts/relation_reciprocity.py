@@ -34,20 +34,21 @@ from pathlib import Path
 
 import numpy as np
 
-_REPO = Path(__file__).resolve().parent.parent
-from edge_multiplicity import _find_source_file, _corpus_graphs, _graph_dir  # noqa: E402
-from kgsynth.generator._constants import _RDF_TYPE  # noqa: E402
-from kgsynth.kg_io import load_kg  # noqa: E402
+from kgsynth.corpus import REPO_ROOT, find_graph_file, graph_dir
+from kgsynth.generator._constants import _RDF_TYPE
+from kgsynth.kg_io import load_kg
 
-_OUT_DIR = _REPO / "experiments" / "relation_reciprocity"
+from edge_multiplicity import _measurable_graphs
+
+_OUT_DIR = REPO_ROOT / "experiments" / "relation_reciprocity"
 
 
 def _measure(name: str, top: int):
-    graph_dir = _graph_dir(name)
-    if graph_dir is None:
+    d = graph_dir(name)
+    if d is None:
         print(f"  {name}: not in corpus — skipping")
         return None, None
-    src = _find_source_file(graph_dir)
+    src = find_graph_file(d)
     print(f"  {name}: loading {src.name} …", flush=True)
     g = load_kg(src)
     is_lit = (g.vs["is_literal"] if "is_literal" in g.vertex_attributes()
@@ -126,7 +127,7 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=_OUT_DIR)
     args = ap.parse_args()
 
-    graphs = args.graphs or _corpus_graphs()
+    graphs = args.graphs or _measurable_graphs()
     print(f"Relation-reciprocity survey for {len(graphs)} graph(s): {', '.join(graphs)}\n")
 
     rows = []

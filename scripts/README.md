@@ -14,37 +14,28 @@ Helper scripts for data acquisition, signature measurement, graph generation, an
 > The scripts below remain the place for research workflows the CLI deliberately doesn't cover:
 > parameter sweeps, Stage-3 convergence logging, and diagnostic plots.
 
-## Data Acquisition
-
-### `get_data.py`
-Downloads the AIFB knowledge graph from Figshare and saves it as `aifb.ttl`. One-shot utility; no arguments.
-
 ## Signature Measurement
 
 ### `measure_signature.py`
-Computes the graph signature (Blocks A–F) for a single KG file and writes block plots, JSON results, and a text summary to a `signature/` directory next to the graph file (i.e. `data/graphs/<name>/signature/`), or to `--output-dir`. Equivalent to the installed `kgsynth measure` CLI.
+Computes the graph signature (Blocks A–F) for a single KG file and writes block plots, JSON results, and a text summary to a `signature/` directory next to the graph file (i.e. `data/graphs/<name>/signature/`), or to `--output-dir`. A thin wrapper over `kgsynth.signature`, sharing its implementation with the installed `kgsynth measure` CLI.
+
+`--blocks` computes only a subset. A subset run **merges** into the directory's existing `signature.json` / `summary.txt`, updating those blocks and leaving the others intact — so backfilling one block never NaNs out the rest.
 
 ```
 python scripts/measure_signature.py data/graphs/aids/AIDS.nt
 python scripts/measure_signature.py mygraph.ttl --output-dir out/ --format pdf
-```
-
-### `measure_block_e.py`
-Backfills Block E (motif counts, G5 colour-coding) into an already-measured corpus under `data/graphs/`. Skips graphs where `block_e.json` already exists; use `--force` to recompute.
-
-```
-python scripts/measure_block_e.py                # all graphs
-python scripts/measure_block_e.py aids swdf      # named graphs only
-python scripts/measure_block_e.py --force
+python scripts/measure_signature.py data/graphs/aids/AIDS.nt --blocks e   # re-measure Block E only
 ```
 
 ### `measure_all_raw.py`
-Batch-measures every graph under `data/graphs/` **and** the held-out test corpus `data/test_graphs/` by calling `measure_signature.py` as a subprocess per graph. Each graph's `signature/` directory is written next to its graph file. `--blocks` re-measures only a subset of blocks. `--graphs` restricts the run to specific graphs by directory name.
+Batch-measures every graph under `data/graphs/` **and** the held-out test corpus `data/test_graphs/`, in-process. Each graph's `signature/` directory is written next to its graph file; one graph failing does not abort the run.
+
+`--blocks` measures a subset for every graph (merging per graph, as above) — this is how Block E is backfilled across the corpus. `--skip-measured` then skips graphs whose selected blocks already exist, making a long backfill re-runnable. `--graphs` restricts the run to specific graphs by directory name.
 
 ```
 python scripts/measure_all_raw.py
-python scripts/measure_all_raw.py --blocks e             # re-measure Block E only
-python scripts/measure_all_raw.py --graphs aids fb237_v4  # only these graphs
+python scripts/measure_all_raw.py --blocks e --skip-measured   # backfill Block E, resumable
+python scripts/measure_all_raw.py --graphs aids fb237_v4        # only these graphs
 ```
 
 ### `aggregate_signatures.py`
@@ -158,18 +149,13 @@ python scripts/relation_reciprocity.py --top 15
 ### `convergence_plot.py`
 Plots Stage 3 convergence curves from one or more CSV files produced by the `refine()` loop. All metric columns (relative errors per feature) are plotted against a 0-reference line. Useful for diagnosing convergence speed and motif-count accuracy during generation.
 
+`--grid` renders the fixed 2×2 comparison view of the same four `*_err` columns (triangle, diamond, c6, paw) instead of an arbitrary `--features` list — a stable side-by-side layout for comparing runs (e.g. fixed-weight vs. adaptive-weight) without re-specifying the features, with each run labelled from its auto-named `_adaptive` token.
+
 ```
 python scripts/convergence_plot.py experiments/conv_a.csv experiments/conv_b.csv
 python scripts/convergence_plot.py experiments/conv_a.csv --features tri_err cc_err --out fig.png
+python scripts/convergence_plot.py experiments/conv_a.csv experiments/conv_b.csv --grid
 python scripts/convergence_plot.py experiments/conv_a.csv --list-features
-```
-
-### `convergence_plot_grid.py`
-Like `convergence_plot.py`, but always renders a fixed 2×2 grid of the same four `*_err` columns (triangle, diamond, c6, paw) instead of an arbitrary `--features` list — a fixed side-by-side view for comparing runs (e.g. fixed-weight vs. adaptive-weight) without re-specifying `--features`. Same convergence-CSV input.
-
-```
-python scripts/convergence_plot_grid.py experiments/conv_a.csv
-python scripts/convergence_plot_grid.py experiments/conv_a.csv experiments/conv_b.csv --out experiments/convergence_grid.png
 ```
 
 ### `signature_error_boxplot.py`
@@ -245,7 +231,7 @@ python scripts/signature_pca_trajectory.py wn18rr_v4
 python scripts/signature_pca_trajectory.py wn18rr_v4 --num-checkpoints 5 --rewire-budget 20000
 ```
 
-## Maintenance / one-off
+## Maintenance
 
 ### `rerender_signatures.py`
 Re-renders the `block_<x>.png` plots for every `block_<x>.json` already collected under `data/` (loads each via `from_serializable` and re-writes the plot). Use after changing `visualize()` or a plot helper, to refresh figures **without** re-running the (slow) measurements. `--blocks` restricts to specific blocks, `--fmt` picks the image format, `--dry-run` lists without writing.
@@ -256,11 +242,17 @@ python scripts/rerender_signatures.py --blocks b c d
 python scripts/rerender_signatures.py --fmt pdf --dry-run
 ```
 
-### `patch_block_b_degree_stats.py`
-**One-off migration.** Backfills the Block B degree-stat fields (`out_degree_max`, `out_degree_p90`, `in_degree_max`, `in_degree_p90`) into every `block_b.json` / `signature.json` under the given roots, computing them from the `_out_degrees` / `_in_degrees` arrays already stored in each `block_b.json`. Superseded by any full corpus re-measurement (which emits these fields directly); retained only for patching a pre-existing corpus in place. `--dry-run` lists targets without writing.
+## Shared helpers
 
-```
-python scripts/patch_block_b_degree_stats.py
-python scripts/patch_block_b_degree_stats.py --roots data/graphs data/test_graphs
-python scripts/patch_block_b_degree_stats.py --dry-run
-```
+Anything two scripts both need lives in the package, not in a neighbouring script:
+
+- **Corpus paths and discovery** — `kgsynth.corpus` provides `REPO_ROOT`, `DEFAULT_SEARCH_DIRS`
+  (`data/graphs`, `data/test_graphs`), `find_graph_file`, `graph_dir`, `corpus_graph_names`,
+  `iter_corpus_graphs` and `load_target_from_corpus`. Scripts import these rather than
+  re-deriving a repo root from `__file__`.
+- **The pre-refinement graph** — `Generator.sample_pre_refine(seed=…)` returns the Stage-1+2
+  graph that `refine()` would be handed, with the same derived sub-seeds as a full
+  `sample(seed=…)`. `_stage2.py` wraps it with the cached-target lookup for the diagnostics
+  (`profile_stage3_deltas`, `edge_multiplicity`, `estimator_variance`) that study that state.
+
+`_`-prefixed modules here (`_stage2.py`) are script-local helpers, not entry points.

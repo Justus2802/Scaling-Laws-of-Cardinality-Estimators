@@ -28,7 +28,6 @@ Usage
 
 import argparse
 import csv
-import json
 import signal
 import time
 from collections import defaultdict
@@ -36,18 +35,16 @@ from pathlib import Path
 
 import numpy as np
 
-_REPO = Path(__file__).resolve().parent.parent
-from kgsynth.generator.stage1 import sample_schema
-from kgsynth.generator.stage2 import instantiate
+from kgsynth.corpus import REPO_ROOT
 from kgsynth.generator.stage3 import CYCLE_DELTA_MAX_DEGREE
 from kgsynth.generator.local_updates import (
     _adj_inc, _triangle_node_delta, _motif4_delta, _cycle_delta,
 )
 from kgsynth.generator._constants import _RDF_TYPE
-from kgsynth.signature import BlockA, BlockB, BlockC, BlockD, BlockF
 
-_OUT_DIR = _REPO / "experiments" / "stage3_delta_profiling"
-_SEARCH_DIRS = [_REPO / "data" / "graphs", _REPO / "data" / "test_graphs"]
+from _stage2 import build_stage2_graph
+
+_OUT_DIR = REPO_ROOT / "experiments" / "stage3_delta_profiling"
 
 # 4-node motif types tracked by refine() when all four targets are active.
 _M4_ALL = frozenset({(2, 2, 2, 2), (1, 2, 2, 3), (2, 2, 3, 3), (3, 3, 3, 3)})
@@ -88,37 +85,13 @@ def _timed(fn, adj, s1, o1, s2, o2, timeout):
         signal.setitimer(signal.ITIMER_REAL, 0)
 
 
-def _load_blocks(graph_name: str):
-    """Load cached reduced blocks A/B/C/D/F for ``graph_name`` (E not needed)."""
-    for root in _SEARCH_DIRS:
-        sig_dir = root / graph_name / "signature"
-        if sig_dir.is_dir():
-            classes = {"a": BlockA, "b": BlockB, "c": BlockC, "d": BlockD, "f": BlockF}
-            return {
-                letter: cls.from_serializable(
-                    json.loads((sig_dir / f"block_{letter}.json").read_text())
-                )
-                for letter, cls in classes.items()
-            }
-    raise SystemExit(f"'{graph_name}' not found in {[str(d) for d in _SEARCH_DIRS]}")
-
-
-def _build_stage2_graph(graph_name: str, seed: int):
-    """Stage 1 + Stage 2 with the same derived seeds as Generator.sample(seed)."""
-    blocks = _load_blocks(graph_name)
-    schema = sample_schema(
-        blocks["a"], blocks["c"], d=blocks["d"], b=blocks["b"], f=blocks["f"], seed=seed
-    )
-    return instantiate(schema, seed=seed + 1)
-
-
 def profile_graph(graph_name: str, seed: int, n_proposals: int, timeout: float):
     """Profile ``n_proposals`` Stage-3 swap proposals on the Stage-2 graph.
 
     Returns (rows, degree_stats) where rows are per-proposal dicts.
     """
     print(f"[{graph_name}] building Stage-2 graph (seed={seed}) …")
-    g = _build_stage2_graph(graph_name, seed)
+    g = build_stage2_graph(graph_name, seed)
 
     # Replicate refine()'s content-edge extraction and adjacency build.
     content = [

@@ -13,11 +13,17 @@ only when the run used ``--adaptive-weights``) are each term's live loss weight
 graph; ``sig_c5_err`` is the global (induced) 5-cycle error, validating the
 incremental cycle delta.
 
+``--grid`` renders the fixed 2x2 comparison view (triangle, diamond, c6, paw) instead
+of an arbitrary ``--features`` list — a stable side-by-side layout for comparing runs
+(e.g. fixed-weight vs. adaptive-weight) without re-specifying the features each time,
+with runs labelled from the auto-named ``_adaptive`` token.
+
 Usage
 -----
     python scripts/convergence_plot.py experiments/conv_a.csv experiments/conv_b.csv
     python scripts/convergence_plot.py experiments/conv_a.csv \\
         --features tri_err cc_err --out experiments/convergence.png
+    python scripts/convergence_plot.py experiments/conv_a.csv experiments/conv_b.csv --grid
     python scripts/convergence_plot.py experiments/conv_a.csv --list-features
 """
 
@@ -25,6 +31,9 @@ import argparse
 import csv
 import sys
 from pathlib import Path
+
+# The fixed --grid view: four *_err columns in a 2x2 layout, in reading order.
+_GRID_FEATURES = ["tri_err", "diamond_err", "c6_err", "paw_err"]
 
 
 def _load_csv(path: Path) -> dict[str, list]:
@@ -38,6 +47,15 @@ def _load_csv(path: Path) -> dict[str, list]:
     return columns
 
 
+def _grid_label(stem: str) -> str:
+    """Shorten a convergence-CSV stem to 'adaptive'/'constant weights' for the --grid legend.
+
+    Keys off the auto-named ``_adaptive`` token (see signature_roundtrip.py's
+    ``--adaptive-weights``); falls back to the full stem for custom ``--out`` names.
+    """
+    return "adaptive weights" if "_adaptive" in stem else "constant weights"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -46,6 +64,9 @@ def main() -> None:
                         help="One or more convergence CSV files")
     parser.add_argument("--features", nargs="+", metavar="NAME",
                         help="Metric columns to plot (default: all except accepted/loss)")
+    parser.add_argument("--grid", action="store_true",
+                        help=f"Fixed 2x2 comparison view of {', '.join(_GRID_FEATURES)} "
+                             f"(ignores --features)")
     parser.add_argument("--include-loss", action="store_true",
                         help="Add total loss as an extra panel")
     parser.add_argument("--out", type=Path, default=None,
@@ -79,7 +100,15 @@ def main() -> None:
                 print(f"  {col}")
         return
 
-    selected = args.features if args.features else all_metrics
+    if args.grid:
+        selected = list(_GRID_FEATURES)
+        missing = [f for f in selected if f not in seen]
+        if missing:
+            sys.exit(f"None of the input CSVs have column(s): {missing}. "
+                     f"(This graph likely wasn't steered toward that term — "
+                     f"check with --list-features.)")
+    else:
+        selected = args.features if args.features else all_metrics
     if args.include_loss:
         selected = list(selected) + ["loss"]
 
@@ -114,7 +143,8 @@ def main() -> None:
             # Plot over proposals (``step``); fall back to ``accepted`` for older
             # CSVs that predate the step column, then to a plain row index.
             xs = data.get("step") or data.get("accepted") or list(range(len(data[feat])))
-            ax.plot(xs, data[feat], marker=".", markersize=4, linewidth=1, label=label)
+            ax.plot(xs, data[feat], marker=".", markersize=4, linewidth=1,
+                    label=_grid_label(label) if args.grid else label)
         ax.axhline(0, color="gray", linewidth=0.8, linestyle="--")
         ax.set_title(feat, fontsize=9)
         ax.set_xlabel("proposals")
@@ -134,7 +164,10 @@ def main() -> None:
     out_path = args.out
     if out_path is None:
         first_csv = args.csvfiles[0]
-        feat_tag = "_".join(selected[:6]) + ("_etc" if len(selected) > 6 else "")
+        if args.grid:
+            feat_tag = "tri_diamond_c6_paw_grid"
+        else:
+            feat_tag = "_".join(selected[:6]) + ("_etc" if len(selected) > 6 else "")
         out_path = first_csv.with_name(f"{first_csv.stem}__{feat_tag}.png")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)

@@ -5,7 +5,7 @@ summary** for each quantity — a quantile function for sample distributions,
 or the parameters of a parametric family (exponential-decay, truncated
 power-law, …) — instead of redundant moments, dropping every value guaranteed
 by the stored summary. See ``docs/signature.md`` for the design and
-``docs/notes/signature_measurement_plan.md`` for the mapping onto blocks.
+``docs/archive/signature_measurement_plan.md`` for the mapping onto blocks.
 
 Scope: Blocks A, B, C, D, E, F (G0–G5).
 """
@@ -142,25 +142,53 @@ def compute_reduced_signature(
     )
 
 
+def load_signature_dir(out_dir: Path | str) -> ReducedGraphSignature:
+    """Reconstruct a signature from the ``block_<x>.json`` files in a signature directory.
+
+    Blocks whose JSON is absent stay ``None``, so the result reflects exactly what
+    has been measured into ``out_dir`` so far.
+
+    :param out_dir: A signature directory (e.g. ``data/graphs/aids/signature/``).
+    :returns: A ``ReducedGraphSignature`` holding every block found on disk.
+    """
+    out_dir = Path(out_dir)
+    blocks: dict[str, SignatureBlock] = {}
+    for label in _ALL_BLOCKS:
+        path = out_dir / f"block_{label}.json"
+        if path.exists():
+            blocks[label] = _BLOCK_CLASSES[label].from_serializable(json.loads(path.read_text()))
+    return ReducedGraphSignature(**blocks)
+
+
 def write_signature_outputs(
     sig: ReducedGraphSignature,
     out_dir: Path | str,
     source: str,
     fmt: str = "png",
     show: bool = False,
+    merge: bool = True,
 ) -> list[Path]:
     """Write a signature's plots, per-block JSON, summary and combined JSON to a directory.
 
     Mirrors the on-disk layout produced for measured graphs (``block_<x>.<fmt>``,
     ``block_<x>.json``, ``summary.txt``, ``signature.json``) so a measured
     ``signature/`` and a generated ``signature_synth/`` directory are structurally
-    identical. Blocks that are ``None`` are skipped.
+    identical. Blocks that are ``None`` in ``sig`` are skipped.
+
+    The two aggregate files (``signature.json``, ``summary.txt``) always describe the
+    **whole** block set present in ``out_dir``, not just the blocks in ``sig``. With
+    ``merge`` (the default), blocks already measured into ``out_dir`` are reloaded from
+    their ``block_<x>.json`` and folded in, so re-measuring a subset (e.g. Block E alone)
+    updates that block without NaN-ing out the others. Pass ``merge=False`` to treat
+    ``sig`` as the complete truth and let absent blocks fall back to NaN — correct when
+    writing a fresh directory whose stale contents must not leak in.
 
     :param sig: The computed reduced signature to persist.
     :param out_dir: Destination directory (created if missing).
     :param source: Value stored under ``"source"`` in ``signature.json``.
     :param fmt: Image format for the per-block plots (``png``/``pdf``/``svg``).
     :param show: If true, also display each block's plot interactively.
+    :param merge: Fold blocks already on disk into the aggregate outputs (default true).
     :returns: The list of written file paths.
     """
     out_dir = Path(out_dir)
@@ -168,7 +196,7 @@ def write_signature_outputs(
     computed = [(c, b) for c, b in zip(_ALL_BLOCKS, sig._blocks()) if b is not None]
     written: list[Path] = []
 
-    # One plot per computed block.
+    # One plot + one serialized state file per computed block.
     for label, block in computed:
         plot_path = out_dir / f"block_{label}.{fmt}"
         block.visualize(mode="plot", path=str(plot_path))
@@ -176,9 +204,18 @@ def write_signature_outputs(
         if show:
             block.visualize(mode="plot")
 
+        block_path = out_dir / f"block_{label}.json"
+        block_path.write_text(json.dumps(block.to_serializable(), indent=2))
+        written.append(block_path)
+
+    # The aggregate files describe every block now on disk, not just the ones just
+    # measured — so a subset re-measure amends rather than truncates them.
+    aggregate = load_signature_dir(out_dir) if merge else sig
+    present = [(c, b) for c, b in zip(_ALL_BLOCKS, aggregate._blocks()) if b is not None]
+
     # Combined text summary (each block's text visualization).
     sections: list[str] = []
-    for _label, block in computed:
+    for _label, block in present:
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             block.visualize(mode="text", path=None)
@@ -187,16 +224,12 @@ def write_signature_outputs(
     summary_path.write_text("\n\n".join(sections) + "\n")
     written.append(summary_path)
 
-    # Combined named-feature JSON (key:value, NaN-filled for absent blocks).
+    # Combined named-feature JSON (key:value, NaN-filled for blocks never measured).
     json_path = out_dir / "signature.json"
-    json_path.write_text(json.dumps({"source": str(source), "features": sig.as_dict()}, indent=2))
+    json_path.write_text(
+        json.dumps({"source": str(source), "features": aggregate.as_dict()}, indent=2)
+    )
     written.append(json_path)
-
-    # Each block's full internal state for later reconstruction.
-    for label, block in computed:
-        block_path = out_dir / f"block_{label}.json"
-        block_path.write_text(json.dumps(block.to_serializable(), indent=2))
-        written.append(block_path)
 
     return written
 
@@ -204,6 +237,7 @@ def write_signature_outputs(
 __all__ = [
     "BlockA", "BlockB", "BlockC", "BlockD", "BlockE", "BlockF",
     "ReducedGraphSignature", "compute_reduced_signature", "write_signature_outputs",
+    "load_signature_dir",
     "_ALL_BLOCKS", "_BLOCK_CLASSES",
     "QuantileFit", "QUANTILE_LEVELS", "ExpDecayFit", "TruncPowerLawFit", "ZipfFit",
     "fit_quantiles", "fit_exp_decay_rank", "fit_truncated_powerlaw",

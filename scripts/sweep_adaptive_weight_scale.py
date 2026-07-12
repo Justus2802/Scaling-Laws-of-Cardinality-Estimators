@@ -23,7 +23,6 @@ import csv
 import logging
 from pathlib import Path
 
-_REPO = Path(__file__).resolve().parent.parent
 import kgsynth.generator.stage3 as stage3  # noqa: E402
 from kgsynth.generator.stage1 import sample_schema  # noqa: E402
 from kgsynth.generator.stage2 import instantiate  # noqa: E402

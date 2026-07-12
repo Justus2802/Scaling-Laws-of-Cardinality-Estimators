@@ -26,7 +26,8 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 
-_REPO = Path(__file__).resolve().parent.parent
+from kgsynth.corpus import REPO_ROOT
+
 from sweep_viz import _reconstruct_block, _block_feature_map, _LETTERS
 from plot_signature_pca import (
     _find_corpus_signatures, _load_signature_json, _build_matrix,
@@ -89,7 +90,7 @@ def main() -> None:
                              "data/graph_population/signature_pca_sweep_<graphs>.png)")
     args = parser.parse_args()
 
-    sweep_dir = Path(args.sweep_dir) if args.sweep_dir else _REPO / "experiments" / "sweeps"
+    sweep_dir = Path(args.sweep_dir) if args.sweep_dir else REPO_ROOT / "experiments" / "sweeps"
 
     # ── load every graph's sweep records ──────────────────────────────────────
     per_graph_records = {graph: _load_sweep(graph, sweep_dir, args.budget) for graph in args.graphs}
@@ -182,7 +183,7 @@ def main() -> None:
     mode_suffix = "_size_agnostic" if args.size_agnostic else ""
     graphs_suffix = "_".join(args.graphs)
     out_path = Path(args.out) if args.out else (
-        _REPO / "data" / "graph_population"
+        REPO_ROOT / "data" / "graph_population"
         / f"signature_pca_sweep_{graphs_suffix}{mode_suffix}.png"
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)

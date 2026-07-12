@@ -46,25 +46,25 @@ Usage
 import argparse
 import csv
 import random
-from pathlib import Path
 
 import numpy as np
 
-_REPO = Path(__file__).resolve().parent.parent
-from profile_stage3_deltas import _build_stage2_graph  # noqa: E402
-from kgsynth.generator._constants import _RDF_TYPE  # noqa: E402
-from kgsynth.generator.local_updates import (  # noqa: E402
+from kgsynth.corpus import REPO_ROOT
+from kgsynth.generator._constants import _RDF_TYPE
+from kgsynth.generator.local_updates import (
     _induced_cycles_through_pair_mitm as _cyc, _adj_inc, _adj_dec,
 )
 
-_OUT_DIR = _REPO / "experiments" / "estimator_variance"
+from _stage2 import build_stage2_graph
+
+_OUT_DIR = REPO_ROOT / "experiments" / "estimator_variance"
 # Fixed categorical order (Paul Tol "bright", colourblind-safe) — one hue per K.
 _COLORS = ["#4477AA", "#EE6677", "#228833", "#CCBB44", "#66CCEE", "#AA3377", "#BBBBBB"]
 
 
 def _build(graph: str, seed: int):
     """Stage-2 content-edge adjacency for ``graph`` (same derived seeds as refine)."""
-    g = _build_stage2_graph(graph, seed)
+    g = build_stage2_graph(graph, seed)
     n = g.vcount()
     content = [(e.source, e.target, e["predicate"])
                for e in g.es if e["predicate"] != _RDF_TYPE]

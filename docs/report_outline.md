@@ -166,7 +166,7 @@ by `docs/generator.md`.
 - `scripts/signature_error_boxplot.py` — boxplot of per-feature/per-distribution relative
   errors grouped by signature block; the artifact behind
   `data/graph_population/signature_error_boxplot_wn18rr_v4.png` seen in the working tree.
-- `scripts/convergence_plot.py` / `convergence_plot_grid.py` — plot Stage-3's
+- `scripts/convergence_plot.py` (incl. `--grid`) — plot Stage-3's
   per-swap-logged relative-error trajectory for chosen features (or a fixed 2×2 grid of
   triangle/diamond/c6/paw) over the SA run; used to visually confirm convergence and
   compare fixed- vs. adaptive-weight runs. Backing data: the `convergence_log` CSVs
@@ -259,7 +259,7 @@ whose `git log` goes back much further (138 commits) — for full coverage, draw
 `docs/notes/*.md`, not the changelog alone.
 
 - The reduced/non-over-determined signature itself was a redesign of an earlier
-  over-determined ("full") signature — `docs/signature.md`, `docs/notes/signature_measurement_plan.md`
+  over-determined ("full") signature — `docs/signature.md`, `docs/archive/signature_measurement_plan.md`
   document the before/after and why the change was made (coexisting module, not an
   in-place replace); git history shows an intermediate `signature_reduced` package that
   was later merged into the single current `signature` package.
@@ -307,7 +307,7 @@ Pull directly from `docs/generator.md` §"Known limitations / open items" and th
 - The measure→generate→compare diagram from `README.md` (recreate as a figure).
 - One PCA scatter plot (`signature_pca.png` or the sweep variant) as the headline
   "does the generator work" visual.
-- One convergence-grid plot (`convergence_plot_grid.py` output) showing Stage-3 error
+- One convergence-grid plot (`convergence_plot.py --grid` output) showing Stage-3 error
   trajectories.
 - Signature-error boxplot (`signature_error_boxplot_*.png`) as the headline per-feature
   accuracy figure.

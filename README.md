@@ -116,7 +116,7 @@ adaptive_weights=True)` instead rescales each term's weight by its *own* current
 (`weight = base_weight * ADAPTIVE_WEIGHT_SCALE * error`), so the annealer automatically
 concentrates rewiring pressure on whichever metric is currently worst. `--adaptive-weights`
 on `scripts/signature_roundtrip.py` turns this on; `scripts/sweep_adaptive_weight_scale.py`
-searches for the best `ADAPTIVE_WEIGHT_SCALE`; `scripts/convergence_plot_grid.py` plots
+searches for the best `ADAPTIVE_WEIGHT_SCALE`; `scripts/convergence_plot.py --grid` plots
 fixed-vs-adaptive convergence curves side by side. See the "Adaptive weights" section of
 `docs/generator.md` for the current tuning findings and trade-offs (it doesn't uniformly
 win — it trades some metrics for others).
@@ -138,9 +138,10 @@ data/
   graphs/, test_graphs/          the real-KG corpus (measured + cached signatures)
 docs/
   signature.md        the signature design & reasoning (start here)
-  generator.md         the generator algorithm, step by step
-  notes/               deep-dive analyses (why X is hard, what was tried, corpus surveys)
-  plan/                forward-looking / not-yet-implemented plans
+  generator.md        the generator algorithm, step by step
+  notes/              deep-dive analyses (why X is hard, what was tried, corpus surveys)
+  plan/               forward-looking / not-yet-implemented plans
+  archive/            superseded historical records (not current)
 tests/                pytest suite for signature blocks and generator stages
 ```
 

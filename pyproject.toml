@@ -39,9 +39,3 @@ line-length = 100
 [tool.ruff.lint]
 # Default rules (pyflakes F + a pycodestyle E subset) plus line-length (E501).
 select = ["E4", "E7", "E9", "F", "E501"]
-
-[tool.ruff.lint.per-file-ignores]
-# The diagnostic scripts compute a module-level _REPO / sys.path anchor before
-# importing kgsynth, which is import-after-code (E402) by necessity; the package
-# code has no such need, so this relaxation is scoped to scripts/ only.
-"scripts/*" = ["E402"]

@@ -48,10 +48,9 @@ import matplotlib.pyplot as plt
 from kgsynth.signature import BlockA, BlockB, BlockC, BlockD, BlockE, BlockF
 from kgsynth.signature import _distance
 from kgsynth.signature._fits import QUANTILE_SUFFIXES
+from kgsynth.corpus import DEFAULT_SEARCH_DIRS, REPO_ROOT
 
-_REPO = Path(__file__).resolve().parent.parent
 
-_DEFAULT_SEARCH_DIRS = [_REPO / "data" / "graphs", _REPO / "data" / "test_graphs"]
 
 # Fixed block order + one colour per block (categorical, never re-cycled).
 _BLOCK_ORDER = ["a", "b", "c", "d", "e", "f"]
@@ -241,7 +240,7 @@ def main() -> None:
     args = parser.parse_args()
     exclude = _DEFAULT_EXCLUDE if args.exclude is None else set(args.exclude)
 
-    search_dirs = [Path(args.graphs_dir)] if args.graphs_dir else _DEFAULT_SEARCH_DIRS
+    search_dirs = [Path(args.graphs_dir)] if args.graphs_dir else DEFAULT_SEARCH_DIRS
     target_dir = _find_target(args.graph, search_dirs)
     graph_dir = target_dir.parent
     synth_dir = _resolve_synth(graph_dir, args.synth_dir)
@@ -295,7 +294,8 @@ def main() -> None:
     fig.tight_layout()
 
     default_name = f"signature_error_boxplot_{args.graph}.png"
-    out_path = Path(args.out) if args.out else _REPO / "data" / "graph_population" / default_name
+    out_path = (Path(args.out) if args.out
+                else REPO_ROOT / "data" / "graph_population" / default_name)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=150)
     plt.close(fig)

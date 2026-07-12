@@ -63,9 +63,8 @@ import sys
 import time
 from pathlib import Path
 
-_REPO = Path(__file__).resolve().parent.parent
 from kgsynth.motif_counter import CCMotifCounter, ExactMotifCounter  # noqa: E402
-from kgsynth.corpus import DEFAULT_SEARCH_DIRS, load_target_from_corpus
+from kgsynth.corpus import DEFAULT_SEARCH_DIRS, REPO_ROOT, load_target_from_corpus
 
 # (feature name, sorted degree sequence) for the CC-estimated 4-node motifs.
 _MOTIF4_FEATURES = [
@@ -158,7 +157,7 @@ def main() -> None:
         parser.error("provide a graph name positionally or via --graphs")
 
     search_dirs = [args.graphs_dir] if args.graphs_dir else DEFAULT_SEARCH_DIRS
-    base_dir = args.out or (_REPO / "experiments" / "cc_variance_sweeps")
+    base_dir = args.out or (REPO_ROOT / "experiments" / "cc_variance_sweeps")
 
     if args.graphs:
         # Multi-graph sweep: one directory named by the sweep options + a timestamp,

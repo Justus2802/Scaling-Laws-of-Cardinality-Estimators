@@ -1,6 +1,6 @@
 # Handover — submission cleanup plan essentially complete; only the corpus regen (+ optional Stage 6) remains
 
-Plan: [docs/plan/submission_cleanup_plan.md](docs/plan/submission_cleanup_plan.md). Branch: `main`.
+Plan: [docs/archive/submission_cleanup_plan.md](docs/archive/submission_cleanup_plan.md). Branch: `main`.
 Suite: **264 passed, 55 subtests, 0 failed, ~7 min** — green before and after every commit below.
 `ruff check` — **All checks passed!** project-wide.
 

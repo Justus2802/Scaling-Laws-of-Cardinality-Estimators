@@ -29,10 +29,9 @@ import argparse
 import json
 from pathlib import Path
 
-from kgsynth.corpus import DEFAULT_SEARCH_DIRS
+from kgsynth.corpus import DEFAULT_SEARCH_DIRS, REPO_ROOT
 
-_REPO = Path(__file__).resolve().parent.parent
-_DEFAULT_OUT = _REPO / "data" / "signatures"
+_DEFAULT_OUT = REPO_ROOT / "data" / "signatures"
 
 
 def _discover(names: set[str] | None) -> dict[str, Path]:

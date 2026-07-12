@@ -4,13 +4,13 @@ Status: **planned / blocked on data**. This is the design and the reasoning; no 
 yet (decided). It plans **doc-Stage-1** — sampling a *novel* `ReducedGraphSignature`
 from the population of real-world knowledge graphs, conditioned on size — which is the
 input that feeds the generator
-([generation_implementation_plan.md](generation_implementation_plan.md)).
+([../archive/generation_implementation_plan.md](../archive/generation_implementation_plan.md)).
 
 ## What this is — and what it is *not*
 
 Two different things are both called "Stage 1" in this project. Keep them apart:
 
-- **The generator's "Stage 1/2"** ([generation_implementation_plan.md](generation_implementation_plan.md))
+- **The generator's "Stage 1/2"** ([../archive/generation_implementation_plan.md](../archive/generation_implementation_plan.md))
   takes **one given** signature and builds a graph (schema sampler → CS-first wiring).
 - **This document — doc-Stage-1** — samples a **new** signature vector from the
   distribution of real KGs, so the generator has something to instantiate. The

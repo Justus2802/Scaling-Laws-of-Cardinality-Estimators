@@ -3,7 +3,7 @@
 The generator turns a measured **reduced signature** into a synthetic KG whose re-measured
 signature lands near the target. It implements the project brief's three-stage procedure
 ([notes/generation_algorithm_fit.md](notes/generation_algorithm_fit.md),
-[plan/generation_implementation_plan.md](plan/generation_implementation_plan.md)) against the
+[archive/generation_implementation_plan.md](archive/generation_implementation_plan.md)) against the
 reduced blocks ([signature.md](signature.md)).
 
 Code lives in the **`src/kgsynth/generator/`** package:
@@ -486,7 +486,7 @@ Path lengths are not targeted because the only cheap post-hoc lever, injecting h
 *one-sided*: shortcuts can shorten paths but never lengthen them, and the synthetic graph almost
 always undershoots (its paths are already too short), so the lever has nothing to do. The
 structural-undershoot analysis and a sketch for moving path steering into Stage 3's annealing loop
-(if it is ever wanted) are in [notes/path_length_steering.md](notes/path_length_steering.md).
+(if it is ever wanted) are in [archive/path_length_steering.md](archive/path_length_steering.md).
 
 ---
 

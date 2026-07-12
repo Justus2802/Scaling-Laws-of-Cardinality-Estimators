@@ -39,41 +39,21 @@ import argparse
 import csv
 from pathlib import Path
 
-_REPO = Path(__file__).resolve().parent.parent
-from profile_stage3_deltas import _build_stage2_graph  # noqa: E402
-from kgsynth.generator._constants import _RDF_TYPE  # noqa: E402
-from kgsynth.kg_io import load_kg  # noqa: E402
+from kgsynth.corpus import REPO_ROOT, corpus_graph_names, find_graph_file, graph_dir
+from kgsynth.generator._constants import _RDF_TYPE
+from kgsynth.kg_io import load_kg
 
-_SEARCH_DIRS = [_REPO / "data" / "graphs", _REPO / "data" / "test_graphs"]
-_OUT_DIR = _REPO / "experiments" / "edge_multiplicity"
+from _stage2 import build_stage2_graph
 
-
-def _find_source_file(graph_dir: Path) -> "Path | None":
-    """First non-synthetic .nt/.ttl(.gz) graph file in ``graph_dir``."""
-    for pat in ("*.nt", "*.ttl", "*.nt.gz", "*.ttl.gz"):
-        hits = sorted(p for p in graph_dir.glob(pat) if not p.stem.endswith("_synth"))
-        if hits:
-            return hits[0]
-    return None
+_OUT_DIR = REPO_ROOT / "experiments" / "edge_multiplicity"
 
 
-def _corpus_graphs() -> list[str]:
-    """All graph dirs holding both a signature/ and a source file (dedup by name)."""
-    names: list[str] = []
-    for root in _SEARCH_DIRS:
-        if not root.is_dir():
-            continue
-        for d in sorted(root.iterdir()):
-            if (d / "signature").is_dir() and _find_source_file(d) and d.name not in names:
-                names.append(d.name)
-    return names
-
-
-def _graph_dir(name: str) -> "Path | None":
-    for root in _SEARCH_DIRS:
-        if (root / name / "signature").is_dir():
-            return root / name
-    return None
+def _measurable_graphs() -> list[str]:
+    """Corpus graphs holding both a signature/ and a source file (the ones we can survey)."""
+    return [
+        name for name in corpus_graph_names()
+        if (d := graph_dir(name)) and (d / "signature").is_dir() and find_graph_file(d)
+    ]
 
 
 def _overlap_stats(g) -> dict:
@@ -113,11 +93,11 @@ def _measure(name: str, seed: int, orig_only: bool = False) -> "dict | None":
     ``orig_only`` skips the Stage-2 build — a fast survey of how much overlap the
     *targets* demand (the build is the slow part on large corpus graphs, and
     Stage-2's ρ≈1 is a structural property already confirmed on small graphs)."""
-    graph_dir = _graph_dir(name)
-    if graph_dir is None:
+    d = graph_dir(name)
+    if d is None:
         print(f"  {name}: not found in corpus — skipping")
         return None
-    src = _find_source_file(graph_dir)
+    src = find_graph_file(d)
     print(f"  {name}: loading original {src.name} …", flush=True)
     orig = _overlap_stats(load_kg(src))
     row = {"graph": name}
@@ -131,7 +111,7 @@ def _measure(name: str, seed: int, orig_only: bool = False) -> "dict | None":
         return row
     print(f"  {name}: building Stage-2 synthetic (seed {seed}) …", flush=True)
     try:
-        synth = _overlap_stats(_build_stage2_graph(name, seed))
+        synth = _overlap_stats(build_stage2_graph(name, seed))
     except Exception as exc:  # noqa: BLE001 — report and continue over the corpus
         print(f"  {name}: Stage-2 build failed ({exc}) — skipping")
         return None
@@ -154,7 +134,7 @@ def main() -> None:
                          "survey of how much pair overlap the targets demand")
     args = ap.parse_args()
 
-    graphs = args.graphs or _corpus_graphs()
+    graphs = args.graphs or _measurable_graphs()
     mode = "originals only" if args.orig_only else "original vs Stage-2"
     print(f"Measuring edge-multiplicity ({mode}) for {len(graphs)} graph(s): {', '.join(graphs)}\n")
 

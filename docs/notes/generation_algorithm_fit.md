@@ -3,7 +3,7 @@
 Assessment of the proposed three-stage generation algorithm against the reduced,
 non-over-determined signature ([../signature.md](../signature.md)) and the
 guaranteed-vs-joint analysis. Companion to
-[signature_measurement_plan.md](signature_measurement_plan.md).
+[../archive/signature_measurement_plan.md](../archive/signature_measurement_plan.md).
 
 ## Stage ↔ bucket mapping
 

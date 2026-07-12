@@ -130,6 +130,34 @@ class Generator:
     def __init__(self, target: Signature) -> None:
         self.target = target
 
+    def sample_pre_refine(
+        self,
+        *,
+        seed: int = 0,
+        relation_zipf_exponent: float = 2.0,
+    ) -> igraph.Graph:
+        """Run Stages 1 and 2 only, returning the graph :meth:`sample` would hand to Stage 3.
+
+        Uses the same derived sub-seeds as :meth:`sample`, so for a given ``seed`` this
+        is bit-for-bit the graph ``refine()`` starts from. The diagnostic scripts
+        (Stage-3 delta profiling, edge multiplicity, estimator variance) use it to study
+        the pre-refinement state without paying for the rewiring loop.
+
+        :param seed: Master seed; Stage 1 uses ``seed``, Stage 2 ``seed + 1``.
+        :param relation_zipf_exponent: Passed to Stage 1 (relation-frequency skew).
+        :returns: The post-Stage-2, pre-refinement synthetic graph.
+        """
+        schema = sample_schema(
+            self.target.a,
+            self.target.c,
+            d=self.target.d,
+            b=self.target.b,
+            f=self.target.f,
+            relation_zipf_exponent=relation_zipf_exponent,
+            seed=seed,
+        )
+        return instantiate(schema, seed=seed + 1)
+
     def sample(
         self,
         *,
@@ -192,16 +220,7 @@ class Generator:
             graph loaded by kg_io.load_kg.
         """
         log.info("Generator: sampling synthetic KG (master seed=%d)", seed)
-        schema = sample_schema(
-            self.target.a,
-            self.target.c,
-            d=self.target.d,
-            b=self.target.b,
-            f=self.target.f,
-            relation_zipf_exponent=relation_zipf_exponent,
-            seed=seed,
-        )
-        g = instantiate(schema, seed=seed + 1)
+        g = self.sample_pre_refine(seed=seed, relation_zipf_exponent=relation_zipf_exponent)
         g_refined = refine(
             g,
             self.target.e,
