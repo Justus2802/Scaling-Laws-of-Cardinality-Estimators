@@ -30,6 +30,7 @@ from .signature import (
     compute_reduced_signature,
     write_signature_outputs,
 )
+from .transform import FeatureSpec, Identity, Perturb, PerturbOne, SignatureTransform
 
 __version__ = "0.1.0"
 
@@ -52,6 +53,12 @@ __all__ = [
     "sample_schema",
     "instantiate",
     "refine",
+    # transform (Signature feature-dict -> Signature feature-dict)
+    "SignatureTransform",
+    "Perturb",
+    "PerturbOne",
+    "Identity",
+    "FeatureSpec",
     # io
     "load_kg",
     "save_kg",

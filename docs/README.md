@@ -21,6 +21,11 @@ Map of this project's docs — every file under `docs/` is listed here.
   which signature fields drive each step, the reduced-signature adapters, and the design rationale
   behind the wiring (P(r\|t) kept separate from the co-occurrence spectrum, per-relation
   multiplicity with edge conservation, the realizability cap, and the `num_distinct_cs` templating).
+- **[transform.md](transform.md)** — signature transforms (`src/kgsynth/transform/`): seeded maps over
+  the flat feature dict that perturb a measured signature before generating from it. Covers the
+  **perturbation surface** (only 74 of the 124 features are read by the generator; the rest are
+  no-ops), the features that are read but *inert* or *pinned constants*, the coupled quantile groups
+  that must move together, and why clamped perturbations are reported rather than swallowed.
 - **[block-refactoring-guide.md](block-refactoring-guide.md)** — the `SignatureBlock` class
   pattern shared by every block (lifecycle methods, the `_NOT_CALCULATED` sentinel,
   property guards, `visualize` split, logging conventions, selective block computation).
