@@ -286,6 +286,31 @@ class BlockE(SignatureBlock):
         """Return a 27-element NaN vector (same length as as_vector())."""
         return [float("nan")] * 27
 
+    @classmethod
+    def _state_from_features(cls, feats: dict[str, float]) -> dict:
+        """Rebuild Block E's state from the flat feature dict.
+
+        The per-k path/tree template features are re-keyed into the ``{k: value}``
+        dicts the block stores. NaN entries (templates never measured, e.g. when
+        ``skip_stars_and_paths`` was set) are dropped rather than stored as NaN,
+        reproducing the empty-dict state ``calculate`` leaves in that case.
+        """
+        ks = range(2, _MAX_K + 1)
+
+        def _by_k(prefix: str) -> dict[int, float]:
+            out = {k: feats[f"{prefix}_k{k}"] for k in ks}
+            return {k: v for k, v in out.items() if v == v}  # drop NaN
+
+        state = {f"_{name}": cls._int(feats, name) for name in (
+            "triangle_count", "four_cycle_count", "five_cycle_count", "six_cycle_count",
+            "diamond_count", "k4_count", "tailed_triangle_count",
+        )}
+        state["_path_template_zipf"] = _by_k("path_template_zipf")
+        state["_path_template_entropy"] = _by_k("path_template_entropy")
+        state["_tree_template_zipf"] = feats["tree_template_zipf"]
+        state["_tree_template_entropy"] = feats["tree_template_entropy"]
+        return state
+
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
         """Display or save diagnostics for reduced Block E.
 

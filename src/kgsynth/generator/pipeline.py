@@ -106,6 +106,59 @@ class Signature:
         }
         Path(path).write_text(yaml.safe_dump(data, sort_keys=False))
 
+    def as_features(self) -> dict[str, float]:
+        """Flatten to the public 124-key feature dict.
+
+        The same ``{name: value}`` mapping stored under ``"features"`` in a
+        measured ``signature.json``. Blocks that are ``None`` contribute their
+        all-NaN vector, so the key set is fixed at 124 regardless of which
+        optional blocks are present.
+
+        :returns: Feature name → value, in block order (A, B, C, D, E, F).
+        """
+        feats: dict[str, float] = {}
+        for letter, block in zip(_BLOCK_CLASSES, self._blocks()):
+            cls = _BLOCK_CLASSES[letter]
+            values = block.as_vector() if block is not None else cls.get_na_vec()
+            feats.update(zip(cls.feature_names(), values))
+        return feats
+
+    @classmethod
+    def from_features(cls, feats: dict[str, float]) -> "Signature":
+        """Rebuild a generator-usable Signature from a flat feature dict.
+
+        The inverse of :meth:`as_features`, and the counterpart to
+        :meth:`from_config` for callers who hold features rather than block
+        state — a perturbed signature, a sampled one
+        (:mod:`kgsynth.signature_sampler`), or one read from a ``signature.json``
+        ``"features"`` block.
+
+        Every value the generator reads is reconstructed exactly: the fit objects
+        are rebuilt from their named features (``PowerLawStats.alpha`` from
+        ``out_degree_alpha``, ``QuantileFit`` from the seven ``*_q00``..``*_q100``
+        keys, and so on).
+
+        **What is not restored:** the raw sample arrays each block keeps for
+        plotting — degree lists, class sizes, singular-value spectra. They are not
+        in the feature vector, and nothing in the generator reads them. A block
+        rebuilt this way therefore **cannot** ``visualize()``, and re-serializing
+        it with ``to_serializable()`` would emit a lossy file that looks like a
+        measured one. Persist the feature dict itself instead.
+
+        Fit-quality diagnostics absent from the vector (``PowerLawStats``'s ``ks``
+        and the three ``D_*`` comparison distances) are filled with NaN — they
+        describe a fit that was performed elsewhere, and no consumer reads them.
+
+        :param feats: Feature name → value; must hold all 124 keys.
+        :returns: A ``Signature`` whose blocks reproduce every generator-consumed
+            value of the signature *feats* came from.
+        :raises KeyError: If a feature key is missing.
+        """
+        return cls(**{
+            letter: _BLOCK_CLASSES[letter].from_features(feats)
+            for letter in _BLOCK_CLASSES
+        })
+
     def _blocks(self) -> list:
         """Return the six blocks in signature order (``a``..``f``), ``None`` where optional."""
         return [self.a, self.b, self.c, self.d, self.e, self.f]

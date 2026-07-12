@@ -196,6 +196,27 @@ class BlockD(SignatureBlock):
         """Return a NaN vector the same length as as_vector()."""
         return [float("nan")] * (4 + len(QUANTILE_LEVELS) + 4 + len(QUANTILE_LEVELS) + 3)
 
+    @classmethod
+    def _state_from_features(cls, feats: dict[str, float]) -> dict:
+        """Rebuild Block D's state from the flat feature dict."""
+        return {
+            "_num_distinct_cs": cls._int(feats, "num_distinct_cs"),
+            "_cs_freq_fit": TruncPowerLawFit(
+                feats["cs_freq_alpha"], feats["cs_freq_vmin"], feats["cs_freq_vmax"]
+            ),
+            "_cs_size_q": QuantileFit(*[feats[f"cs_size_{s}"] for s in QUANTILE_SUFFIXES]),
+            "_inv_num_distinct_cs": cls._int(feats, "inv_num_distinct_cs"),
+            "_inv_cs_freq_fit": TruncPowerLawFit(
+                feats["inv_cs_freq_alpha"], feats["inv_cs_freq_vmin"], feats["inv_cs_freq_vmax"]
+            ),
+            "_inv_cs_size_q": QuantileFit(
+                *[feats[f"inv_cs_size_{s}"] for s in QUANTILE_SUFFIXES]
+            ),
+            "_two_step_fit": TruncPowerLawFit(
+                feats["two_step_alpha"], feats["two_step_vmin"], feats["two_step_vmax"]
+            ),
+        }
+
     def distribution_fits(self) -> list[tuple[str, object, str]]:
         """Return ``(name, fit, kind)`` for each reportable distribution.
 

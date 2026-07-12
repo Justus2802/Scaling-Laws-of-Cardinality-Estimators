@@ -231,6 +231,24 @@ class BlockF(SignatureBlock):
         """Return a 7-element NaN vector (same length as as_vector())."""
         return [float("nan")] * 7
 
+    @classmethod
+    def _state_from_features(cls, feats: dict[str, float]) -> dict:
+        """Rebuild Block F's state from the flat feature dict.
+
+        The sampled pairwise-distance array (``_pair_dists_finite``, kept only for
+        ``visualize``) is not in the feature vector; the three shortest-path
+        summary scalars it produced are.
+        """
+        return {
+            "_num_components": cls._int(feats, "num_components"),
+            "_largest_component_fraction": feats["largest_component_fraction"],
+            "_clustering_coefficient": feats["clustering_coefficient"],
+            "_degree_assortativity": feats["degree_assortativity"],
+            "_shortest_path_max": feats["shortest_path_max"],
+            "_shortest_path_mean": feats["shortest_path_mean"],
+            "_shortest_path_var": feats["shortest_path_var"],
+        }
+
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
         """Display or save diagnostics for reduced Block F.
 

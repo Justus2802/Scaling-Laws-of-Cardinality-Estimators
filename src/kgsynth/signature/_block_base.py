@@ -95,6 +95,55 @@ class SignatureBlock(ABC):
         """
         return dict(zip(self.feature_names(), self.as_vector()))
 
+    @classmethod
+    def from_features(cls, feats: dict[str, float]) -> "SignatureBlock":
+        """Rebuild a block from the flat feature dict (the inverse of :meth:`as_dict`).
+
+        Reconstructs the fit objects each block stores from their named features,
+        so the result reproduces every value the generator reads. Subclasses
+        implement :meth:`_state_from_features`; this method wraps it in the same
+        ``__new__`` + ``__init__`` rebuild :meth:`from_serializable` uses, so
+        attributes absent from the feature vector keep their ``_NOT_CALCULATED``
+        defaults rather than being missing.
+
+        The raw sample arrays kept for plotting (degree lists, class sizes,
+        singular-value spectra) are **not** in the feature vector and are not
+        restored: a block rebuilt this way cannot :meth:`visualize`. See
+        ``Signature.from_features`` for the full contract.
+
+        :param feats: Feature name → value; must hold this block's feature names.
+        :returns: A populated block instance.
+        :raises KeyError: If one of this block's features is missing from *feats*.
+        """
+        obj = cls.__new__(cls)
+        obj.__init__()
+        obj.__dict__.update(cls._state_from_features(feats))
+        return obj
+
+    @classmethod
+    def _state_from_features(cls, feats: dict[str, float]) -> dict:
+        """Map this block's features back to its internal state dict.
+
+        :param feats: Feature name → value.
+        :returns: The ``__dict__`` entries to restore (private attribute names).
+        """
+        raise NotImplementedError(f"{cls.__name__} does not support from_features()")
+
+    @staticmethod
+    def _int(feats: dict[str, float], name: str) -> int:
+        """Read a count-like feature as an ``int``.
+
+        Features round-trip through ``float``; a float count propagates into
+        ``range()`` and array shapes downstream, so counts are cast explicitly.
+        NaN (a genuinely unmeasured count) maps to 0.
+
+        :param feats: Feature name → value.
+        :param name: The feature to read.
+        :returns: The value as an int.
+        """
+        value = feats[name]
+        return 0 if value != value else int(round(value))
+
     def to_serializable(self) -> dict:
         """Return a JSON-serializable dict of this block's full internal state.
 

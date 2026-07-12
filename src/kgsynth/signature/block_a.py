@@ -74,6 +74,15 @@ class BlockA(SignatureBlock):
         """Return a 3-element NaN vector (same length as as_vector())."""
         return [float("nan")] * 3
 
+    @classmethod
+    def _state_from_features(cls, feats: dict[str, float]) -> dict:
+        """Rebuild Block A's state from the flat feature dict."""
+        return {
+            "_num_entities": cls._int(feats, "num_entities"),
+            "_num_relations": cls._int(feats, "num_relations"),
+            "_mean_degree": feats["mean_degree"],
+        }
+
     def as_vector(self) -> list[float]:
         """Flatten to a fixed-length 3-vector for cross-KG comparison.
 

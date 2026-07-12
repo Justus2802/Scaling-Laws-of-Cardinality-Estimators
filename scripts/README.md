@@ -47,6 +47,20 @@ python scripts/aggregate_signatures.py swdf fb237_v4   # only these
 python scripts/aggregate_signatures.py --out-dir /tmp/sigs
 ```
 
+### `rebuild_signature_aggregates.py`
+Re-derives a graph's aggregate `signature.json` / `summary.txt` from the `block_*.json` already on
+disk. Needed because four population graphs (`aids`, `codex_l`, `dbpedia100k`, `hetionet`) shipped
+aggregates that were ~101–109 of 124 features NaN while their per-block files were correct — written
+by a partial re-measure before `write_signature_outputs(merge=True)` existed to fold on-disk blocks
+back in. Does **not** re-measure, so it needs neither the source graphs nor the deferred corpus
+regeneration. Run `aggregate_signatures.py` afterwards to refresh the flat export.
+
+```
+python scripts/rebuild_signature_aggregates.py --check   # report staleness, write nothing
+python scripts/rebuild_signature_aggregates.py           # repair all
+python scripts/rebuild_signature_aggregates.py aids      # repair one
+```
+
 ## Graph Generation & Round-trip
 
 ### `sample_signature.py`

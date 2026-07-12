@@ -352,6 +352,43 @@ class BlockB(SignatureBlock):
         n_q = len(QUANTILE_LEVELS)
         return [float("nan")] * (6 + 2 * n_q + 2 + 4 + (n_q - 1) + 1)
 
+    @classmethod
+    def _state_from_features(cls, feats: dict[str, float]) -> dict:
+        """Rebuild Block B's state from the flat feature dict.
+
+        ``PowerLawStats``'s ``ks`` / ``D_*`` fit-quality diagnostics are not in
+        the feature vector and no consumer reads them, so they are filled NaN.
+        """
+        nan = float("nan")
+        n_bins = len(QUANTILE_LEVELS) - 1
+        return {
+            "_out_degree_fit": PowerLawStats(
+                feats["out_degree_alpha"], feats["out_degree_xmin"], nan, nan, nan, nan
+            ),
+            "_in_degree_fit": PowerLawStats(
+                feats["in_degree_alpha"], feats["in_degree_xmin"], nan, nan, nan, nan
+            ),
+            "_relation_zipf": ZipfFit(
+                feats["relation_zipf_exponent"], feats["relation_zipf_xmin"]
+            ),
+            "_obj_alpha_q": QuantileFit(
+                *[feats[f"obj_mult_alpha_{s}"] for s in QUANTILE_SUFFIXES]
+            ),
+            "_subj_alpha_q": QuantileFit(
+                *[feats[f"subj_mult_alpha_{s}"] for s in QUANTILE_SUFFIXES]
+            ),
+            "_a_obj": feats["a_obj"],
+            "_a_subj": feats["a_subj"],
+            "_out_degree_max": cls._int(feats, "out_degree_max"),
+            "_out_degree_p90": feats["out_degree_p90"],
+            "_in_degree_max": cls._int(feats, "in_degree_max"),
+            "_in_degree_p90": feats["in_degree_p90"],
+            "_recip_symmetric_frac": np.array(
+                [feats[f"recip_symmetric_frac_bin{i}"] for i in range(n_bins)], dtype=float
+            ),
+            "_recip_symmetric_value": feats["recip_symmetric_value"],
+        }
+
     def distribution_fits(self) -> list[tuple[str, object, str]]:
         """Return ``(name, fit, kind)`` for each reportable distribution.
 

@@ -18,8 +18,9 @@ This module provides the sampler **class hierarchy**:
 Output is the **97-value feature dict** (the A/B/C/D/F subset of a measured
 ``signature.json``'s ``"features"`` block — Block E motifs are excluded, see the
 scope note below), so sampled signatures are drop-in compatible with the existing
-readers for those blocks. Reconstruction into a ``ReducedGraphSignature`` object
-is intentionally not done here.
+readers for those blocks. To drive the generator from one, add the missing Block E
+keys and pass the result to :meth:`kgsynth.Signature.from_features`, which rebuilds
+a generator-usable ``Signature`` from a flat feature dict.
 
 Scope note — **motifs / Block E (G5) are out of scope**, exactly as in the
 reduced signature itself (the sampler cannot be more complete than its target
@@ -38,51 +39,27 @@ from pathlib import Path
 
 import numpy as np
 
+from ._domains import (
+    INTEGER_FEATURES as _INTEGER_FEATURES,
+    MIN_ONE as _MIN_ONE,
+    SIGNED_UNIT_FEATURES as _SIGNED_UNIT,
+    TYPE_PARAM_FEATURES as _TYPE_PARAM_FEATURES,
+    UNIT_INTERVAL as _UNIT_INTERVAL,
+)
+from .corpus import REPO_ROOT
 from .signature import BlockA, BlockB, BlockC, BlockD, BlockF
 
-# Repo root: src/signature_sampler.py -> parents[1] == repo root.
-_ROOT = Path(__file__).resolve().parents[1]
-_DEFAULT_CORPUS = _ROOT / "data" / "graphs"
+# Reuse corpus.py's repo-root anchor rather than recomputing the parent depth here:
+# this module was `src/signature_sampler.py` before the kgsynth repackage and its
+# hard-coded `parents[1]` silently kept resolving — to `src/data/graphs`, which does
+# not exist — after the move to `src/kgsynth/`.
+_DEFAULT_CORPUS = REPO_ROOT / "data" / "graphs"
 
 # Canonical 97-key order (A/B/C/D/F; Block E excluded), in the same order as
 # ``ReducedGraphSignature.as_dict()``.
 # Derived from the block classes so it never drifts from the measured schema.
 _BLOCKS = [BlockA, BlockB, BlockC, BlockD, BlockF]
 FEATURE_ORDER: list[str] = [name for blk in _BLOCKS for name in blk.feature_names()]
-
-# ── Feature metadata (the only hand-maintained classification) ──────────────────
-
-# Count-like features rounded to whole numbers after sampling.
-_INTEGER_FEATURES: frozenset[str] = frozenset({
-    "num_entities", "num_relations", "num_classes", "num_distinct_cs",
-    "num_components", "out_degree_xmin", "in_degree_xmin", "relation_zipf_xmin",
-    "class_size_xmin", "cs_freq_vmin", "cs_freq_vmax",
-    "inv_cs_freq_vmin", "inv_cs_freq_vmax", "two_step_vmin", "two_step_vmax",
-})
-
-# Type-block parameters held at the untyped default (NaN) until more typed KGs
-# exist (the "acquire typed KGs first" decision). ``num_classes`` is pinned to 0
-# separately so the count and its params stay consistent.
-_TYPE_PARAM_FEATURES: frozenset[str] = frozenset({
-    "class_size_alpha", "class_size_xmin",
-    "type_rel_spectrum_rate", "type_rel_spectrum_scale",
-    "per_type_entropy_rate", "per_type_entropy_scale",
-})
-
-# Bounded-domain features clamped post-sampling (the ±10 % widening can overshoot).
-_UNIT_INTERVAL: frozenset[str] = frozenset({
-    "subj_cooc_density", "obj_cooc_density",
-    "largest_component_fraction", "clustering_coefficient",
-})
-_SIGNED_UNIT: frozenset[str] = frozenset({"degree_assortativity"})
-# Counts / thresholds floored at 1: a negative count is invalid (not merely
-# implausible), and the ±10 % widening of a wide range can dip below zero.
-_MIN_ONE: frozenset[str] = frozenset({
-    "num_entities", "num_relations", "num_distinct_cs", "num_components",
-    "out_degree_xmin", "in_degree_xmin", "relation_zipf_xmin", "class_size_xmin",
-    "cs_freq_vmin", "cs_freq_vmax", "inv_cs_freq_vmin", "inv_cs_freq_vmax",
-    "two_step_vmin", "two_step_vmax",
-})
 
 _MIN_FINITE_SUPPORT = 2  # need ≥2 finite corpus values to form a range
 

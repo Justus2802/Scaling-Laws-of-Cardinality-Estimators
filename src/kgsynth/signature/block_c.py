@@ -296,6 +296,40 @@ class BlockC(SignatureBlock):
         """Return a NaN vector the same length as as_vector()."""
         return [float("nan")] * (11 + 2 * len(QUANTILE_LEVELS) + 4)
 
+    @classmethod
+    def _state_from_features(cls, feats: dict[str, float]) -> dict:
+        """Rebuild Block C's state from the flat feature dict.
+
+        The co-occurrence / type-relation singular spectra are stored as their
+        exp-decay ``(rate, scale)`` fits, which the vector carries; the raw
+        singular values (kept only for ``visualize``) are not restored.
+        """
+        nan = float("nan")
+        return {
+            "_class_size_fit": PowerLawStats(
+                feats["class_size_alpha"], feats["class_size_xmin"], nan, nan, nan, nan
+            ),
+            "_num_classes": cls._int(feats, "num_classes"),
+            "_subj_cooc_exp": ExpDecayFit(feats["subj_cooc_rate"], feats["subj_cooc_scale"]),
+            "_subj_cooc_density": feats["subj_cooc_density"],
+            "_subj_row_entropy_q": QuantileFit(
+                *[feats[f"subj_row_entropy_{s}"] for s in QUANTILE_SUFFIXES]
+            ),
+            "_obj_cooc_exp": ExpDecayFit(feats["obj_cooc_rate"], feats["obj_cooc_scale"]),
+            "_obj_cooc_density": feats["obj_cooc_density"],
+            "_obj_row_entropy_q": QuantileFit(
+                *[feats[f"obj_row_entropy_{s}"] for s in QUANTILE_SUFFIXES]
+            ),
+            "_edge_multiplicity": feats["edge_multiplicity"],
+            "_bidirectional_ratio": feats["bidirectional_ratio"],
+            "_type_rel_spectrum_exp": ExpDecayFit(
+                feats["type_rel_spectrum_rate"], feats["type_rel_spectrum_scale"]
+            ),
+            "_per_type_entropy_exp": ExpDecayFit(
+                feats["per_type_entropy_rate"], feats["per_type_entropy_scale"]
+            ),
+        }
+
     def distribution_fits(self) -> list[tuple[str, object, str]]:
         """Return ``(name, fit, kind)`` for each reportable distribution.
 
