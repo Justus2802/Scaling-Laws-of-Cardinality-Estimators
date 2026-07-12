@@ -6,7 +6,7 @@ import scipy.stats
 from kgsynth.signature import _distance, fit_quantiles  # noqa: E402
 from kgsynth.signature._fits import ZipfFit, ExpDecayFit, TruncPowerLawFit  # noqa: E402
 from kgsynth.signature._utils import PowerLawStats  # noqa: E402
-from kgsynth.generator._adapters import sample_quantiles_trunc, _quantile_mean  # noqa: E402
+from kgsynth.generator._adapters import sample_quantiles_trunc  # noqa: E402
 
 
 class TestSampleQuantilesTrunc(unittest.TestCase):
@@ -25,16 +25,6 @@ class TestSampleQuantilesTrunc(unittest.TestCase):
 
     def test_nan_fit_returns_none(self):
         self.assertIsNone(sample_quantiles_trunc((float("nan"),) * 7, 5, np.random.default_rng(0)))
-
-    def test_quantile_mean_matches_sample_mean(self):
-        rng = np.random.default_rng(2)
-        data = rng.uniform(0, 10, size=10000)
-        fit = fit_quantiles(data)
-        # Trapezoid mean of the quantile function ≈ sample mean.
-        self.assertAlmostEqual(_quantile_mean(fit), float(np.mean(data)), places=0)
-
-    def test_quantile_mean_nan_when_unavailable(self):
-        self.assertTrue(math.isnan(_quantile_mean((float("nan"),) * 7)))
 
 
 class TestWasserstein1(unittest.TestCase):

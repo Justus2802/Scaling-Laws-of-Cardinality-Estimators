@@ -2,16 +2,17 @@
 
 Turns a Schema into an igraph.Graph by
   - using the Schema's |V| and |E| targets,
-  - assigning types to entities via the Schema's type_weights,
-  - sampling each entity's characteristic set from P(r | type) so the
-    co-occurrence structure matches the target,
+  - deriving each entity's type from its realised characteristic set (post-hoc
+    argmax over P(r|t); type_weights only breaks ties for empty-CS entities),
+  - sampling each entity's characteristic set from its co-occurrence group
+    prototype (Block C subj_cooc_exp/obj_cooc_exp) so the co-occurrence
+    structure matches the target, reusing a pool of Block-D-sized CS templates,
   - wiring edges toward per-entity target degrees sampled from the measured
-    degree distribution (no degree steering when unavailable),
+    degree distribution,
   - adding rdf:type edges for all typed entities,
   - selectively bridging isolated components to match target num_components / LCC fraction.
 """
 
-import math
 from collections import defaultdict, deque
 
 import igraph
@@ -30,7 +31,6 @@ CAP_REDISTRIBUTE_PASSES = 8    # bounded passes when redistributing capped alloc
 SIZE_ESCAPE_FAILS = 32         # consecutive template collisions before growing min CS size
 TEMPLATE_ATTEMPT_FLOOR = 64    # floor on rejection-sampling attempts per template pool
 TEMPLATE_ATTEMPT_FACTOR = 20   # rejection-sampling attempts per requested distinct template
-FALLBACK_CS_MEAN_FLOOR = 0.5   # floor on the budget-derived CS-size Poisson mean (no Block D)
 
 
 def _connect_components(
@@ -199,20 +199,11 @@ def instantiate(
     content_E_target = max(0, actual_E_target - n_type_edges)
 
     # CS size (number of relation slots per entity) comes from the measured cs_size
-    # quantile fit; when unavailable, fall back to a budget-derived Poisson mean. Edge
-    # counts are NOT set here — the per-relation multinomial allocation below owns the
-    # |E| budget, so CS size only sets relation *membership*.
-    objects_per_slot = 1.0 / schema.mean_functionality if schema.mean_functionality < 1.0 else 1.0
-    fallback_cs_mean = max(
-        FALLBACK_CS_MEAN_FLOOR,
-        (content_E_target / actual_V if actual_V > 0 else 1.0) / objects_per_slot,
-    )
-
+    # quantile fit. Edge counts are NOT set here — the per-relation multinomial
+    # allocation below owns the |E| budget, so CS size only sets relation *membership*.
     def _draw_size(size_q) -> int:
-        """Draw one (forward or inverse) CS size from a quantile fit, else budget Poisson."""
-        vals = sample_quantiles_trunc(size_q, 1, rng)
-        size = float(vals[0]) if vals is not None else float(rng.poisson(fallback_cs_mean))
-        return max(1, int(round(size)))
+        """Draw one (forward or inverse) CS size from a quantile fit."""
+        return max(1, int(round(float(sample_quantiles_trunc(size_q, 1, rng)[0]))))
 
     def _cap_redistribute(
         m: np.ndarray, cap, w: np.ndarray, hard_cap: np.ndarray | None = None
@@ -250,29 +241,23 @@ def instantiate(
         np.minimum(m, caps, out=m)
 
     log.info(
-        "Stage 2: instantiating (seed=%d) V=%d, content-edge target=%d (+%d type edges), "
-        "cs_size source=%s", seed, actual_V, content_E_target, n_type_edges,
-        "quantiles" if not math.isnan(schema.cs_size_q[0]) else "budget-derived",
+        "Stage 2: instantiating (seed=%d) V=%d, content-edge target=%d (+%d type edges)",
+        seed, actual_V, content_E_target, n_type_edges,
     )
 
     # ------------------------------------------------------------------
-    # 2. Assign a type to every entity
+    # 2. Allocate the entity->type map (all untyped).
+    #    Types are *derived from* the realised CS, post-hoc, in step 5b below —
+    #    the co-occurrence-group CS path never reads a type. Entities stay -1
+    #    (untyped) when T=0, which is also the final state in that case.
     # ------------------------------------------------------------------
-    if num_types > 0:
-        entity_types = rng.choice(num_types, size=actual_V, p=schema.type_weights)
-    else:
-        entity_types = np.full(actual_V, -1, dtype=int)
+    entity_types = np.full(actual_V, -1, dtype=int)
 
     # ------------------------------------------------------------------
-    # 3. Sample characteristic sets (CS) for all entities
-    #
-    #  Template mode (Block D available):
-    #    Build schema.cs_num_templates reusable CS templates per type,
-    #    then assign each entity to a template via Zipf weights.  This
+    # 3. Sample characteristic sets (CS) for all entities.
+    #    Build schema.cs_num_templates reusable CS templates per co-occurrence
+    #    group, then assign each entity to a template via Zipf weights.  This
     #    reproduces the target num_distinct_cs and co-occurrence sparsity.
-    #
-    #  Legacy mode (no Block D):
-    #    Sample each entity's CS independently (original behaviour).
     # ------------------------------------------------------------------
 
     def _allocate_quotas(weights: np.ndarray, total: int) -> list[int]:
@@ -297,39 +282,14 @@ def instantiate(
                 floors[order[i]] += 1
         return floors.tolist()
 
-    def _cs_probs(t: int) -> tuple[np.ndarray, int]:
-        """Return (normalised relation probabilities, #nonzero) for type t (-1 = untyped).
-
-        Typed entities draw relations from their P(r|t) row; untyped from the global
-        relation frequency. Falls back to relation frequency for an empty row.
-        """
-        probs = schema.type_relation_probs[t].copy() if t >= 0 else schema.relation_weights.copy()
-        s = probs.sum()
-        if s <= 0:
-            probs = schema.relation_weights.copy()
-            s = probs.sum()
-        if s > 0:
-            probs = probs / s
-        return probs, int((probs > 0).sum())
-
-    def _sample_cs_for_type(t: int) -> np.ndarray:
-        """Draw one forward CS (relation membership) for type t; size from cs_size_q."""
-        if num_relations == 0:
-            return np.array([], dtype=int)
-        probs, nonzero = _cs_probs(t)
-        k = min(nonzero, _draw_size(schema.cs_size_q))
-        if k == 0:
-            return np.array([], dtype=int)
-        return rng.choice(num_relations, size=k, replace=False, p=probs)
-
     def _build_distinct(probs: np.ndarray, nonzero: int, size_q, n_target: int) -> list[np.ndarray]:
         """Rejection-sample up to ``n_target`` DISTINCT relation-sets from ``probs``.
 
         Sizes come from ``size_q``; deduping by relation-set steers the distinct-CS
         count (a plain pool collides heavily), and a size-escape raises the minimum size
         once small combos saturate — bounded by the ``nonzero`` support and an attempt
-        cap. Used for both forward CS (per-type P(r|t)) and inverse CS (object side,
-        relation frequency).
+        cap. Used for both forward CS (subject co-occurrence group prototypes) and
+        inverse CS (object co-occurrence group prototypes).
         """
         if num_relations == 0 or n_target <= 0 or nonzero == 0:
             return [np.array([], dtype=int)]
@@ -379,146 +339,81 @@ def instantiate(
             target[v] = pool[idx]
 
     # --- 3a. Forward CS membership (out-relations per entity) ---
+    # Group-based forward CS: assign each entity to a co-occurrence group drawn from
+    # the exp-decay spectrum weights, then build a pool of schema.cs_num_templates
+    # reusable CS templates per group and assign entities to templates via Zipf
+    # weights. subj_group_probs and cs_num_templates are always populated by
+    # sample_schema's _validate_target guard (see docs/generator.md), so this is
+    # the only forward-CS path — no per-entity or per-type fallback.
     entity_cs: list = [None] * actual_V
-    if schema.subj_group_probs is not None and num_relations > 0:
-        # Group-based forward CS: assign each entity to a co-occurrence group drawn
-        # from the exp-decay spectrum weights, then build CS from that group's prototype.
-        n_sg = schema.subj_group_probs.shape[0]
-        entity_subj_group = rng.choice(n_sg, size=actual_V, p=schema.subj_group_weights)
+    n_sg = schema.subj_group_probs.shape[0]
+    entity_subj_group = rng.choice(n_sg, size=actual_V, p=schema.subj_group_weights)
 
-        if schema.cs_num_templates > 0:
-            # One template pool per group, sized ∝ group weight.
-            # Use largest-remainder allocation so the per-group counts sum exactly to
-            # cs_num_templates (previously max(1,round(...)) inflated the total, causing
-            # more distinct CSes than the target).
-            _fwd_quotas = _allocate_quotas(schema.subj_group_weights, schema.cs_num_templates)
-            group_fwd_pools: list[list[np.ndarray]] = []
-            for g in range(n_sg):
-                probs_g = schema.subj_group_probs[g].copy()
-                nz_g = int((probs_g > 0).sum())
-                group_fwd_pools.append(
-                    _build_distinct(probs_g, nz_g, schema.cs_size_q, _fwd_quotas[g])
-                )
-            buckets_sg: dict[int, list[int]] = {}
-            for v in range(actual_V):
-                buckets_sg.setdefault(int(entity_subj_group[v]), []).append(v)
-            for g in range(n_sg):
-                _assign_templates(buckets_sg.get(g, []), group_fwd_pools[g],
-                                  schema.cs_template_zipf, entity_cs,
-                                  reuse_vmax=schema.cs_template_vmax)
-            used = len({frozenset(int(x) for x in entity_cs[v])
-                        for v in range(actual_V) if entity_cs[v] is not None and len(entity_cs[v])})
-            log.info("Stage 2: group forward CS (target %d templates, realised %d)",
-                     schema.cs_num_templates, used)
-        else:
-            # Per-entity sampling directly from each entity's group prototype.
-            for v in range(actual_V):
-                probs_g = schema.subj_group_probs[int(entity_subj_group[v])].copy()
-                nz_g = int((probs_g > 0).sum())
-                k = min(nz_g, _draw_size(schema.cs_size_q))
-                entity_cs[v] = (rng.choice(num_relations, size=k, replace=False, p=probs_g)
-                                if k > 0 else np.array([], dtype=int))
-            log.info("Stage 2: group forward CS (per-entity mode)")
-
-        # Post-hoc type assignment: score each entity's realised CS against P(r|t)
-        # and assign the highest-likelihood type.  This makes type labels emerge from
-        # relation usage (the real causal direction) rather than being set independently.
-        if num_types > 0:
-            log_ptr = np.log(np.maximum(schema.type_relation_probs, 1e-12))  # (T, R)
-            for v in range(actual_V):
-                cs = entity_cs[v]
-                if cs is None or len(cs) == 0:
-                    entity_types[v] = int(rng.choice(num_types, p=schema.type_weights))
-                else:
-                    entity_types[v] = int(np.argmax(log_ptr[:, cs].sum(axis=1)))
-            log.info("Stage 2: post-hoc type assignment from CS (log P(CS|type) argmax)")
-
-    elif schema.cs_num_templates > 0 and num_relations > 0:
-        # DISTINCT templates per type (drawn from each type's P(r|t)), sized proportionally.
-        type_templates: list[list[np.ndarray]] = []
-        for t in range(num_types):
-            probs, nz = _cs_probs(t)
-            n_t = max(1, round(schema.cs_num_templates * float(schema.type_weights[t])))
-            type_templates.append(_build_distinct(probs, nz, schema.cs_size_q, n_t))
-        if num_types > 0:
-            buckets: dict[int, list[int]] = {}
-            for v in range(actual_V):
-                buckets.setdefault(int(entity_types[v]), []).append(v)
-            for t in range(num_types):
-                _assign_templates(buckets.get(t, []), type_templates[t],
-                                  schema.cs_template_zipf, entity_cs,
-                                  reuse_vmax=schema.cs_template_vmax)
-        else:
-            probs, nz = _cs_probs(-1)
-            untyped = _build_distinct(probs, nz, schema.cs_size_q, max(1, schema.cs_num_templates))
-            _assign_templates(list(range(actual_V)), untyped, schema.cs_template_zipf,
-                              entity_cs, reuse_vmax=schema.cs_template_vmax)
-        used = len(
-            {frozenset(int(x) for x in entity_cs[v]) for v in range(actual_V) if len(entity_cs[v])}
+    # One template pool per group, sized ∝ group weight. Use largest-remainder
+    # allocation so the per-group counts sum exactly to cs_num_templates (a plain
+    # max(1,round(...)) per-group pattern would inflate the total).
+    _fwd_quotas = _allocate_quotas(schema.subj_group_weights, schema.cs_num_templates)
+    group_fwd_pools: list[list[np.ndarray]] = []
+    for g in range(n_sg):
+        probs_g = schema.subj_group_probs[g].copy()
+        nz_g = int((probs_g > 0).sum())
+        group_fwd_pools.append(
+            _build_distinct(probs_g, nz_g, schema.cs_size_q, _fwd_quotas[g])
         )
-        log.info(
-            "Stage 2: forward CS (target %d distinct, realised %d)", schema.cs_num_templates, used
-        )
-    else:
-        log.info("Stage 2: forward CS in per-entity mode (no Block D templates)")
+    buckets_sg: dict[int, list[int]] = {}
+    for v in range(actual_V):
+        buckets_sg.setdefault(int(entity_subj_group[v]), []).append(v)
+    for g in range(n_sg):
+        _assign_templates(buckets_sg.get(g, []), group_fwd_pools[g],
+                          schema.cs_template_zipf, entity_cs,
+                          reuse_vmax=schema.cs_template_vmax)
+    used = len({frozenset(int(x) for x in entity_cs[v])
+                for v in range(actual_V) if entity_cs[v] is not None and len(entity_cs[v])})
+    log.info("Stage 2: group forward CS (target %d templates, realised %d)",
+             schema.cs_num_templates, used)
+
+    # Post-hoc type assignment: score each entity's realised CS against P(r|t)
+    # and assign the highest-likelihood type.  This makes type labels emerge from
+    # relation usage (the real causal direction) rather than being set independently.
+    if num_types > 0:
+        log_ptr = np.log(np.maximum(schema.type_relation_probs, 1e-12))  # (T, R)
         for v in range(actual_V):
-            entity_cs[v] = _sample_cs_for_type(int(entity_types[v]))
+            cs = entity_cs[v]
+            assert cs is not None and len(cs) > 0, "TEMP-REACHABILITY-CHECK: empty CS hit"
+            if cs is None or len(cs) == 0:
+                entity_types[v] = int(rng.choice(num_types, p=schema.type_weights))
+            else:
+                entity_types[v] = int(np.argmax(log_ptr[:, cs].sum(axis=1)))
+        log.info("Stage 2: post-hoc type assignment from CS (log P(CS|type) argmax)")
 
     # --- 3b. Inverse CS membership (in-relations per entity), symmetric to forward ---
-    # No inverse templates and no obj groups → entity_inv_cs is None → every object is
-    # eligible for every relation (today's behaviour) and the a_subj factor stays inert.
-    entity_inv_cs: list | None = None
-    if schema.obj_group_probs is not None and num_relations > 0:
-        # Group-based inverse CS, symmetric to the forward group path above.
-        n_og = schema.obj_group_probs.shape[0]
-        entity_obj_group = rng.choice(n_og, size=actual_V, p=schema.obj_group_weights)
+    # Group-based inverse CS, symmetric to the forward group path above. obj_group_probs
+    # and inv_cs_num_templates are always populated (see 3a), so entity_inv_cs is always
+    # built here — no "every object eligible for every relation" fallback.
+    n_og = schema.obj_group_probs.shape[0]
+    entity_obj_group = rng.choice(n_og, size=actual_V, p=schema.obj_group_weights)
 
-        entity_inv_cs = [None] * actual_V
-        if schema.inv_cs_num_templates > 0:
-            _inv_quotas = _allocate_quotas(schema.obj_group_weights, schema.inv_cs_num_templates)
-            group_inv_pools: list[list[np.ndarray]] = []
-            for g in range(n_og):
-                probs_g = schema.obj_group_probs[g].copy()
-                nz_g = int((probs_g > 0).sum())
-                group_inv_pools.append(
-                    _build_distinct(probs_g, nz_g, schema.inv_cs_size_q, _inv_quotas[g])
-                )
-            buckets_og: dict[int, list[int]] = {}
-            for v in range(actual_V):
-                buckets_og.setdefault(int(entity_obj_group[v]), []).append(v)
-            for g in range(n_og):
-                _assign_templates(buckets_og.get(g, []), group_inv_pools[g],
-                                  schema.inv_cs_template_zipf, entity_inv_cs,
-                                  reuse_vmax=schema.inv_cs_template_vmax)
-            inv_used = len({frozenset(int(x) for x in entity_inv_cs[v])
-                            for v in range(actual_V)
-                            if entity_inv_cs[v] is not None and len(entity_inv_cs[v])})
-            log.info("Stage 2: group inverse CS (target %d templates, realised %d)",
-                     schema.inv_cs_num_templates, inv_used)
-        else:
-            for v in range(actual_V):
-                probs_g = schema.obj_group_probs[int(entity_obj_group[v])].copy()
-                nz_g = int((probs_g > 0).sum())
-                k = min(nz_g, _draw_size(schema.inv_cs_size_q))
-                entity_inv_cs[v] = (rng.choice(num_relations, size=k, replace=False, p=probs_g)
-                                    if k > 0 else np.array([], dtype=int))
-            log.info("Stage 2: group inverse CS (per-entity mode)")
-
-    elif schema.inv_cs_num_templates > 0 and num_relations > 0:
-        inv_probs = schema.relation_weights.copy()
-        s = inv_probs.sum()
-        inv_probs = inv_probs / s if s > 0 else np.full(num_relations, 1.0 / num_relations)
-        inv_nz = int((inv_probs > 0).sum())
-        inv_templates = _build_distinct(inv_probs, inv_nz, schema.inv_cs_size_q,
-                                        max(1, schema.inv_cs_num_templates))
-        entity_inv_cs = [None] * actual_V
-        _assign_templates(list(range(actual_V)), inv_templates,
+    entity_inv_cs: list = [None] * actual_V
+    _inv_quotas = _allocate_quotas(schema.obj_group_weights, schema.inv_cs_num_templates)
+    group_inv_pools: list[list[np.ndarray]] = []
+    for g in range(n_og):
+        probs_g = schema.obj_group_probs[g].copy()
+        nz_g = int((probs_g > 0).sum())
+        group_inv_pools.append(
+            _build_distinct(probs_g, nz_g, schema.inv_cs_size_q, _inv_quotas[g])
+        )
+    buckets_og: dict[int, list[int]] = {}
+    for v in range(actual_V):
+        buckets_og.setdefault(int(entity_obj_group[v]), []).append(v)
+    for g in range(n_og):
+        _assign_templates(buckets_og.get(g, []), group_inv_pools[g],
                           schema.inv_cs_template_zipf, entity_inv_cs,
                           reuse_vmax=schema.inv_cs_template_vmax)
-        inv_used = len({frozenset(int(x) for x in entity_inv_cs[v])
-                        for v in range(actual_V) if len(entity_inv_cs[v])})
-        log.info("Stage 2: inverse CS (target %d distinct, realised %d)",
-                 schema.inv_cs_num_templates, inv_used)
+    inv_used = len({frozenset(int(x) for x in entity_inv_cs[v])
+                    for v in range(actual_V)
+                    if entity_inv_cs[v] is not None and len(entity_inv_cs[v])})
+    log.info("Stage 2: group inverse CS (target %d templates, realised %d)",
+             schema.inv_cs_num_templates, inv_used)
 
     # --- 3b2. Overlap subject/object pools for reciprocal relations ---
     # A bidirectional (mutual) pair a↔b needs both a and b to *emit* and *receive* the
@@ -531,9 +426,8 @@ def instantiate(
     # preserved; only which relations they receive changes, which is correct for a
     # symmetric relation). This runs before objects_by_rel (= O_r) is derived from
     # entity_inv_cs below, so the change propagates into O_r.
-    # No-op when entity_inv_cs is None (every entity already eligible to receive every
-    # relation → S_r ∩ O_r = S_r) or no reciprocity target is set.
-    if entity_inv_cs is not None and schema.relation_reciprocity is not None:
+    # No-op when no reciprocity target is set (small-R fallback — see sample_schema).
+    if schema.relation_reciprocity is not None:
         emitters_of: dict[int, list[int]] = defaultdict(list)
         receivers_of: dict[int, set[int]] = defaultdict(set)
         for v in range(actual_V):
@@ -575,19 +469,23 @@ def instantiate(
     #     starve edge conservation.
     # ------------------------------------------------------------------
 
-    def _assign_degree_targets(samples: np.ndarray, rank_scores: np.ndarray) -> np.ndarray:
-        """Rank-match sampled degree targets to per-entity scores (descending)."""
+    def _sample_target_degrees(
+        samples: np.ndarray, rank_scores: np.ndarray, *, floor: np.ndarray | None = None,
+    ) -> np.ndarray:
+        """Rank-match sampled degree targets to per-entity scores (descending), apply an
+        optional per-entity floor, then top up multinomially so Σ targets ≥ content-edge
+        budget. Floor is applied before the top-up so the shortfall it can introduce is
+        always covered — the two steps are fused here rather than left to call-site order.
+        """
         vals = np.sort(np.asarray(samples, dtype=np.int64))[::-1]
         if vals.size < actual_V:
             vals = np.concatenate([vals, rng.choice(vals, size=actual_V - vals.size)])
         vals = vals[:actual_V]
         order = np.argsort(-rank_scores, kind="stable")
-        out = np.empty(actual_V, dtype=np.int64)
-        out[order] = vals
-        return out
-
-    def _cover_edge_budget(tgt: np.ndarray) -> np.ndarray:
-        """Top up targets multinomially so Σ targets ≥ content-edge budget."""
+        tgt = np.empty(actual_V, dtype=np.int64)
+        tgt[order] = vals
+        if floor is not None:
+            tgt = np.maximum(tgt, floor)
         shortfall = content_E_target - int(tgt.sum())
         if shortfall > 0:
             tot = float(tgt.sum())
@@ -599,39 +497,26 @@ def instantiate(
         [len(entity_cs[v]) if entity_cs[v] is not None else 0 for v in range(actual_V)],
         dtype=np.int64,
     )
-    tgt_out: np.ndarray | None = None
-    if schema.target_out_degrees is not None and actual_V > 0:
-        samples_out = np.asarray(schema.target_out_degrees, dtype=np.int64)
-        if num_types > 0:
-            # The measured out-degree includes each typed entity's rdf:type edge,
-            # which is wired separately from the content budget.
-            samples_out = np.maximum(samples_out - 1, 0)
-        tgt_out = _assign_degree_targets(samples_out, cs_sizes_all.astype(float))
-        tgt_out = np.maximum(tgt_out, cs_sizes_all)   # keep per-CS-relation floor feasible
-        tgt_out = _cover_edge_budget(tgt_out)
+    samples_out = np.asarray(schema.target_out_degrees, dtype=np.int64)
+    if num_types > 0:
+        # The measured out-degree includes each typed entity's rdf:type edge,
+        # which is wired separately from the content budget.
+        samples_out = np.maximum(samples_out - 1, 0)
+    # floor=cs_sizes_all keeps the ≥1-edge-per-CS-relation floor feasible on the out-side.
+    tgt_out = _sample_target_degrees(samples_out, cs_sizes_all.astype(float), floor=cs_sizes_all)
 
-    tgt_in: np.ndarray | None = None
-    if schema.target_in_degrees is not None and actual_V > 0:
-        if entity_inv_cs is not None:
-            in_scores = np.array([len(entity_inv_cs[v]) if entity_inv_cs[v] is not None else 0
-                                  for v in range(actual_V)], dtype=float)
-            # Random tiebreak within equal inverse-CS sizes.
-            in_scores = in_scores + rng.random(actual_V)
-        else:
-            in_scores = rng.random(actual_V)
-        tgt_in = _assign_degree_targets(np.asarray(schema.target_in_degrees, dtype=np.int64),
-                                        in_scores)
-        tgt_in = _cover_edge_budget(tgt_in)
+    in_scores = np.array(
+        [len(entity_inv_cs[v]) if entity_inv_cs[v] is not None else 0 for v in range(actual_V)],
+        dtype=float,
+    )
+    in_scores = in_scores + rng.random(actual_V)  # random tiebreak within equal inverse-CS sizes
+    tgt_in = _sample_target_degrees(np.asarray(schema.target_in_degrees, dtype=np.int64), in_scores)
 
-    if tgt_out is not None or tgt_in is not None:
-        log.info(
-            "Stage 2: degree targets (%s) — out(max=%s, p90=%s) in(max=%s, p90=%s)",
-            schema.degree_mechanism,
-            int(tgt_out.max()) if tgt_out is not None else "—",
-            int(np.percentile(tgt_out, 90)) if tgt_out is not None else "—",
-            int(tgt_in.max()) if tgt_in is not None else "—",
-            int(np.percentile(tgt_in, 90)) if tgt_in is not None else "—",
-        )
+    log.info(
+        "Stage 2: degree targets — out(max=%d, p90=%.1f) in(max=%d, p90=%.1f)",
+        int(tgt_out.max()), np.percentile(tgt_out, 90),
+        int(tgt_in.max()), np.percentile(tgt_in, 90),
+    )
 
     # ------------------------------------------------------------------
     # 4. Wire content edges: per-relation multiplicity-then-PA with edge conservation,
@@ -678,19 +563,14 @@ def instantiate(
     for v, cs in enumerate(entity_cs):
         for rel_idx in cs:
             subjects_by_rel.setdefault(int(rel_idx), []).append(v)
-    objects_by_rel: dict[int, list[int]] | None = None
-    if entity_inv_cs is not None:
-        objects_by_rel = {}
-        for v, inv in enumerate(entity_inv_cs):
-            for rel_idx in inv:
-                objects_by_rel.setdefault(int(rel_idx), []).append(v)
+    objects_by_rel: dict[int, list[int]] = {}
+    for v, inv in enumerate(entity_inv_cs):
+        for rel_idx in inv:
+            objects_by_rel.setdefault(int(rel_idx), []).append(v)
 
-    # Per-relation edge budget over relations that can be wired (subjects present, and
-    # objects present when the inverse CS restricts them); renormalised to ~content_E.
-    if objects_by_rel is not None:
-        present = sorted(r for r in subjects_by_rel if objects_by_rel.get(r))
-    else:
-        present = sorted(subjects_by_rel)
+    # Per-relation edge budget over relations that can be wired (subjects and
+    # inverse-CS-eligible objects both present); renormalised to ~content_E.
+    present = sorted(r for r in subjects_by_rel if objects_by_rel.get(r))
     if present:
         w_present = np.array([schema.relation_weights[r] for r in present], dtype=float)
         w_sum = w_present.sum()
@@ -708,8 +588,6 @@ def instantiate(
     else:
         edge_budget = {}
 
-    all_objs = np.arange(actual_V)
-
     def _relation_alpha(alpha_q) -> float:
         """One per-relation exponent drawn from a multiplicity-α quantile fit (NaN → flat)."""
         vals = sample_quantiles_trunc(alpha_q, 1, rng)
@@ -717,8 +595,8 @@ def instantiate(
 
     for rel_idx in present:
         S_r = subjects_by_rel[rel_idx]
-        O_r = objects_by_rel[rel_idx] if objects_by_rel is not None else None
-        obj_ids = np.asarray(O_r, dtype=np.int64) if O_r is not None else all_objs
+        O_r = objects_by_rel[rel_idx]
+        obj_ids = np.asarray(O_r, dtype=np.int64)
         n_sr, n_or = len(S_r), int(obj_ids.shape[0])
         # An edge needs a distinct (subject, object) pair → at most |S_r|·|O_r| of them.
         edges_r = min(edge_budget.get(rel_idx, 0), n_sr * n_or)
@@ -733,13 +611,8 @@ def instantiate(
         w_out = sample_powerlaw(_relation_alpha(schema.obj_alpha_q), n_sr, rng)
         cs_sizes = np.array([len(entity_cs[s]) for s in S_r], dtype=float)
         w_out = w_out * np.power(np.maximum(cs_sizes, 1.0), schema.a_obj)
-        if tgt_out is not None:
-            if schema.degree_mechanism == "chunglu":
-                # Expected-degree weighting: allocation ∝ sampled target degree.
-                w_out = w_out * np.maximum(tgt_out[subj_ids], 1.0)
-            else:
-                # Capacity weighting: allocation ∝ remaining quota (target − placed).
-                w_out = w_out * np.maximum(tgt_out[subj_ids] - out_degrees[subj_ids], 0.0)
+        # Capacity weighting: allocation ∝ remaining quota (target − placed).
+        w_out = w_out * np.maximum(tgt_out[subj_ids] - out_degrees[subj_ids], 0.0)
         sw_out = w_out.sum()
         w_out = w_out / sw_out if sw_out > 0 else np.full(n_sr, 1.0 / n_sr)
         if edges_r >= n_sr:
@@ -756,23 +629,17 @@ def instantiate(
                 zero_pool = np.where(w_out <= 0)[0]
                 m_obj[rng.choice(zero_pool, size=edges_r - nz, replace=False)] = 1
         _cap_redistribute(m_obj, n_or, w_out)
-        if tgt_out is not None and schema.degree_mechanism == "capacity":
-            # Hard per-subject quota: never exceed the sampled target degree.
-            out_cap = np.maximum(tgt_out[subj_ids] - out_degrees[subj_ids], 0).astype(np.int64)
-            _cap_redistribute(m_obj, n_or, w_out, hard_cap=out_cap)
+        # Hard per-subject quota: never exceed the sampled target degree.
+        out_cap = np.maximum(tgt_out[subj_ids] - out_degrees[subj_ids], 0).astype(np.int64)
+        _cap_redistribute(m_obj, n_or, w_out, hard_cap=out_cap)
 
         # In-side: edges per object (over O_r) = power-law(α_subj) subject-multiplicity tail ×
-        # degree-target weighting (capacity or expected-degree) × inv_cs_size^a_subj (G2b),
-        # then cap at |S_r| (≤ |S_r| distinct subjects per object) + redistribute.
-        # The object-stub multiset *is* the subject-mult law.
+        # capacity weighting × inv_cs_size^a_subj (G2b), then cap at |S_r| (≤ |S_r| distinct
+        # subjects per object) + redistribute. The object-stub multiset *is* the subject-mult law.
         w_in = sample_powerlaw(_relation_alpha(schema.subj_alpha_q), n_or, rng)
-        if tgt_in is not None:
-            # in_degrees starts at ones, so placed edges = in_degrees − 1.
-            if schema.degree_mechanism == "chunglu":
-                w_in = w_in * np.maximum(tgt_in[obj_ids], 1.0)
-            else:
-                w_in = w_in * np.maximum(tgt_in[obj_ids] - (in_degrees[obj_ids] - 1.0), 0.0)
-        if O_r is not None and schema.a_subj != 0.0:
+        # in_degrees starts at ones, so placed edges = in_degrees − 1.
+        w_in = w_in * np.maximum(tgt_in[obj_ids] - (in_degrees[obj_ids] - 1.0), 0.0)
+        if schema.a_subj != 0.0:
             inv_sizes = np.array([len(entity_inv_cs[o]) for o in O_r], dtype=float)
             w_in = w_in * np.power(np.maximum(inv_sizes, 1.0), schema.a_subj)
         sw_in = w_in.sum()
@@ -780,15 +647,12 @@ def instantiate(
             continue
         m_in = rng.multinomial(edges_r, w_in / sw_in)
         _cap_redistribute(m_in, n_sr, w_in)
-        if tgt_in is not None and schema.degree_mechanism == "capacity":
-            # Hard per-object quota: never exceed the sampled target in-degree.  The
-            # multinomial above can still over-allocate to a single node within one
-            # relation pass (all edges placed before in_degrees is updated), so the
-            # excess is redistributed proportionally to nodes with remaining quota.
-            global_cap = np.maximum(
-                tgt_in[obj_ids] - (in_degrees[obj_ids] - 1.0), 0
-            ).astype(np.int64)
-            _cap_redistribute(m_in, n_sr, w_in, hard_cap=global_cap)
+        # Hard per-object quota: never exceed the sampled target in-degree.  The
+        # multinomial above can still over-allocate to a single node within one
+        # relation pass (all edges placed before in_degrees is updated), so the
+        # excess is redistributed proportionally to nodes with remaining quota.
+        global_cap = np.maximum(tgt_in[obj_ids] - (in_degrees[obj_ids] - 1.0), 0).astype(np.int64)
+        _cap_redistribute(m_in, n_sr, w_in, hard_cap=global_cap)
 
         # Reciprocity: guarantee both an out-stub AND an in-stub of r for a ρ_r-sized
         # subset of the entities eligible for both (S_r ∩ O_r, populated by the §3b2
@@ -800,7 +664,7 @@ def instantiate(
         # budget-neutral, applied last so capping above can't undo it.
         rho_r = float(rel_recip[rel_idx]) if rel_recip is not None else 0.0
         if rho_r > 0.0:
-            both_r = list(set(S_r) & set(O_r if O_r is not None else all_objs.tolist()))
+            both_r = list(set(S_r) & set(O_r))
             n_mutual_target = int(round(rho_r * edges_r / 2.0))
             n_reserve = min(len(both_r) // 2 * 2, 2 * n_mutual_target, n_sr, n_or)
             if n_reserve > 0:
@@ -951,7 +815,7 @@ def instantiate(
     #     ~44% of (node,rel) pairs have ≥2 in-edges, so not all gaps can be
     #     filled — this is a structural density constraint, not a code issue.
     # ------------------------------------------------------------------
-    if entity_inv_cs is not None and subjects_by_rel:
+    if subjects_by_rel:
         pred_to_idx = {r: i for i, r in enumerate(schema.relations)}
         actual_in_preds: list[set[int]] = [set() for _ in range(actual_V)]
         for s, o, pred in content_edges:
@@ -1033,20 +897,13 @@ def instantiate(
             rel_idx = present[int(rng.choice(len(present), p=rel_w))]
             subj_pool = np.asarray(subjects_by_rel[rel_idx], dtype=np.int64)
             subj_pool = subj_pool[non_satellite[subj_pool]]
-            obj_pool = (np.asarray(objects_by_rel[rel_idx], dtype=np.int64)
-                        if objects_by_rel is not None else all_objs)
+            obj_pool = np.asarray(objects_by_rel[rel_idx], dtype=np.int64)
             obj_pool = obj_pool[non_satellite[obj_pool]]
             if subj_pool.size == 0 or obj_pool.size == 0:
                 continue
-            if tgt_out is not None:
-                w_s = np.maximum(tgt_out[subj_pool] - out_degrees[subj_pool], 0) + 1e-3
-            else:
-                w_s = np.ones(subj_pool.shape[0], dtype=float)
+            w_s = np.maximum(tgt_out[subj_pool] - out_degrees[subj_pool], 0) + 1e-3
             s = int(rng.choice(subj_pool, p=w_s / w_s.sum()))
-            if tgt_in is not None:
-                w_o = np.maximum(tgt_in[obj_pool] - (in_degrees[obj_pool] - 1.0), 0) + 1e-3
-            else:
-                w_o = np.ones(obj_pool.shape[0], dtype=float)
+            w_o = np.maximum(tgt_in[obj_pool] - (in_degrees[obj_pool] - 1.0), 0) + 1e-3
             o = int(rng.choice(obj_pool, p=w_o / w_o.sum()))
             predicate = schema.relations[rel_idx]
             if s == o or (s, o, predicate) in seen:

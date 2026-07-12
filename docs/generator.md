@@ -16,24 +16,59 @@ Code lives in the **`src/kgsynth/generator/`** package:
 | `stage2.py` | `instantiate` — CS-first graph wiring |
 | `stage3.py` | `refine` — Maslov–Sneppen rewiring + simulated annealing |
 | `_adapters.py` | reduced-signature reconstructions (see below) |
-| `_logging.py` | package logger (`generator.*`, INFO progress lines) |
+
+`../_logging.py` (i.e. `src/kgsynth/_logging.py`, one level up from this package) supplies the
+shared logger (`signature.*`/`generator.*`/`motif_counter.*`, INFO progress lines) — it is not
+generator-specific.
 
 Public API (re-exported from `__init__.py`):
 ```python
 from kgsynth import Signature, Generator
 g = Generator(Signature.from_file("target.ttl")).sample(seed=42, rewire_budget=5000)
 ```
-`Signature` holds reduced blocks `a, c, e` (required) and `b, d, f` (optional — each enables
-more faithful structure). `sample()` derives sub-seeds so the whole pipeline is reproducible
-from one integer: Stage 1 `seed`, Stage 2 `seed+1`, Stage 3 `seed+2`.
+`Signature` holds reduced blocks `a, b, c, d, f` (required — a real graph always measures them,
+see [§ Target signature must be complete](#target-signature-must-be-complete)) and `e` (nullable —
+`kgsynth.corpus.load_target_from_corpus(with_block_e=False)` legitimately skips it for callers that
+only drive Stages 1-2, since it is the expensive block to measure and neither stage reads it).
+`sample()` derives sub-seeds so the whole pipeline is reproducible from one integer: Stage 1 `seed`,
+Stage 2 `seed+1`, Stage 3 `seed+2`.
 
 A target signature can also come from a YAML file — `Signature.from_config(path)` and its inverse
 `sig.to_config(path)` — instead of measuring a graph. The file holds one top-level key per block
 letter (`a`..`f`), each mapping to that block's `to_serializable()` state (the same shape the
 tracked corpus's `block_*.json` files use, just YAML instead of JSON — PyYAML round-trips `NaN`
-natively, unlike stdlib `json`). `a`, `c`, `e` are required; `b`, `d`, `f` default to `None` if
-absent. This is the backing for `kgsynth generate --config <file>`, and for hand-editing or
-versioning a target signature independent of any single measured graph.
+natively, unlike stdlib `json`). All six blocks are required — a hand-edited config describes a
+complete target signature, matching what any real graph measures. This is the backing for
+`kgsynth generate --config <file>`, and for hand-editing or versioning a target signature
+independent of any single measured graph.
+
+### The flat feature dict: `as_features()` / `from_features()`
+
+A third route in and out of a `Signature` — the **flat 124-key feature dict**, the same
+`{name: value}` mapping stored under `"features"` in a measured `signature.json`:
+
+```python
+feats = sig.as_features()          # 124 public feature names -> float
+feats["mean_degree"] *= 1.2
+Generator(Signature.from_features(feats)).sample(seed=1)
+```
+
+Unlike `from_config`, which restores each block's full serialized state, `from_features` rebuilds the
+blocks from their *named features alone*. That is sufficient because the generator only ever reads
+values the feature vector carries: it dereferences `.alpha` off a six-field `PowerLawStats`, and
+`out_degree_alpha` is a feature; a `QuantileFit` **is** its seven `*_q00`..`*_q100` features; and so
+on for `ZipfFit`, `ExpDecayFit`, `TruncPowerLawFit` and the six `recip_symmetric_frac_bin*` bins. A
+signature rebuilt this way produces a **bit-identical graph** — same `Schema`, same edge list at a
+fixed seed (`tests/test_signature_from_features.py`).
+
+What it does **not** restore is each block's raw sample arrays — degree lists, class sizes, singular
+spectra — which exist only so `block.visualize()` can overlay a fit on the data it was fit to. So a
+block rebuilt from features **cannot plot itself**, and must not be re-serialized with
+`to_serializable()`: that would emit a file that looks measured but is missing everything the vector
+does not carry. Persist the feature dict instead.
+
+This is what lets a caller treat a signature as a **point in feature space** — perturb it, sample a
+new one (`kgsynth.signature_sampler`), interpolate — and still generate from the result.
 
 ---
 
@@ -47,7 +82,7 @@ versioning a target signature independent of any single measured graph.
 | B | `subj_alpha_q` | per-relation **subject**-multiplicity tail α (in-side shape), as a quantile function |
 | B | `a_obj` | G2b forward CS-size→multiplicity offset (`cs_size^a_obj`) |
 | B | `a_subj` | G2b inverse CS-size→multiplicity offset (`inv_cs_size^a_subj`) |
-| B | `in_degree_fit.alpha` | PA exponent + expected max in-degree |
+| B | `in_degree_fit.alpha` | tail-shape input to the Stage-1-sampled target in-degree sequence (`_adapters.sample_degree_sequence`) |
 | C | `num_classes`, `class_size_fit.alpha` | type count + type-size weights |
 | C | `type_rel_spectrum_exp` | `P(r\|t)` low-rank reconstruction (used for post-hoc type scoring) |
 | C | `subj_cooc_exp` | forward co-occurrence group prototypes (CS source) |
@@ -56,6 +91,7 @@ versioning a target signature independent of any single measured graph.
 | D | `inv_cs_size_q`, `inv_num_distinct_cs`, `inv_cs_freq_fit.alpha`/`.v_max` | inverse CS templates (object side): size (quantile function), count, reuse skew + truncation |
 | E | motif counts | Stage-3 targets (triangles, 4-cycle, diamond, k4, tailed) |
 | F | `degree_assortativity` | Stage-3 target |
+| F | `clustering_coefficient` | Stage-3 target (`CC_avg` loss term) |
 | F | `num_components`, `largest_component_fraction` | Stage-2 connectivity target (nc, LCC fraction) |
 
 Block F's `shortest_path_mean` / `shortest_path_max` are measured but **not** targeted (see
@@ -63,9 +99,57 @@ Block F's `shortest_path_mean` / `shortest_path_max` are measured but **not** ta
 
 **Validation-only (measured, deliberately *not* used constructively):** C `subj/obj_cooc_density`,
 `subj/obj_row_entropy_q`, `per_type_entropy_exp`; D `two_step_fit`; F
-`clustering_coefficient`, `shortest_path_var` (emergent — not steered). These are diagnostics
-the brief marks "get near," not directly steered. Tuning constants for each stage
+`shortest_path_var` (emergent — not steered). These are diagnostics
+the brief marks "get near," not directly steered. (`clustering_coefficient` is *not* on this list
+— Stage 3 steers it directly as the `CC_avg` loss term with an exact incremental delta; see
+Stage 3 below.) Tuning constants for each stage
 are module-level at the top of `stage1.py`/`stage2.py`/`stage3.py`.
+
+---
+
+## Target signature must be complete
+
+Blocks A, B, C, D and F are **required** on `Signature` and `sample_schema` — a real graph always
+measures them, so there is no degraded-mode ("Block absent") code path for Stage 1/2 to fall back
+to. This was not always true: earlier versions carried a full second implementation for
+"Block D absent" (per-entity/legacy CS sampling), "Block B absent" (no degree steering, no
+functionality estimate), and "Block F absent" (assume fully connected) — dead weight, since no
+production caller ever actually omitted them. That degraded-mode code has been deleted; see
+`CHANGELOG.md` for the corpus-wide evidence (every NaN feature across the 9 measured KGs was
+enumerated and classified).
+
+`sample_schema` calls `_validate_target(a, b, c, d, f)` as its first step, which raises
+`ValueError` naming the offending feature if any of these is NaN — quantities that are measurable
+on **any** real graph, so a NaN here means the target signature is incomplete or corrupted, not a
+legitimate edge case:
+
+```
+num_entities, mean_degree, num_relations,
+cs_size_q, inv_cs_size_q, num_distinct_cs, inv_num_distinct_cs,
+out_degree_fit.alpha, in_degree_fit.alpha,
+out_degree_p90, out_degree_max, in_degree_p90, in_degree_max,
+a_obj, a_subj,
+subj_cooc_exp, obj_cooc_exp,
+num_components, largest_component_fraction
+```
+
+A short list of features are **legitimately** allowed to be NaN, and are read directly by
+`sample_schema` / `instantiate` with their own documented fallback rather than being validated
+away — `_validate_target` deliberately does not check them:
+
+| Feature | Reason | Fallback |
+|---|---|---|
+| `relation_zipf.exponent`, `cs_freq_fit.alpha`, `inv_cs_freq_fit.alpha` | small R (too few relations/CSs to fit a Zipf/power-law) | `DEFAULT_ZIPF_EXPONENT` |
+| `obj_alpha_q[i]`, `subj_alpha_q[i]` (per-relation) | small R for that one relation | flat weights for that relation (`sample_powerlaw` returns uniform ones) |
+| `class_size_fit.alpha` | small `T`, or **untyped KG** (the majority case — 7 of 9 corpus KGs) | uniform type weights |
+| `type_rel_spectrum_exp` | untyped KG (no `P(r|t)` signal) | uniform per-type relation weights |
+| `recip_symmetric_frac[bin]` | empty frequency bin (small R) | nearest non-empty bin |
+| `recip_symmetric_value` | **no symmetric relation exists** in the target (a real measurement outcome, not missing data) | `0.9` |
+
+Every other NaN feature in the reduced signature (`path_template_*_k*`, `class_size_*`,
+`type_rel_spectrum_*`, `per_type_entropy_*`, etc.) is either a real measurement outcome the
+generator was never meant to steer toward (e.g. "no path of that length exists") or is downstream
+of one of the two tables above and requires no separate handling.
 
 ---
 
@@ -74,37 +158,50 @@ are module-level at the top of `stage1.py`/`stage2.py`/`stage3.py`.
 Produces a `Schema`: relations, types, `P(r|t)`, and the per-relation/CS parameters Stage 2
 needs. All randomness from one seeded `np.random.Generator`.
 
+Every input this stage reads is validated up front by `_validate_target` — see
+[§ Target signature must be complete](#target-signature-must-be-complete) — so the steps below
+describe the single code path a real target always takes; the handful of quantities that can
+legitimately still be NaN (small-R Zipf/CS fits, untyped-KG class stats) are called out inline.
+
 1. **Counts & budget.** `R = max(1, num_relations)`, `T = max(0, num_classes)`,
    `E = round(num_entities · mean_degree)` (reduced Block A stores mean degree, not `|E|`).
 2. **Relations.** `relation_weights = Zipf(R, exponent)` where the exponent is the **measured**
-   `b.relation_zipf.exponent` when Block B is present (else the `relation_zipf_exponent` param).
-3. **Types.** `type_weights = Zipf(T, class_size_fit.alpha)`, uniform fallback when α is NaN/`T` tiny.
+   `b.relation_zipf.exponent`, falling back to the `relation_zipf_exponent` param only when the
+   measured exponent is NaN/non-positive (small R — too few relations to fit a Zipf curve).
+3. **Types.** `type_weights = Zipf(T, class_size_fit.alpha)`, uniform fallback when α is NaN
+   (untyped KGs — the majority case in the corpus — or `T` too small to fit).
 4. **`P(r|t)`.** Reconstruct a singular-value spectrum from `type_rel_spectrum_exp`
    (`scale·exp(−rate·k)`) and feed it to a low-rank random factorisation
    (`_sample_type_relation_probs`). This uses `P(r|t)`'s **own** T×R spectrum, kept separate
-   from the `M` co-occurrence spectrum. No types (`T=0`) → empty `(0,R)` table.
+   from the `M` co-occurrence spectrum. No types (`T=0`) → empty `(0,R)` table, and an empty
+   spectrum (also an untyped-KG symptom) degenerates to uniform per-type relation weights.
 5. **CS structure (Block D).** `cs_num_templates = num_distinct_cs`;
-   `cs_template_zipf = cs_freq_fit.alpha` (CS reuse skew) and
-   `cs_template_vmax = cs_freq_fit.v_max` (reuse-draw truncation — the fitted α covers the
-   full bounded range, so unbounded draws would over-skew); `cs_size_q` passed through; the
-   CS-size quantile-function mean (trapezoid integral) gates whether template mode is enabled.
-6. **Co-occurrence group prototypes (Block C).** When `subj_cooc_exp` / `obj_cooc_exp` have a
-   usable fit, reconstruct `COOC_NUM_GROUPS = 10` singular values and call
-   `_sample_type_relation_probs` to build one `(k, R)` group-prototype matrix per side, plus a
-   normalized weight vector from the singular values. Stage 2 draws entity CSes from these
-   prototypes (replacing the `P(r|t)` path) and assigns types post-hoc. See
-   [§ Co-occurrence groups](#co-occurrence-groups) below.
+   `cs_template_zipf = cs_freq_fit.alpha` (CS reuse skew, small-R NaN fallback →
+   `DEFAULT_ZIPF_EXPONENT`) and `cs_template_vmax = cs_freq_fit.v_max` (reuse-draw truncation —
+   the fitted α covers the full bounded range, so unbounded draws would over-skew); `cs_size_q`
+   passed through. `num_distinct_cs` is never zero on a real graph, so CS templates are always
+   built — there is no per-entity fallback mode.
+6. **Co-occurrence group prototypes (Block C).** `subj_cooc_exp` / `obj_cooc_exp` are never NaN
+   on a real graph (`_validate_target` rejects it otherwise), so `COOC_NUM_GROUPS = 10` singular
+   values are always reconstructed and fed to `_sample_type_relation_probs`, building one `(k, R)`
+   group-prototype matrix per side plus a normalized weight vector from the singular values.
+   Stage 2 always draws entity CSes from these prototypes (never the `P(r|t)` path) and assigns
+   types post-hoc. See [§ Co-occurrence groups](#co-occurrence-groups) below.
 7. **Multiplicity / degree (Block B).** `obj_alpha_q`, `subj_alpha_q`, `a_obj` passed
-   through. Per-entity **target degree sequences** (`target_out_degrees`,
+   through (per-relation NaN fits are a legitimate small-R outcome — Stage 2 falls back to flat
+   weights for that one relation). Per-entity **target degree sequences** (`target_out_degrees`,
    `target_in_degrees`) are sampled purely from **signature-vector components** —
-   never Block B's raw retained arrays (`sample_degree_sequence`): the top 10% of
-   nodes draw from a power law with the fitted degree α truncated to
-   `[p90, max]` (the `out/in_degree_p90` / `out/in_degree_max` scalars pin the
-   tail), the remaining 90% from a Poisson body clipped at p90 whose mean is
-   solved so the overall mean matches `E/V`. The whole distribution (body, p90,
-   max) is targeted, not just a single hard bound. When the p90/max scalars are
-   absent (Block B not measured) the targets are `None` and Stage 2 wires without
-   degree steering.
+   never Block B's raw retained arrays (`_adapters.sample_degree_sequence`):
+   the top 10% of nodes (the tail) draw from a power law truncated to `[p90, max]`
+   whose exponent is **extreme-value matched** (`1 + ln(n_tail)/ln(max/p90)`, so
+   the expected maximum of the tail draws lands on the measured max) rather than
+   the fitted degree α — the global fit is too shallow for this range and would
+   overshoot mid-tail mass; the remaining 90% (the body) draw from the *same*
+   fitted-α power law truncated to `[1, p90]`, then a random subset of nonzero
+   draws is zero-inflated so the overall mean matches `E/V` (edge conservation)
+   without distorting the body shape. The whole distribution (body, p90,
+   max) is targeted, not just a single hard bound; `out_degree_p90`/`max` and
+   `in_degree_p90`/`max` are never NaN on a real graph, so degree steering is always active.
 
 ---
 
@@ -115,14 +212,16 @@ where most of the structural fidelity is established.
 
 1. **Budget split.** `content_E = E − n_type_edges` (one `rdf:type` edge per entity when `T>0`).
 2. **CS size source.** Each CS's *size* is drawn from `cs_size_q` (`sample_quantiles_trunc`,
-   inverse-transform of the stored quantile function), falling back to a budget-derived Poisson
-   mean when Block D is absent. CS size sets **relation
-   membership only** — the per-relation allocation (step 5) owns the edge budget.
-3. **Type assignment (initial).** Each entity gets a provisional type via `type_weights`
-   (all untyped when `T=0`). If co-occurrence groups are active, this is overwritten post-hoc (step 5b).
-4. **Distinct CS templates (forward + inverse) — two paths:**
-
-   *Group path* (when `subj_group_probs` / `obj_group_probs` are set in Schema):
+   inverse-transform of the stored quantile function) — never NaN on a real graph, so the
+   quantile draw always applies (no budget-derived fallback). CS size sets **relation
+   membership only** — the per-relation allocation (step 6) owns the edge budget.
+3. **Entity-type map allocated** (all entities untyped, `-1`). Types are *not* an input to CS
+   construction: the co-occurrence-group path (step 4) never reads a type, so types are derived
+   from the realised CS post-hoc in step 5b. When `T=0` the entities simply stay untyped.
+4. **Distinct CS templates (forward + inverse).** `subj_group_probs`/`obj_group_probs`
+   (the co-occurrence group prototypes — [§ Co-occurrence groups](#co-occurrence-groups)) and
+   `cs_num_templates`/`inv_cs_num_templates` are always populated by Stage 1, so this is the only
+   CS-construction path — there is no per-type or per-entity fallback:
    - Assign each entity to a co-occurrence group drawn from the Zipf-weighted group distribution.
    - Build one template pool per group, sized ∝ group weight via `_allocate_quotas` (largest-remainder
      method: distributes `cs_num_templates` slots exactly, with floor 1 per group — a naive
@@ -131,32 +230,26 @@ where most of the structural fidelity is established.
    - Assign entities within each group to templates via `_assign_templates`.
    - (Inverse side mirrors this using `obj_group_probs`.)
 
-   *Type path* (fallback when groups are None):
-   Build `num_distinct_cs` **distinct** forward templates from `P(r|t)` (typed) / `relation_weights`
-   (untyped) and `inv_num_distinct_cs` inverse-CS templates from `relation_weights`, as before.
-
 5. **Entity → template assignment.** Per pool: **floor each template at ≥1 entity** (so every
    distinct CS is realised), then distribute the rest by a `power-law(reuse_zipf)` reuse tail
    with raw draws truncated at `reuse_vmax` (the measured max recurrence, mirroring the
    truncated-power-law fit) — for forward (`cs_template_zipf`/`cs_template_vmax`) and inverse
    (`inv_cs_template_zipf`/`inv_cs_template_vmax`) alike. This steers the
-   distinct-CS counts *and* the reuse skews together. No inverse templates → every object eligible
-   for every relation (today's behaviour) and `a_subj` stays inert.
+   distinct-CS counts *and* the reuse skews together.
 
-   5b. **Post-hoc type assignment** (group path only, when `T>0`): once CSes are fixed, score each
+   5b. **Post-hoc type assignment** (when `T>0`): once CSes are fixed, score each
    entity's CS against every type: `score(v, t) = Σ_{r ∈ CS(v)} log P(r|t)`. Assign
    `entity_type[v] = argmax_t score`. Entities with empty CSes fall back to sampling from
    `type_weights`. This makes type labels emerge from relation usage (the real causal direction)
    rather than being set independently of CS content.
-5c. **Target degree assignment** (when Stage 1 sampled degree sequences): sampled target values
+5c. **Target degree assignment** (`target_out_degrees`/`target_in_degrees`, always sampled by
+   Stage 1 — see Stage 1 §7): sampled target values
    are **rank-matched** to CS size (out-side; largest target → largest CS, floored at `|CS|` so the
-   ≥1-edge-per-CS-relation floor stays feasible) and to inverse-CS size (in-side; random when no
-   inverse CS). A multinomial top-up ensures `Σ targets ≥ content_E` so quota caps cannot starve
-   edge conservation. The steering mechanism is selected by `schema.degree_mechanism`:
-   - `"capacity"` (default, empirically best): allocation weight ∝ remaining quota
-     `(target − placed)⁺`, plus a **hard per-node quota** via `_cap_redistribute(hard_cap=…)`.
-   - `"chunglu"`: weight ∝ target degree (expected-degree model), no hard cap — matches the
-     distribution in expectation only; evaluated and rejected (tail overshoot ≈ +116% on max-out).
+   ≥1-edge-per-CS-relation floor stays feasible) and to inverse-CS size (in-side). A multinomial
+   top-up ensures `Σ targets ≥ content_E` so quota caps cannot starve edge conservation. Allocation
+   weight is ∝ remaining quota `(target − placed)⁺` ("capacity" weighting), plus a **hard per-node
+   quota** via `_cap_redistribute(hard_cap=…)`. (An expected-degree "chunglu" alternative — weight ∝
+   target degree, no hard cap — was evaluated and rejected: tail overshoot ≈ +116% on max-out.)
 5d. **Pool overlap for reciprocal relations** (when `relation_reciprocity` is set):
    real graphs pack directed content edges onto **shared** node pairs (parallel/multi-relational
    overlap and bidirectional pairs), whereas the CS-first construction above assigns forward and
@@ -171,7 +264,10 @@ where most of the structural fidelity is established.
    within `S_r × O_r`.** `S_r` = subjects whose forward CS contains `r`; `O_r` = objects whose
    inverse CS contains `r` (all entities when no inverse templates). For each present relation
    (`S_r`, `O_r` non-empty; weights renormalised over them):
-   - `|edges_r| = min(round(renorm_weight[r]·content_E), |S_r|·|O_r|)` (capacity bound).
+   - `|edges_r| = min(edge_budget[r], |S_r|·|O_r|)` (capacity bound), where `edge_budget` is a
+     largest-remainder integer allocation of `content_E` across all present relations by
+     `renorm_weight` (same technique as `_allocate_quotas` above), so the per-relation budgets
+     sum to `content_E` exactly.
    - **Out-side** (per subject): weight `power-law(α_obj_r) · cs_size^a_obj · degree-target factor`
      (G2 tail × G2b × capacity/expected-degree). **Floor each subject at 1**, allocate the surplus
      by `multinomial`, then **cap at `|O_r|`** + redistribute; in capacity mode a per-subject hard
@@ -226,7 +322,7 @@ where most of the structural fidelity is established.
 
 The `_cap_redistribute` helper implements the symmetric cap (object ≤ `|S_r|`, subject ≤ `|O_r|`).
 Stage-2 tuning constants (`MAX_PAIR_RETRY`, `CAP_REDISTRIBUTE_PASSES`, `SIZE_ESCAPE_FAILS`,
-`TEMPLATE_ATTEMPT_*`, `FALLBACK_CS_MEAN_FLOOR`) are module-level at the top of `stage2.py`.
+`TEMPLATE_ATTEMPT_*`) are module-level at the top of `stage2.py`.
 
 ---
 
@@ -286,6 +382,12 @@ live adjacency dict (not an `igraph.Graph`) so each swap is cheap.
   measured at guard 20: 100 % of fb237_v4 proposals dropped, and even sparse wn18rr_v4 (where the
   unguarded delta costs ~1 ms) drops 92 %. Speed over c5/c6 fidelity; raise the guard (or set
   `float("inf")`) on graphs whose unguarded delta is already cheap.
+
+  > **Current default.** `CYCLE_DELTA_MAX_DEGREE` defaults to `float("inf")`, i.e. the guard is
+  > **off by default** — every swap gets the exact cycle delta computed, none dropped — the
+  > opposite of the "small guard, most swaps dropped" default this section otherwise describes.
+  > Pass an explicit finite `CYCLE_DELTA_MAX_DEGREE` to enable guarding on graphs where the
+  > unguarded delta is too slow (see the runtime note below).
 - **Degree assortativity** — exact, incremental (only the cross-product sum `Q` changes).
 - **Depth-2 tree template entropy** — exact, incremental `_tree_entropy_delta` (O(Δ) per swap).
   Maintains a live `(r1, r2)` pair-frequency dict across the SA walk; on each candidate swap the
@@ -298,22 +400,14 @@ live adjacency dict (not an `igraph.Graph`) so each swap is cheap.
   so `out_edges` is updated in-place per accepted swap.  Only steered when
   `BlockE.path_template_entropy[3] > 0` and `LOSS_WEIGHT_PATH_ENTROPY > 0`; inactive when Block E
   was measured with `skip_stars_and_paths=True`.
-- **Induced k-star counts** (`k ∈ STAR_K_TRACKED = (2,3,4,5)`) — baseline measured via the CC
-  star sampler (`initial_motif_counter.count_stars`); the exact inclusion-exclusion baseline is
-  O(2^(inner edges)) per centre and stalls on clustered hubs, whereas the CC estimator is bounded.
-  Per-swap updates use the exact, incremental `_star_count_delta` (O(Δ²) per swap), with a
-  `STAR_CENTER_MAX_DEGREE` guard: centres above that simple degree are skipped (their
-  inclusion-exclusion would explode). Degree is swap-invariant, so a skipped hub is excluded from
-  both sides of the delta and contributes 0 — hub star changes neither favour nor penalise a swap.
-  (The CC baseline still *includes* those hubs, so their contribution is a constant offset that
-  cancels in the accept test rather than being tracked.) Unlike non-induced stars (`C(k_v,2)`, fixed by degree),
-  these are **chordless** stars whose leaves must be mutually non-adjacent, so a degree-preserving
-  swap that removes an inner edge among a hub's neighbours *raises* that hub's induced star count —
-  the lever Stage 3 uses. Steered only when `LOSS_WEIGHT_STARS > 0` (and the Block-E target is > 0);
-  **off by default** since stars are largely set by the Stage-2 out-degree distribution. An optional
-  targeted move (`_targeted_star_swap`, gated by `MAX_STAR_TARGETED_PROB`) biases proposals toward
-  breaking triangles among high-degree hubs to close a star deficit faster; it antagonises the
-  clustering terms (triangles/CC/diamond/K4/paw), so keep the probability modest.
+- **Induced k-star counts — currently disabled.** Earlier versions steered induced k-star counts
+  (`k=2..5`) via an exact incremental `_star_count_delta` (still present in `local_updates.py`)
+  and an optional `_targeted_star_swap` move that biased proposals toward breaking triangles among
+  high-degree hubs. That path is no longer wired into `refine()`: `_star_count_delta` isn't
+  imported into `stage3.py`, `_SAState` / `_error_terms` / the loss / the convergence CSV carry no
+  star term at all, and `_targeted_star_swap` is dead code kept only "as a helper for future use"
+  (per its own comment). Induced star counts are therefore purely emergent from the Stage-2
+  out-degree distribution — not steered, not logged, by the current Stage 3.
 
 The SA loss is a weighted sum of relative errors. Both the loss and the convergence log derive
 from a single `_error_terms(state)` helper, so each term is defined once: the loss is the weighted
@@ -324,8 +418,9 @@ graph seen is returned, then components are re-bridged. When a `convergence_log`
 active term writes a relative-error column every `CONVERGENCE_LOG_INTERVAL` *proposals* (accepted or
 rejected — the `step` column is the proposal index and forms the plot x-axis; `accepted` is the
 accepted-swap count so far): `tri_err`,
-motif4 `*_err`, `c5/c6_err`, `cc_err`, `assort_err`, `tree_entropy_err`, `path_entropy_k3_err`, and
-`star_k{k}_err` per tracked k). Setting `CONVERGENCE_LOG_GLOBAL_REMEASURE = True` additionally
+motif4 `*_err`, `c5/c6_err`, `cc_err`, `assort_err`, `tree_entropy_err`, `path_entropy_k3_err`.
+(No `star_k{k}_err` columns — induced-star steering is currently disabled, see
+[Stage 3](#stage-3--refinement-refine).) Setting `CONVERGENCE_LOG_GLOBAL_REMEASURE = True` additionally
 re-measures the full graph each logged row and appends ground-truth `sig_*_err` columns (validates
 the incremental deltas; expensive).
 
@@ -385,14 +480,14 @@ post-Stage-2 graph toward the target as rewiring progresses.
 The reduced blocks store distribution *parameters*, not raw moments. These helpers reconstruct
 the concrete quantities Stage 1/2 need (NaN-safe; NaN → neutral fallback):
 
-- `_quantile_mean(fit)` — mean of a quantile-function fit via `np.trapezoid` (e.g. `cs_size_mean`).
-- `_functionality_from_alpha(fit)` — `1/ζ(α)` = fraction of single-valued slots, from the
-  median of a multiplicity-α quantile function (out-side `mean_functionality` fallback).
 - `_reconstruct_singular_values(exp_fit, k)` — `scale·exp(−rate·k)` spectrum for `P(r|t)`.
 - `sample_quantiles_trunc(fit, n, rng)` — inverse-transform draws (`np.interp`) naturally clipped
   to `[q@0, q@1]`; `None` when the fit is NaN.
 - `sample_powerlaw(alpha, n, rng)` — `power-law(α>1)` draws via inverse-CDF; uniform ones when α
   is NaN/≤1 (the neutral fallback).
+- `sample_degree_sequence(alpha, p90, d_max, mean_deg, n, rng)` — the per-entity target degree
+  sequence behind Stage 1 §7: an extreme-value-matched tail on `[p90, max]` plus a
+  zero-inflated fitted-α body on `[1, p90]`; `None` when `p90`/`max` are unavailable.
 
 ---
 
@@ -408,10 +503,14 @@ The load-bearing design choices behind the Stage-1/2 wiring:
 - **Per-relation multiplicity + edge conservation.** Out-side wiring allocates each relation's
   edges by `multinomial` on per-relation α (`obj_alpha`) and the G2b `a_obj` CS-size offset,
   hitting each relation's edge budget `|edges_r| = freq(r)·E` exactly. In-side allocation draws
-  per-relation **subject**-multiplicity from `subj_alpha` × preferential attachment.
-- **Realizability cap + redistribute.** With `α_subj<2` (infinite mean) or superlinear PA
-  (`in_pa>1`), the in-side `multinomial` would concentrate nearly all of `|edges_r|` on one
-  object, leaving unplaceable duplicates and collapsing the edge budget. Each object is capped at
+  per-relation **subject**-multiplicity from `subj_alpha` × a capacity-weighting factor (remaining
+  quota, from the Stage-1-sampled `target_in_degrees`). There is no
+  preferential-attachment mechanism in the current code — an earlier PA-based in-degree lever was
+  replaced by this target-degree-sequence approach (see Stage 1 §7 and Stage 2 §6's in-side
+  wiring).
+- **Realizability cap + redistribute.** With `α_subj<2` (infinite mean), the in-side
+  `multinomial` would concentrate nearly all of `|edges_r|` on one object, leaving unplaceable
+  duplicates and collapsing the edge budget. Each object is capped at
   `|S_r|` (the out-side symmetrically at `|O_r|`) and the overflow redistributed, so the realised
   edge count stays near the budget.
 - **CS templating for `num_distinct_cs`.** Reaching the target distinct-CS count needs three
@@ -504,9 +603,13 @@ structural-undershoot analysis and a sketch for moving path steering into Stage 
   freely modify each node's in-predicate set. Adding an inv-CS loss term to Stage 3 would require
   O(1) per-swap updates to a `frozenset` index — non-trivial but feasible. Until then, the path
   and tree template entropy errors remain ~47–60%.
-- **Aggregate vs per-relation in-degree.** The in-side prioritises per-relation `subj_alpha`;
-  aggregate `in_degree.alpha` emerges (best-effort). Superlinear PA from `1/(α_in−2)` for
-  `2<α_in<3` is condensation-prone — clamping `in_pa≤1` is the lever if it drifts.
+- ~~Aggregate vs per-relation in-degree~~ **(resolved).** Aggregate in-degree is now targeted
+  directly: Stage 1 samples `target_in_degrees` from `in_degree_fit.alpha` + the `p90`/`max`
+  scalars (`_adapters.sample_degree_sequence`), and Stage 2's capacity weighting
+  enforces it as a hard per-node quota across the whole per-relation wiring
+  loop (later relations see the shrinking remaining budget via the live `in_degrees` array).
+  Per-relation multiplicity within one relation is separately shaped by `subj_alpha_q`. The old
+  PA-based lever (`in_pa`) this bullet used to describe no longer exists in the code.
 - **Stage-3 motif over-shoot.** When Stage 2 produces a graph already far from the motif targets, a
   small `rewire-budget` can't close the gap; motif counts can land well above target. Larger budget
   / better Stage-2 clustering control is the open item.

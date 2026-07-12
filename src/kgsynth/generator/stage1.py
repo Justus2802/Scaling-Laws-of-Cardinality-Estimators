@@ -1,8 +1,11 @@
 """Stage 1 — Schema sampler.
 
 Builds the abstract schema (relations, types, type-relation probability table)
-from a measured reduced-signature BlockA + BlockC target, optionally refined by
-BlockB (edge multiplicity, degree shape) and BlockD (characteristic-set reuse).
+from a measured reduced-signature target: BlockA + BlockC for size/schema shape,
+BlockB for edge multiplicity and degree shape, BlockD for characteristic-set reuse,
+and BlockF for connectivity. All five blocks are mandatory (see
+docs/generator.md §"Target signature must be complete") — a real graph always
+measures them, so there is no degraded-mode path here.
 
 Design decisions:
   - Relation frequency weights are sampled from a Zipf distribution whose
@@ -22,22 +25,16 @@ import numpy as np
 from ..signature import BlockA, BlockB, BlockC, BlockD, BlockF, QUANTILE_LEVELS
 
 from ._adapters import (
-    _functionality_from_alpha,
     _reconstruct_singular_values,
-    _quantile_mean,
     sample_degree_sequence,
 )
 from .._logging import get_logger
-from .schema import Schema, _NAN_Q
+from .schema import Schema
 
 log = get_logger(__name__)
 
 # ── Tuning constants (Stage-1 schema) — adjust here ─────────────────────────────
-DEFAULT_ZIPF_EXPONENT = 2.0        # fallback for relation- / CS-frequency Zipf exponents
-FUNCTIONALITY_FLOOR = 0.1          # clamp floor for mean_functionality (out-side)
-# Connectivity fallbacks when Block F is absent (fully-connected behaviour).
-DEFAULT_NUM_COMPONENTS = 1
-DEFAULT_LCC = 1.0
+DEFAULT_ZIPF_EXPONENT = 2.0        # fallback for relation- / CS-frequency Zipf exponents (small-R)
 # Number of co-occurrence groups synthesised from the Block C M_subj / M_obj spectra.
 # Fixed at the Block C measurement cap (10 SVs) rather than derived from spectral
 # entropy: spectral entropy conflates group *count* with weight *uniformity* — a KG
@@ -124,17 +121,59 @@ def _sample_type_relation_probs(
 # ---------------------------------------------------------------------------
 
 
+def _validate_target(a: BlockA, b: BlockB, c: BlockC, d: BlockD, f: BlockF) -> None:
+    """Raise ``ValueError`` naming the first non-finite feature Stage 1/2 require.
+
+    These quantities are measurable on any real graph (see docs/generator.md
+    §"Target signature must be complete" for the evidence, gathered by
+    enumerating every NaN across the 9-KG corpus). A NaN here means the target
+    signature is incomplete or corrupted, not a legitimate small-KG edge case —
+    so this fails loudly at the Stage-1 boundary instead of Stage 1/2 silently
+    degrading three steps downstream. Features that *can* legitimately be NaN
+    (small-R Zipf/CS fits, untyped-KG class stats, "no symmetric relation")
+    are read directly by ``sample_schema`` / ``instantiate`` with their own
+    documented fallback and are deliberately not checked here.
+    """
+    def _fin(name: str, value: float) -> None:
+        if value != value:
+            raise ValueError(f"Target signature is missing required feature: {name!r}")
+
+    _fin("num_entities", float(a.num_entities))
+    _fin("mean_degree", a.mean_degree)
+    _fin("num_relations", float(a.num_relations))
+    for i, q in enumerate(d.cs_size_q):
+        _fin(f"cs_size_q[{i}]", q)
+    for i, q in enumerate(d.inv_cs_size_q):
+        _fin(f"inv_cs_size_q[{i}]", q)
+    _fin("num_distinct_cs", float(d.num_distinct_cs))
+    _fin("inv_num_distinct_cs", float(d.inv_num_distinct_cs))
+    _fin("out_degree_fit.alpha", b.out_degree_fit.alpha)
+    _fin("in_degree_fit.alpha", b.in_degree_fit.alpha)
+    _fin("out_degree_p90", b.out_degree_p90)
+    _fin("out_degree_max", float(b.out_degree_max))
+    _fin("in_degree_p90", b.in_degree_p90)
+    _fin("in_degree_max", float(b.in_degree_max))
+    _fin("a_obj", b.a_obj)
+    _fin("a_subj", b.a_subj)
+    _fin("subj_cooc_exp.rate", c.subj_cooc_exp.rate)
+    _fin("subj_cooc_exp.scale", c.subj_cooc_exp.scale)
+    _fin("obj_cooc_exp.rate", c.obj_cooc_exp.rate)
+    _fin("obj_cooc_exp.scale", c.obj_cooc_exp.scale)
+    _fin("num_components", float(f.num_components))
+    _fin("largest_component_fraction", f.largest_component_fraction)
+
+
 def sample_schema(
     a: BlockA,
     c: BlockC,
     *,
-    d: BlockD = None,
-    b: BlockB = None,
-    f: BlockF = None,
+    d: BlockD,
+    b: BlockB,
+    f: BlockF,
     relation_zipf_exponent: float = DEFAULT_ZIPF_EXPONENT,
     seed: int = 0,
 ) -> Schema:
-    """Stage 1: derive an abstract schema from a target BlockA + BlockC.
+    """Stage 1: derive an abstract schema from a target signature.
 
     Parameters
     ----------
@@ -146,24 +185,23 @@ def sample_schema(
         ``num_classes``, ``class_size_fit.alpha`` and the P(r|t) type-relation
         exp-decay spectrum (``type_rel_spectrum_exp``) guide the type structure
         and the low-rank P(r|t) reconstruction.
-    d : BlockD, optional
-        Characteristic-set statistics.  When provided, Stage 2 will use the mean
-        of ``cs_size_q`` and ``num_distinct_cs`` to build a realistic pool of
-        reusable CS templates instead of sampling every entity independently.
-        This fixes the co-occurrence density and num_distinct_cs deviations.
-    b : BlockB, optional
-        Degree-structure statistics.  When provided, the mean relation
-        functionality is derived from the object-multiplicity α quantiles to
-        sample more than one object per (s,p) pair, matching the target's edge
-        multiplicity.
-    f : BlockF, optional
-        Connectivity / path statistics.  When provided, the measured
-        ``num_components`` and ``largest_component_fraction`` are forwarded to
-        the Schema so Stage 2 can leave the correct number of satellite
-        components disconnected instead of fully connecting the graph.
+    d : BlockD
+        Characteristic-set statistics. Stage 2 uses the ``cs_size_q`` quantiles
+        and ``num_distinct_cs`` to build a realistic pool of reusable CS
+        templates instead of sampling every entity independently — this fixes
+        the co-occurrence density and num_distinct_cs deviations.
+    b : BlockB
+        Degree-structure statistics: relation-usage Zipf exponent, out/in
+        degree fits, and per-relation multiplicity/reciprocity shape.
+    f : BlockF
+        Connectivity / path statistics. ``num_components`` and
+        ``largest_component_fraction`` are forwarded to the Schema so Stage 2
+        can leave the correct number of satellite components disconnected
+        instead of fully connecting the graph.
     relation_zipf_exponent : float
         Zipf exponent for relation frequency weights.  Controls how skewed
-        relation usage is; real KGs typically fall in [1.5, 2.5].
+        relation usage is; real KGs typically fall in [1.5, 2.5]. Only used
+        when Block B's measured exponent is unavailable (small R).
     seed : int
         RNG seed; the same seed + inputs always produce the same schema.
 
@@ -171,7 +209,14 @@ def sample_schema(
     -------
     Schema
         Abstract schema ready to be handed to Stage 2 (instantiate).
+
+    Raises
+    ------
+    ValueError
+        If the target signature is missing a feature that a real graph always
+        measures — see :func:`_validate_target`.
     """
+    _validate_target(a, b, c, d, f)
     rng = np.random.default_rng(seed)
 
     num_relations = max(1, a.num_relations)
@@ -187,12 +232,13 @@ def sample_schema(
     # --- Relations ---
     # Prefer the measured relation-usage Zipf exponent (Block B) over the
     # hard-coded parameter default, matching the brief's "Zipf(s)" with s = target.
+    # NaN/non-positive measured exponent is a legitimate small-R fallback (too few
+    # relations to fit a Zipf curve) — DEFAULT_ZIPF_EXPONENT stands in.
     rel_zipf = relation_zipf_exponent
-    if b is not None:
-        measured = b.relation_zipf.exponent
-        if not math.isnan(measured) and measured > 0:
-            rel_zipf = float(measured)
-            log.info("Stage 1: using measured relation Zipf exponent %.3f", rel_zipf)
+    measured = b.relation_zipf.exponent
+    if not math.isnan(measured) and measured > 0:
+        rel_zipf = float(measured)
+        log.info("Stage 1: using measured relation Zipf exponent %.3f", rel_zipf)
     relations = [f"http://kgsynth.org/rel/{i}" for i in range(num_relations)]
     relation_weights = _zipf_weights(num_relations, rel_zipf, rng)
 
@@ -226,109 +272,72 @@ def sample_schema(
     # singular spectra of the R×R entity co-occurrence matrices.  We reconstruct
     # COOC_NUM_GROUPS singular values and build one group-prototype P(r|group) row
     # per group using the same low-rank random factorisation as _sample_type_relation_probs.
-    # Stage 2 will draw entity CSes from these prototypes and assign types post-hoc.
+    # Stage 2 draws entity CSes from these prototypes and assigns types post-hoc.
+    # _validate_target guarantees both fits are finite and num_relations ≥ 1, so
+    # _reconstruct_singular_values always returns COOC_NUM_GROUPS values here.
     def _build_group_probs(cooc_exp):
-        """Build (probs, weights) group prototypes from an exp-decay cooc fit, or (None, None)."""
+        """Build (probs, weights) group prototypes from an exp-decay cooc fit."""
         svs = _reconstruct_singular_values(cooc_exp, k=COOC_NUM_GROUPS)
-        if svs.size == 0 or num_relations == 0:
-            return None, None
         probs = _sample_type_relation_probs(len(svs), num_relations, relation_weights, svs, rng)
         return probs, svs / svs.sum()
 
     subj_group_probs, subj_group_weights = _build_group_probs(c.subj_cooc_exp)
     obj_group_probs,  obj_group_weights  = _build_group_probs(c.obj_cooc_exp)
     log.info(
-        "Stage 1: cooc groups — subj %s (%s), obj %s (%s)",
-        "built" if subj_group_probs is not None else "unavailable",
-        f"k={len(subj_group_weights)}" if subj_group_weights is not None else "NaN fit",
-        "built" if obj_group_probs is not None else "unavailable",
-        f"k={len(obj_group_weights)}" if obj_group_weights is not None else "NaN fit",
+        "Stage 1: cooc groups — subj k=%d, obj k=%d",
+        len(subj_group_weights), len(obj_group_weights),
     )
 
     # --- CS structure from Block D ---
-    cs_size_mean_val = _quantile_mean(d.cs_size_q) if d is not None else float("nan")
-    if d is not None and not math.isnan(cs_size_mean_val) and cs_size_mean_val > 0:
-        cs_size_mean = float(cs_size_mean_val)
-        cs_num_templates = max(1, int(d.num_distinct_cs))
-        cs_template_zipf = (
-            float(d.cs_freq_fit.alpha)
-            if not math.isnan(d.cs_freq_fit.alpha) else DEFAULT_ZIPF_EXPONENT
-        )
-        # Truncate Stage-2 reuse draws at the measured max recurrence: the fitted
-        # α covers the full bounded range, so unbounded draws would over-skew.
-        cs_template_vmax = float(d.cs_freq_fit.v_max)
-    else:
-        cs_size_mean = 0.0   # signal instantiate to derive from E/V budget
-        cs_num_templates = 0
-        cs_template_zipf = DEFAULT_ZIPF_EXPONENT
-        cs_template_vmax = float("nan")
+    cs_num_templates = int(d.num_distinct_cs)
+    cs_template_zipf = (
+        float(d.cs_freq_fit.alpha)
+        if not math.isnan(d.cs_freq_fit.alpha) else DEFAULT_ZIPF_EXPONENT
+    )
+    # Truncate Stage-2 reuse draws at the measured max recurrence: the fitted
+    # α covers the full bounded range, so unbounded draws would over-skew.
+    cs_template_vmax = float(d.cs_freq_fit.v_max)
 
-    # --- Edge multiplicity, degree targets, inverse functionality from Block B ---
-    if b is not None:
-        mean_functionality = _functionality_from_alpha(b.obj_alpha_q, floor=FUNCTIONALITY_FLOOR)
-    else:
-        mean_functionality = 1.0
-
-    if b is not None:
-        # Target degree sequences (replace the old extreme-value max-degree caps):
-        # one target degree per entity, sampled purely from signature-vector
-        # components — the degree power-law α, the p90/max degree scalars and the
-        # mean degree — never Block B's raw retained arrays.  Stage 2 steers
-        # wiring toward these, so the whole distribution (body, p90, max) is
-        # targeted rather than a single hard cap.  NaN p90/max (old signatures)
-        # → None → no degree steering in Stage 2.
-        n_ent = a.num_entities
-        mean_deg = num_triples / n_ent if n_ent > 0 else float("nan")
-
-        def _safe(fn) -> float:
-            """Value of a Block B property, NaN when absent from stale data."""
-            try:
-                return float(fn())
-            except RuntimeError:
-                return float("nan")
-
-        target_out_degrees = sample_degree_sequence(
-            b.out_degree_fit.alpha, _safe(lambda: b.out_degree_p90),
-            _safe(lambda: b.out_degree_max), mean_deg, n_ent, rng)
-        target_in_degrees = sample_degree_sequence(
-            b.in_degree_fit.alpha, _safe(lambda: b.in_degree_p90),
-            _safe(lambda: b.in_degree_max), mean_deg, n_ent, rng)
-    else:
-        target_out_degrees = None
-        target_in_degrees = None
+    # --- Degree targets from Block B ---
+    # One target degree per entity, sampled purely from signature-vector components
+    # — the degree power-law α, the p90/max degree scalars and the mean degree —
+    # never Block B's raw retained arrays.  Stage 2 steers wiring toward these, so
+    # the whole distribution (body, p90, max) is targeted rather than a single cap.
+    n_ent = a.num_entities
+    mean_deg = num_triples / n_ent if n_ent > 0 else float("nan")
+    target_out_degrees = sample_degree_sequence(
+        b.out_degree_fit.alpha, b.out_degree_p90, b.out_degree_max, mean_deg, n_ent, rng)
+    target_in_degrees = sample_degree_sequence(
+        b.in_degree_fit.alpha, b.in_degree_p90, b.in_degree_max, mean_deg, n_ent, rng)
 
     # --- Per-relation multiplicity shape (G2) + CS-size offset (G2b) + CS-size shape ---
     # Stored as plain quantile tuples; Stage 2 samples a per-relation α from obj_alpha_q
-    # and applies the cs_size^a_obj offset. NaN fits → neutral fallback in Stage 2.
-    obj_alpha_q = tuple(b.obj_alpha_q) if b is not None else _NAN_Q
-    subj_alpha_q = tuple(b.subj_alpha_q) if b is not None else _NAN_Q
-    a_obj = float(b.a_obj) if (b is not None and not math.isnan(b.a_obj)) else 0.0
-    a_subj = float(b.a_subj) if (b is not None and not math.isnan(b.a_subj)) else 0.0
-    cs_size_q = tuple(d.cs_size_q) if d is not None else _NAN_Q
+    # and applies the cs_size^a_obj offset. NaN fits → neutral fallback in Stage 2
+    # (a legitimate small-R outcome — obj_alpha_q/subj_alpha_q are per-relation fits).
+    obj_alpha_q = tuple(b.obj_alpha_q)
+    subj_alpha_q = tuple(b.subj_alpha_q)
+    a_obj = float(b.a_obj)
+    a_subj = float(b.a_subj)
+    cs_size_q = tuple(d.cs_size_q)
     # Inverse CS (object side), symmetric to forward CS structure (Block D).
-    inv_cs_size_q = tuple(d.inv_cs_size_q) if d is not None else _NAN_Q
-    inv_cs_num_templates = (
-        max(1, int(d.inv_num_distinct_cs)) if (d is not None and d.inv_num_distinct_cs > 0) else 0
-    )
+    inv_cs_size_q = tuple(d.inv_cs_size_q)
+    inv_cs_num_templates = int(d.inv_num_distinct_cs)
     inv_cs_template_zipf = (
         float(d.inv_cs_freq_fit.alpha)
-        if (d is not None and not math.isnan(d.inv_cs_freq_fit.alpha)) else DEFAULT_ZIPF_EXPONENT
+        if not math.isnan(d.inv_cs_freq_fit.alpha) else DEFAULT_ZIPF_EXPONENT
     )
-    inv_cs_template_vmax = float(d.inv_cs_freq_fit.v_max) if d is not None else float("nan")
+    inv_cs_template_vmax = float(d.inv_cs_freq_fit.v_max)
 
     log.info(
-        "Stage 1: schema ready — mean_functionality=%.3f, "
-        "degree targets out(max=%s, p90=%s) in(max=%s, p90=%s), "
+        "Stage 1: schema ready — "
+        "degree targets out(max=%d, p90=%.1f) in(max=%d, p90=%.1f), "
         "cs_num_templates=%d, a_obj=%.3f, obj_alpha_qmin=%.3f",
-        mean_functionality,
-        int(target_out_degrees.max()) if target_out_degrees is not None else "—",
-        int(np.percentile(target_out_degrees, 90)) if target_out_degrees is not None else "—",
-        int(target_in_degrees.max()) if target_in_degrees is not None else "—",
-        int(np.percentile(target_in_degrees, 90)) if target_in_degrees is not None else "—",
+        int(target_out_degrees.max()), np.percentile(target_out_degrees, 90),
+        int(target_in_degrees.max()), np.percentile(target_in_degrees, 90),
         cs_num_templates, a_obj, obj_alpha_q[0],
     )
-    target_num_components = int(f.num_components) if f is not None else DEFAULT_NUM_COMPONENTS
-    target_lcc = float(f.largest_component_fraction) if f is not None else DEFAULT_LCC
+    target_num_components = int(f.num_components)
+    target_lcc = float(f.largest_component_fraction)
 
     # Block C pair-level edge multiplicity (overlap) targets. A current-format
     # Block C always carries these; read them directly so a missing value raises
@@ -356,36 +365,35 @@ def sample_schema(
     # 1.0, yet naive zero-fill would still assign 0 to a relation whose bin happens
     # to be empty). So an empty bin borrows the value of its nearest non-empty bin
     # (ties broken toward the higher-frequency side) rather than defaulting to 0.
+    # All-NaN frac_symmetric (no bin has any data at all) leaves every relation
+    # asymmetric — this can only happen with R=0, which num_relations =
+    # max(1, a.num_relations) already excludes.
     relation_reciprocity = None
-    if b is not None:
-        # Block B is present, so it carries reciprocity — read directly. A bin
-        # being NaN (a data gap: no relation landed in it) is handled below by
-        # borrowing the nearest non-empty bin, not by a stale-file fallback.
-        frac_symmetric = np.asarray(b.recip_symmetric_frac, dtype=float)
-        symmetric_value = float(b.recip_symmetric_value)
-        if np.isfinite(frac_symmetric).any():
-            n_bins = frac_symmetric.size
-            valid = np.where(np.isfinite(frac_symmetric))[0]
-            filled = frac_symmetric.copy()
-            for i in range(n_bins):
-                if not np.isfinite(filled[i]):
-                    nearest = valid[np.argmin(np.abs(valid - i))]
-                    filled[i] = frac_symmetric[nearest]
+    frac_symmetric = np.asarray(b.recip_symmetric_frac, dtype=float)
+    symmetric_value = float(b.recip_symmetric_value)
+    if np.isfinite(frac_symmetric).any():
+        n_bins = frac_symmetric.size
+        valid = np.where(np.isfinite(frac_symmetric))[0]
+        filled = frac_symmetric.copy()
+        for i in range(n_bins):
+            if not np.isfinite(filled[i]):
+                nearest = valid[np.argmin(np.abs(valid - i))]
+                filled[i] = frac_symmetric[nearest]
 
-            order = np.argsort(-relation_weights)               # frequency-rank order
-            cum_frac = np.cumsum(relation_weights[order])
-            bin_edges = np.asarray(QUANTILE_LEVELS[1:], dtype=float)  # fixed thresholds
-            bin_idx = np.clip(np.searchsorted(bin_edges, cum_frac, side="left"),
-                              0, n_bins - 1)
-            p_sym = filled[bin_idx]
-            is_sym = rng.random(num_relations) < p_sym
-            recip_ordered = np.where(
-                is_sym,
-                symmetric_value if np.isfinite(symmetric_value) else 0.9,
-                0.0,
-            )
-            relation_reciprocity = np.empty(num_relations, dtype=float)
-            relation_reciprocity[order] = recip_ordered
+        order = np.argsort(-relation_weights)               # frequency-rank order
+        cum_frac = np.cumsum(relation_weights[order])
+        bin_edges = np.asarray(QUANTILE_LEVELS[1:], dtype=float)  # fixed thresholds
+        bin_idx = np.clip(np.searchsorted(bin_edges, cum_frac, side="left"),
+                          0, n_bins - 1)
+        p_sym = filled[bin_idx]
+        is_sym = rng.random(num_relations) < p_sym
+        recip_ordered = np.where(
+            is_sym,
+            symmetric_value if np.isfinite(symmetric_value) else 0.9,
+            0.0,
+        )
+        relation_reciprocity = np.empty(num_relations, dtype=float)
+        relation_reciprocity[order] = recip_ordered
 
     return Schema(
         relations=relations,
@@ -398,11 +406,9 @@ def sample_schema(
         edge_multiplicity=edge_multiplicity,
         bidirectional_ratio=bidirectional_ratio,
         relation_reciprocity=relation_reciprocity,
-        cs_size_mean=cs_size_mean,
         cs_num_templates=cs_num_templates,
         cs_template_zipf=cs_template_zipf,
         cs_template_vmax=cs_template_vmax,
-        mean_functionality=mean_functionality,
         target_out_degrees=target_out_degrees,
         target_in_degrees=target_in_degrees,
         obj_alpha_q=obj_alpha_q,

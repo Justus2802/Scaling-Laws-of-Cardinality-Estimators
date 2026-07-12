@@ -565,6 +565,37 @@ corresponding block/function repeats the short version.
 | Phase 2 — the scaling-law study (query generation, QLever labelling, FICE grid, `Qerror(N)` fitting) | **Out of scope.** | This submission is Phase 1 (the `kgsynth` package). Phase 2 is documented as future work. |
 | Block F path-length steering | **Not steered** — `shortest_path_max`/`_mean`/`_var` are measured but no target drives them. | The only cheap lever (hub-shortcut injection) is one-sided — it can shorten paths but not lengthen them, and the synthetic graph undershoots; see [generator.md § Path-length steering](generator.md#path-length-steering) and [archive/path_length_steering.md](archive/path_length_steering.md). |
 
+## Feature finiteness — which values are guaranteed on any real graph
+
+Every NaN feature across all 9 corpus signatures (`data/signatures/*.json`) was enumerated once
+(see `CHANGELOG.md` for the working notes) to separate "the generator forgot to handle this" from
+"this NaN is the correct measurement." The generator's consumption of this signature
+(`kgsynth.generator`) is built on that split — see
+[generator.md § Target signature must be complete](generator.md#target-signature-must-be-complete)
+for the consumer-side contract (`_validate_target`). From the measurement side:
+
+**Never NaN on any corpus KG** — a real graph always has enough data to fit these:
+`num_entities`, `num_relations`, `mean_degree` (Block A); `out/in_degree_fit.alpha`,
+`out/in_degree_p90`, `out/in_degree_max`, `a_obj`, `a_subj` (Block B); `subj_cooc_exp`,
+`obj_cooc_exp` (Block C); `cs_size_q`, `inv_cs_size_q`, `num_distinct_cs`, `inv_num_distinct_cs`
+(Block D); `num_components`, `largest_component_fraction` (Block F).
+
+**Legitimately NaN** — a real measurement outcome or a small-sample fit failure, not missing data:
+
+| Feature group | Occurs when | Why |
+|---|---|---|
+| `relation_zipf_*`, `obj/subj_mult_alpha_q*`, `subj/obj_row_entropy_q*` | fewer than `MIN_SAMPLES_FOR_FIT` (10) **relations** | too few points to fit a Zipf/power-law |
+| `recip_symmetric_frac_bin*` | empty frequency bin (small `R`) | no relation landed in that bin; borrow the nearest non-empty one |
+| `recip_symmetric_value` | **no symmetric relation exists** | real outcome, not a fit failure |
+| `cs_freq_*`, `inv_cs_freq_*` | small `R` → too few distinct CSs to fit | relation-driven, same root cause as the first row |
+| `class_size_*`, `type_rel_spectrum_*`, `per_type_entropy_*` | `num_classes == 0` | **untyped KGs are the majority case** in the corpus (7 of 9), not an edge case |
+| `path_template_*_k*` | no path of that length exists | real outcome |
+
+This table is the KEEP side of the fallback-removal plan
+(`docs/plan/remove_unnecessary_fallbacks.md`) — everything else that was ever NaN-guarded on the
+generator side and is *not* in this table turned out to be unreachable on real data, and that
+guard has been deleted.
+
 ## Decisions — resolved
 
 Schema = **both** spectrum + CS distributions (complementary). **Edge-budget handle =

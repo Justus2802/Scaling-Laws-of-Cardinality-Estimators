@@ -153,18 +153,8 @@ MOTIF4_INITIAL_SAMPLES = 20000
 # simple degree exceeds this, the delta is dropped for that swap and the
 # 5/6-cycle counts carry over unchanged, so the cycle loss terms are identical
 # before and after and neither favour nor penalise the swap.
-# Set to float("inf") to disable the guard (always compute the exact delta).  When
-# left at the sentinel below, ``refine()`` derives a per-graph threshold instead
-# (see ``CYCLE_DELTA_MAX_DEGREE_PERCENTILE``) — profiling on wn18rr_v4 showed
-# this single delta accounting for >50% of Stage 3 wall-clock with the guard off.
-CYCLE_DELTA_MAX_DEGREE: float = float("inf") # sentinel: auto-derive from degree percentile
-# Percentile of the simple-degree distribution used to auto-derive
-# CYCLE_DELTA_MAX_DEGREE when it is left at its sentinel (-1.0).  Swaps touching
-# the top (100 - this) % of nodes by degree skip the exact cycle delta; those
-# hub-heavy swaps are also the ones the O(Δ^(k-2)) cost explodes on, so this
-# trades a small amount of exactness on rare hub swaps for a large constant-factor
-# speedup on typical ones.
-CYCLE_DELTA_MAX_DEGREE_PERCENTILE: float = 100
+# Set to float("inf") to disable the guard (always compute the exact delta).
+CYCLE_DELTA_MAX_DEGREE: float = float("inf")
 # Degree guard for the incremental 4-node motif delta, applied to the four swap
 # endpoints only — unlike the cycle DFS, _motif4_delta's cost is fully determined
 # by the endpoint neighbourhoods (candidates come from N(a)∪N(b), so a max
@@ -448,13 +438,7 @@ def refine(
     # denom[v] = C(sim_deg[v], 2), floored at 1 to avoid division by zero.
     denom = np.maximum(sim_deg * (sim_deg - 1) // 2, 1).astype(np.float64)
 
-    # Auto-derive the cycle-delta degree guard from this graph's degree
-    # distribution when CYCLE_DELTA_MAX_DEGREE is left at its sentinel (-1.0).
-    # Doing this per-graph (rather than a fixed constant) keeps the guard
-    # meaningful across graphs of very different scale/density.
     cycle_delta_max_degree = CYCLE_DELTA_MAX_DEGREE
-    if cycle_delta_max_degree < 0:
-        cycle_delta_max_degree = float(np.percentile(sim_deg, CYCLE_DELTA_MAX_DEGREE_PERCENTILE))
 
     # Initialise per-node triangle counts t_node from igraph's local CC:
     #   t_v = CC_local_v * C(k_v, 2)   (exact for k_v >= 2, 0 for k_v < 2)
@@ -1049,9 +1033,8 @@ def refine(
             if use_c5 or use_c6:
                 # The O(Δ^(k-2)) cycle delta guards every node its path DFS expands
                 # (endpoints and interiors — an interior hub explodes the search even
-                # between low-degree endpoints) against cycle_delta_max_degree (the
-                # resolved threshold: CYCLE_DELTA_MAX_DEGREE, or its per-graph
-                # percentile-derived value at the sentinel) and returns None on the
+                # between low-degree endpoints) against cycle_delta_max_degree
+                # (CYCLE_DELTA_MAX_DEGREE) and returns None on the
                 # first hub encountered.  Carrying the counts over unchanged leaves
                 # the cycle loss terms identical before and after, so they cancel in
                 # the accept test (no positive/negative contribution for these swaps).

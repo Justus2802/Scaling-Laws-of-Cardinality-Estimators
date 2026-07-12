@@ -68,9 +68,11 @@ def _stage1_degree_targets(target_dict: dict) -> tuple[int, int, int, int]:
     a = _reconstruct_block("a", target_dict.get("a"))
     b = _reconstruct_block("b", target_dict.get("b"))
     c = _reconstruct_block("c", target_dict.get("c"))
-    if a is None or c is None:
+    d = _reconstruct_block("d", target_dict.get("d"))
+    f = _reconstruct_block("f", target_dict.get("f"))
+    if a is None or b is None or c is None or d is None or f is None:
         return 0, 0, 0, 0
-    schema = sample_schema(a, c, b=b, seed=0)
+    schema = sample_schema(a, c, b=b, d=d, f=f, seed=0)
     t_out, t_in = schema.target_out_degrees, schema.target_in_degrees
     return (
         int(t_out.max()) if t_out is not None else 0,

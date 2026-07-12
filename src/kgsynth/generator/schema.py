@@ -62,44 +62,38 @@ class Schema:
     # reciprocity ρ_r builds mutual (a↔b) pairs for a ρ_r
     # fraction of its edges. None → all-asymmetric (legacy behaviour).
     relation_reciprocity: "np.ndarray | None" = None
-    # Block D-derived CS structure (defaults = legacy behaviour)
-    cs_size_mean: float = 0.0       # 0 → derive from E/V budget at instantiate time
-    cs_num_templates: int = 0       # 0 → per-entity independent sampling
+    # Block D-derived CS structure. Blocks B/D/F are mandatory (see docs/generator.md
+    # §"Target signature must be complete"), so these are always populated from real
+    # measurements — no "0/None → degraded mode" sentinels.
+    cs_num_templates: int = 0       # number of reusable CS templates (Block D num_distinct_cs)
     cs_template_zipf: float = 2.0   # Zipf exponent for template frequency (cs_freq α)
     cs_template_vmax: float = float("nan")  # reuse-draw truncation (cs_freq v_max); NaN → unbounded
-    # Block B-derived edge multiplicity and degree distribution
-    mean_functionality: float = 1.0      # out-side fallback only (CS-size mean when no Block D)
     # Per-entity target degree sequences sampled from Block B's signature-vector
     # components (degree power-law α, p90/max scalars, mean degree); replace the
-    # old global max-degree caps.  None → legacy PA fallback, no degree steering.
+    # old global max-degree caps.
     target_out_degrees: "np.ndarray | None" = None
     target_in_degrees: "np.ndarray | None" = None
-    # How Stage 2 steers wiring toward the target sequences:
-    #   "capacity" — weight ∝ remaining quota (target − placed), hard cap at target
-    #   "chunglu"  — weight ∝ target degree (expected-degree model), no cap
-    degree_mechanism: str = "capacity"
     # Per-relation multiplicity shape + G2b offset (Block B); CS-size shape (Block D).
-    # Defaults are NEUTRAL (no tail shape / no offset / budget-derived CS size), not the
-    # old wiring — Stage 2 falls back to uniform per-subject weights when these are NaN.
+    # Defaults are NEUTRAL (no tail shape / no offset), not the old wiring — Stage 2
+    # falls back to uniform per-subject weights when these are NaN (small-R fallback,
+    # not a Block-absence fallback — see docs/generator.md).
     obj_alpha_q: tuple = field(default_factory=lambda: _NAN_Q)   # per-relation obj-mult α quantiles
     a_obj: float = 0.0                   # G2b cs_size^a out-degree offset (0 → no effect)
     # per-relation subj-mult α quantiles
     subj_alpha_q: tuple = field(default_factory=lambda: _NAN_Q)
     a_subj: float = 0.0                  # G2b inv_cs_size^a in-degree offset (0 → no effect)
     cs_size_q: tuple = field(default_factory=lambda: _NAN_Q)     # forward CS-size quantiles
-    # Inverse CS (object side), symmetric to forward CS. 0 templates → every object
-    # eligible for every relation (today's behaviour) and the a_subj factor is inert.
+    # Inverse CS (object side), symmetric to forward CS.
     inv_cs_size_q: tuple = field(default_factory=lambda: _NAN_Q)
-    inv_cs_num_templates: int = 0        # 0 → no inverse-CS restriction
+    inv_cs_num_templates: int = 0        # number of reusable inverse-CS templates
     inv_cs_template_zipf: float = 2.0    # inverse-CS reuse skew (inv_cs_freq α)
     inv_cs_template_vmax: float = float("nan")  # reuse-draw truncation (inv_cs_freq v_max)
-    # Block F-derived connectivity targets.  Defaults reproduce current fully-connected behaviour.
+    # Block F-derived connectivity targets.
     target_num_components: int = 1    # target weakly-connected component count
     target_lcc: float = 1.0           # target largest-component fraction of entity nodes
-    # Co-occurrence group prototypes (Block C subj_cooc_exp / obj_cooc_exp).
-    # When set, Stage 2 uses these to generate entity CSes (instead of type_relation_probs)
-    # and assigns types post-hoc via log P(CS|t) argmax.  None → fall back to the
-    # type-based CS path (existing behaviour).  See docs/generator.md §"Co-occurrence groups".
+    # Co-occurrence group prototypes (Block C subj_cooc_exp / obj_cooc_exp). Stage 2
+    # uses these to generate entity CSes (instead of type_relation_probs) and assigns
+    # types post-hoc via log P(CS|t) argmax. See docs/generator.md §"Co-occurrence groups".
     # (COOC_NUM_GROUPS, |R|) forward group prototypes
     subj_group_probs: np.ndarray | None = None
     # (COOC_NUM_GROUPS,) Zipf weights from subj spectrum

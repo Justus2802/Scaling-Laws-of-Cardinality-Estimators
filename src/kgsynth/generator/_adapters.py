@@ -9,45 +9,8 @@ needs from those parameters, so the Stage-1/2/3 logic stays unchanged.
 import math
 
 import numpy as np
-from scipy.special import zeta
 
 from ..signature import QUANTILE_LEVELS
-
-# Index of the median (0.5) level within QUANTILE_LEVELS, for scalar summaries.
-_MEDIAN_IDX = QUANTILE_LEVELS.index(0.5)
-
-
-def _quantile_mean(fit) -> float:
-    """Mean of a reduced-signature quantile fit (NaN when the fit is absent).
-
-    ``fit`` is a ``QuantileFit``-shaped tuple of sample quantiles at
-    :data:`QUANTILE_LEVELS`; the mean is the trapezoid integral of the quantile
-    function over the levels (``∫₀¹ Q(u) du``), close enough for sizing the CS
-    budget.
-    """
-    if fit is None:
-        return float("nan")
-    qs = np.asarray(fit, dtype=float)
-    if not np.isfinite(qs).all():
-        return float("nan")
-    return float(np.trapezoid(qs, QUANTILE_LEVELS))
-
-
-def _functionality_from_alpha(fit, floor: float = 0.1) -> float:
-    """Estimate mean relation (inverse-)functionality from a multiplicity-α fit.
-
-    Reduced Block B drops the per-relation ``functionality`` dict and instead
-    stores the spread of per-relation multiplicity power-law exponents as a
-    quantile function. For a discrete power-law ``p(m) ∝ m^(−α)`` on ``m ≥ 1`` the
-    fraction of single-object slots is ``P(m=1) = 1/ζ(α)``; the median quantile is
-    the typical per-relation α. Falls back to 1.0 (fully functional) when α is
-    unavailable or ≤ 1 (where ζ diverges). Clamped to ``[floor, 1.0]`` to match
-    the old clip bounds.
-    """
-    alpha = float(fit[_MEDIAN_IDX]) if fit is not None else float("nan")
-    if math.isnan(alpha) or alpha <= 1.0:
-        return 1.0
-    return float(np.clip(1.0 / zeta(alpha), floor, 1.0))
 
 
 def sample_quantiles_trunc(fit, n: int, rng: np.random.Generator):

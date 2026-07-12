@@ -25,14 +25,21 @@ class Signature:
     structure; Block D supplies CS statistics that enable template-based CS
     reuse; Block E supplies motif counts that Stage 3 optimises toward; Block F
     supplies degree assortativity that Stage 3 also targets.
+
+    Blocks A, B, C, D and F are mandatory — a real graph always measures them,
+    and Stage 1/2 have no degraded-mode path for their absence (see
+    docs/generator.md §"Target signature must be complete"). Block E stays
+    nullable: :func:`kgsynth.corpus.load_target_from_corpus` legitimately skips
+    it (``with_block_e=False``) for callers that only drive Stages 1-2, since
+    it is the expensive block to measure and neither stage reads it.
     """
 
     a: "BlockA"
+    b: "BlockB"
     c: "BlockC"
-    e: "BlockE"
-    b: "BlockB | None" = None   # optional: enables multi-object edges + data-driven PA
-    d: "BlockD | None" = None   # optional: enables CS template reuse
-    f: "BlockF | None" = None   # optional: enables assortativity targeting in Stage 3
+    d: "BlockD"
+    e: "BlockE | None"
+    f: "BlockF"
 
     @classmethod
     def from_graph(
@@ -73,25 +80,22 @@ class Signature:
         ``d``, ``e``, ``f``), each mapping to that block's serialized state —
         the same shape each block's ``to_serializable()`` produces and
         :meth:`to_config` writes — so a config can be hand-edited or produced
-        by re-saving a measured/cached signature. ``a``, ``c`` and ``e`` are
-        required; ``b``, ``d``, ``f`` are optional and default to ``None`` if
-        their key is absent, matching :class:`Signature`'s own optionality.
+        by re-saving a measured/cached signature. All six blocks are required:
+        a hand-edited config describes a complete target signature, matching
+        what any real graph measures (see docs/generator.md §"Target signature
+        must be complete").
 
         :param path: Path to the YAML config file.
         :returns: The reconstructed target ``Signature``.
-        :raises KeyError: If a required block (``a``, ``c``, ``e``) is missing
-            (also raised for an empty or comment-only file, which parses to
-            no data at all).
+        :raises KeyError: If a block is missing (also raised for an empty or
+            comment-only file, which parses to no data at all).
         """
         data = yaml.safe_load(Path(path).read_text()) or {}
         blocks: dict = {}
         for letter, block_cls in _BLOCK_CLASSES.items():
-            if letter in data:
-                blocks[letter] = block_cls.from_serializable(data[letter])
-            elif letter in ("a", "c", "e"):
+            if letter not in data:
                 raise KeyError(f"Signature config {path} is missing required block {letter!r}")
-            else:
-                blocks[letter] = None
+            blocks[letter] = block_cls.from_serializable(data[letter])
         return cls(**blocks)
 
     def to_config(self, path: "Path | str") -> None:
@@ -110,17 +114,17 @@ class Signature:
         """Flatten to the public 124-key feature dict.
 
         The same ``{name: value}`` mapping stored under ``"features"`` in a
-        measured ``signature.json``. Blocks that are ``None`` contribute their
-        all-NaN vector, so the key set is fixed at 124 regardless of which
-        optional blocks are present.
+        measured ``signature.json``. Requires every block to be present —
+        including Block E, so this is not for the ``with_block_e=False``
+        Stage-1/2-only signatures (see the class docstring); those never need
+        the full feature vector.
 
         :returns: Feature name → value, in block order (A, B, C, D, E, F).
         """
         feats: dict[str, float] = {}
         for letter, block in zip(_BLOCK_CLASSES, self._blocks()):
             cls = _BLOCK_CLASSES[letter]
-            values = block.as_vector() if block is not None else cls.get_na_vec()
-            feats.update(zip(cls.feature_names(), values))
+            feats.update(zip(cls.feature_names(), block.as_vector()))
         return feats
 
     @classmethod
@@ -160,7 +164,7 @@ class Signature:
         })
 
     def _blocks(self) -> list:
-        """Return the six blocks in signature order (``a``..``f``), ``None`` where optional."""
+        """Return the six blocks in signature order (``a``..``f``); ``e`` may be ``None``."""
         return [self.a, self.b, self.c, self.d, self.e, self.f]
 
 
