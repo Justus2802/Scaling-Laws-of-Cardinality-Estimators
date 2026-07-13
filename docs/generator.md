@@ -80,6 +80,7 @@ new one (`kgsynth.signature_sampler`), interpolate — and still generate from t
 | B | `relation_zipf` | relation-frequency weights (Zipf exponent) |
 | B | `obj_alpha_q` | per-relation **object**-multiplicity tail α (out-degree shape), as a quantile function |
 | B | `subj_alpha_q` | per-relation **subject**-multiplicity tail α (in-side shape), as a quantile function |
+| B | `obj_mult_max`, `subj_mult_max` | upper bounds of those two multiplicity laws (the range their α was fitted over) |
 | B | `a_obj` | G2b forward CS-size→multiplicity offset (`cs_size^a_obj`) |
 | B | `a_subj` | G2b inverse CS-size→multiplicity offset (`inv_cs_size^a_subj`) |
 | B | `in_degree_fit.alpha` | tail-shape input to the Stage-1-sampled target in-degree sequence (`_adapters.sample_degree_sequence`) |
@@ -87,8 +88,8 @@ new one (`kgsynth.signature_sampler`), interpolate — and still generate from t
 | C | `type_rel_spectrum_exp` | `P(r\|t)` low-rank reconstruction (used for post-hoc type scoring) |
 | C | `subj_cooc_exp` | forward co-occurrence group prototypes (CS source) |
 | C | `obj_cooc_exp` | inverse co-occurrence group prototypes (inverse-CS source) |
-| D | `cs_size_q`, `num_distinct_cs`, `cs_freq_fit.alpha`/`.v_max` | forward CS templates: size (quantile function), count, reuse skew + truncation |
-| D | `inv_cs_size_q`, `inv_num_distinct_cs`, `inv_cs_freq_fit.alpha`/`.v_max` | inverse CS templates (object side): size (quantile function), count, reuse skew + truncation |
+| D | `cs_size_q`, `num_distinct_cs`, `cs_freq_fit.alpha`/`.v_min`/`.v_max` | forward CS templates: size (quantile function), count, reuse skew + the reuse law's support |
+| D | `inv_cs_size_q`, `inv_num_distinct_cs`, `inv_cs_freq_fit.alpha`/`.v_min`/`.v_max` | inverse CS templates (object side): size (quantile function), count, reuse skew + support |
 | E | motif counts | Stage-3 targets (triangles, 4-cycle, diamond, k4, tailed) |
 | F | `degree_assortativity` | Stage-3 target |
 | F | `clustering_coefficient` | Stage-3 target (`CC_avg` loss term) |
@@ -177,8 +178,9 @@ legitimately still be NaN (small-R Zipf/CS fits, untyped-KG class stats) are cal
    spectrum (also an untyped-KG symptom) degenerates to uniform per-type relation weights.
 5. **CS structure (Block D).** `cs_num_templates = num_distinct_cs`;
    `cs_template_zipf = cs_freq_fit.alpha` (CS reuse skew, small-R NaN fallback →
-   `DEFAULT_ZIPF_EXPONENT`) and `cs_template_vmax = cs_freq_fit.v_max` (reuse-draw truncation —
-   the fitted α covers the full bounded range, so unbounded draws would over-skew); `cs_size_q`
+   `DEFAULT_ZIPF_EXPONENT`) and `cs_template_vmin`/`cs_template_vmax = cs_freq_fit.v_min`/`.v_max`
+   — the support the reuse law was fitted over, which Stage 2 draws from directly (see the
+   [truncated power-law contract](#the-truncated-power-law-contract)); `cs_size_q`
    passed through. `num_distinct_cs` is never zero on a real graph, so CS templates are always
    built — there is no per-entity fallback mode.
 6. **Co-occurrence group prototypes (Block C).** `subj_cooc_exp` / `obj_cooc_exp` are never NaN
@@ -187,9 +189,9 @@ legitimately still be NaN (small-R Zipf/CS fits, untyped-KG class stats) are cal
    group-prototype matrix per side plus a normalized weight vector from the singular values.
    Stage 2 always draws entity CSes from these prototypes (never the `P(r|t)` path) and assigns
    types post-hoc. See [§ Co-occurrence groups](#co-occurrence-groups) below.
-7. **Multiplicity / degree (Block B).** `obj_alpha_q`, `subj_alpha_q`, `a_obj` passed
-   through (per-relation NaN fits are a legitimate small-R outcome — Stage 2 falls back to flat
-   weights for that one relation). Per-entity **target degree sequences** (`target_out_degrees`,
+7. **Multiplicity / degree (Block B).** `obj_alpha_q`, `subj_alpha_q`, `a_obj` and the two
+   multiplicity bounds `obj_mult_max` / `subj_mult_max` passed through (per-relation NaN fits are a
+   legitimate small-R outcome — Stage 2 falls back to flat weights for that one relation). Per-entity **target degree sequences** (`target_out_degrees`,
    `target_in_degrees`) are sampled purely from **signature-vector components** —
    never Block B's raw retained arrays (`_adapters.sample_degree_sequence`):
    the top 10% of nodes (the tail) draw from a power law truncated to `[p90, max]`
@@ -483,11 +485,32 @@ the concrete quantities Stage 1/2 need (NaN-safe; NaN → neutral fallback):
 - `_reconstruct_singular_values(exp_fit, k)` — `scale·exp(−rate·k)` spectrum for `P(r|t)`.
 - `sample_quantiles_trunc(fit, n, rng)` — inverse-transform draws (`np.interp`) naturally clipped
   to `[q@0, q@1]`; `None` when the fit is NaN.
-- `sample_powerlaw(alpha, n, rng)` — `power-law(α>1)` draws via inverse-CDF; uniform ones when α
-  is NaN/≤1 (the neutral fallback).
+- `sample_powerlaw_trunc(alpha, lo, hi, n, rng)` — `power-law(α)` draws **truncated to `[lo, hi]`**
+  via inverse-CDF; constant `lo` (→ equal weights after normalisation, the neutral fallback) when
+  α is NaN/≤1 or the range is empty. The single power-law sampler — see the contract below.
 - `sample_degree_sequence(alpha, p90, d_max, mean_deg, n, rng)` — the per-entity target degree
   sequence behind Stage 1 §7: an extreme-value-matched tail on `[p90, max]` plus a
   zero-inflated fitted-α body on `[1, p90]`; `None` when `p90`/`max` are unavailable.
+
+### The truncated power-law contract
+
+Every quantity the generator draws from a power law is **bounded**, and every power law in the
+signature is fitted as a **truncated MLE over exactly those bounds** (`_fit_powerlaw` pins
+`[1, max]`; `fit_truncated_powerlaw` pins `[v_min, v_max]`). So the generator draws from the
+bounded law directly — `sample_powerlaw_trunc` — rather than drawing unbounded and clamping.
+The distinction is not cosmetic: a clamp deposits an atom of probability mass exactly at the
+bound instead of redistributing it across the support, so the realised distribution would have
+a spike the target does not.
+
+| Quantity drawn | Support | Bounds come from |
+|---|---|---|
+| CS-template reuse (forward / inverse) | `[v_min, v_max]` | `cs_freq_fit` / `inv_cs_freq_fit` (Block D) — the fit stores both |
+| per-relation object / subject multiplicity | `[1, mult_max]` | `obj_mult_max` / `subj_mult_max` (Block B) |
+| target degree — body | `[1, p90]` | `out/in_degree_p90` (Block B), fitted α |
+| target degree — tail (top 10%) | `[p90, max]` | `out/in_degree_p90`, `out/in_degree_max`; exponent is extreme-value matched, **not** the fitted α (Stage 1 §7) |
+
+The two *rank* laws — relation weights and type weights, via `_zipf_weights` — are bounded by
+construction (`rank^(−α)` normalised over a finite `n`) and need no truncation.
 
 ---
 

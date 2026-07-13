@@ -1,46 +1,34 @@
 {
-  "_out_degree_fit": {
+  "out_degree_fit": {
     "__sig_type__": "PowerLawStats",
     "data": [
-      2.5889648437499995,
-      2.0,
-      0.11733674218600842,
-      0.021007093005751543,
-      0.010898808558246098,
-      0.012772146573256093
+      1.5541751232685757,
+      1.0,
+      0.19751816323397353,
+      0.1037183187774563,
+      0.09598903519409996,
+      0.09597688610214772
     ]
   },
-  "_in_degree_fit": {
+  "in_degree_fit": {
     "__sig_type__": "PowerLawStats",
     "data": [
-      2.9113037109375,
-      3.0,
-      0.05070124436512635,
-      0.022533070980311043,
-      0.06841274994900914,
-      0.02733119069389578
+      1.8254892552055386,
+      1.0,
+      0.12916506633609753,
+      0.013674112282906492,
+      0.03257776720577471,
+      0.038884318577457555
     ]
   },
-  "_relation_zipf": {
+  "relation_zipf": {
     "__sig_type__": "tuple",
     "data": [
       NaN,
       NaN
     ]
   },
-  "_obj_alpha_q": {
-    "__sig_type__": "tuple",
-    "data": [
-      NaN,
-      NaN,
-      NaN,
-      NaN,
-      NaN,
-      NaN,
-      NaN
-    ]
-  },
-  "_subj_alpha_q": {
+  "obj_alpha_q": {
     "__sig_type__": "tuple",
     "data": [
       NaN,
@@ -52,9 +40,23 @@
       NaN
     ]
   },
-  "_a_obj": 0.08709799806860687,
-  "_a_subj": 0.13985476994999346,
-  "_recip_symmetric_frac": {
+  "subj_alpha_q": {
+    "__sig_type__": "tuple",
+    "data": [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ]
+  },
+  "obj_mult_max": 20.0,
+  "subj_mult_max": 59.0,
+  "a_obj": 0.0870979980686068,
+  "a_subj": 0.1398547699499936,
+  "recip_symmetric_frac": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": [
@@ -66,34 +68,37 @@
       0.42857142857142855
     ]
   },
-  "_recip_symmetric_value": 0.9018435684186776,
-  "_out_degree_max": 26,
-  "_out_degree_p90": 5.0,
-  "_in_degree_max": 64,
-  "_in_degree_p90": 5.0,
-  "_obj_alphas": {
+  "recip_symmetric_value": 0.9018435684186776,
+  "out_degree_max": 26,
+  "out_degree_p90": 5.0,
+  "in_degree_max": 64,
+  "in_degree_p90": 5.0,
+  "obj_alphas": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": [
-      2.7065185546874995,
-      2.7979980468749996,
+      1.792518733059413,
+      1.810629464291699,
+      2.8162353515625,
       2.999999999999999,
-      1.9976123140778048,
-      2.4708251953124982
+      1.8078203596001678,
+      2.999999999999999,
+      2.0248535156249976
     ]
   },
-  "_subj_alphas": {
+  "subj_alphas": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": [
-      2.268383789062498,
-      2.8423095703124996,
+      1.8936035156249975,
+      1.8497171518733055,
+      2.9566406250000004,
+      2.091870117187498,
       2.999999999999999,
-      2.8348388671875,
-      2.3057751337145396
+      1.6289793633985874
     ]
   },
-  "_out_degrees": {
+  "out_degrees": {
     "__sig_type__": "ndarray",
     "dtype": "int64",
     "data": [
@@ -3960,7 +3965,7 @@
       0
     ]
   },
-  "_in_degrees": {
+  "in_degrees": {
     "__sig_type__": "ndarray",
     "dtype": "int64",
     "data": [
@@ -7827,7 +7832,7 @@
       2
     ]
   },
-  "_rel_edge_counts": {
+  "rel_edge_counts": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": [
@@ -7842,7 +7847,7 @@
       25.0
     ]
   },
-  "_recips": {
+  "recips": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": [

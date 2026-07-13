@@ -1,0 +1,94 @@
+# Generate a dataset of synthetic KGs by perturbing one measured signature.
+#
+#   kgsynth dataset examples/perturb_dataset.yaml --dry-run    # review the plan
+#   kgsynth dataset examples/perturb_dataset.yaml --workers 4
+#
+# See docs/dataset.md for the full reference, and docs/transform.md for which
+# features may be perturbed (only the 74 the generator actually reads).
+
+base: fb237_v4              # corpus graph whose signature is the baseline
+design: joint               # joint = jitter everything at once | ofat = one feature per graph
+num_graphs: 8               # joint only; ofat derives its count from the levels below
+seed: 20260712              # master seed — every graph's sub-seeds derive from it
+measure: false              # true → also re-measure each graph and record per-block distances
+out_dir: data/synthetic/fb237_v4_joint_v1
+
+generator:                  # forwarded verbatim to Generator.sample()
+  rewire_budget: 20000
+  initial_temp: 0.05
+  cooling_rate: 0.9995
+
+features:
+  # dist: lognormal (multiplicative, the default for positive quantities — a 0.15
+  # sigma is roughly ±15%) | normal (additive, for signed/bounded features) |
+  # uniform / loguniform (needs lo + hi).
+  #
+  # levels: only used by design: ofat — multipliers for the multiplicative dists,
+  # offsets for the additive ones. Listing them here lets one config drive both
+  # designs; the joint run just ignores them.
+
+  # Block A — the edge budget. The single highest-leverage knob: E = round(V × mean_degree).
+  mean_degree:
+    dist: lognormal
+    sigma: 0.15
+    levels: [0.8, 0.9, 1.1, 1.2]
+
+  # Block C — edge multiplicity and reciprocity.
+  edge_multiplicity:
+    dist: lognormal
+    sigma: 0.10
+    levels: [0.9, 1.1]
+  bidirectional_ratio:
+    dist: lognormal
+    sigma: 0.05
+    levels: [0.95, 1.05]
+
+  # Block C — the *only* handle on the type-relation conditional P(r|t): the decay
+  # rate of its singular spectrum. (Its companion `type_rel_spectrum_scale` cancels
+  # under normalisation — see docs/transform.md.)
+  type_rel_spectrum_rate:
+    dist: lognormal
+    sigma: 0.15
+    levels: [0.8, 1.2]
+
+  # Block B — degree-distribution shape.
+  out_degree_alpha:
+    dist: normal
+    sigma: 0.10
+    levels: [-0.2, 0.2]
+  in_degree_alpha:
+    dist: normal
+    sigma: 0.10
+    levels: [-0.2, 0.2]
+
+  # Block B — per-relation multiplicity exponents. Naming one member moves all seven
+  # (a quantile function must stay non-decreasing), so this is ONE knob, not seven.
+  # NOTE: these are fit inside a hard [1.4, 3.0] window, and on some graphs the top
+  # levels already sit at the ceiling — an upward jitter is then largely absorbed by
+  # the clamp. The run reports that (meta.json:clamp_report); do not read a clamped
+  # knob's "no effect" as evidence it does nothing.
+  obj_mult_alpha_q50:
+    dist: lognormal
+    sigma: 0.08
+    levels: [0.9, 1.1]
+
+  # Block E — raw motif counts. Stage 3 anneals toward these.
+  triangle_count:
+    dist: lognormal
+    sigma: 0.20
+    levels: [0.7, 1.3]
+  four_cycle_count:
+    dist: lognormal
+    sigma: 0.20
+    levels: [0.7, 1.3]
+
+  # Block F — Stage 3 also targets these.
+  degree_assortativity:
+    dist: normal
+    sigma: 0.05
+    clamp: [-1.0, 1.0]      # explicit override; the default domain is already [-1, 1]
+    levels: [-0.1, 0.1]
+  clustering_coefficient:
+    dist: normal
+    sigma: 0.03
+    levels: [-0.05, 0.05]

@@ -1,5 +1,5 @@
 {
-  "_class_size_fit": {
+  "class_size_fit": {
     "__sig_type__": "PowerLawStats",
     "data": [
       NaN,
@@ -10,16 +10,16 @@
       NaN
     ]
   },
-  "_num_classes": 0,
-  "_subj_cooc_exp": {
+  "num_classes": 0,
+  "subj_cooc_exp": {
     "__sig_type__": "tuple",
     "data": [
       0.2226471687969821,
       0.3639091255256871
     ]
   },
-  "_subj_cooc_density": 0.08984383144638353,
-  "_subj_row_entropy_q": {
+  "subj_cooc_density": 0.08984383144638353,
+  "subj_row_entropy_q": {
     "__sig_type__": "tuple",
     "data": [
       0.0,
@@ -31,15 +31,15 @@
       3.416869350427884
     ]
   },
-  "_obj_cooc_exp": {
+  "obj_cooc_exp": {
     "__sig_type__": "tuple",
     "data": [
       0.1894694830038379,
       0.20012222459063977
     ]
   },
-  "_obj_cooc_density": 0.07166239236045954,
-  "_obj_row_entropy_q": {
+  "obj_cooc_density": 0.07166239236045954,
+  "obj_row_entropy_q": {
     "__sig_type__": "tuple",
     "data": [
       0.0,
@@ -51,60 +51,60 @@
       3.4319082742457057
     ]
   },
-  "_edge_multiplicity": 1.1018843404808316,
-  "_bidirectional_ratio": 1.1503531786074672,
-  "_type_rel_spectrum_exp": {
+  "edge_multiplicity": 1.1018843404808316,
+  "bidirectional_ratio": 1.1503531786074672,
+  "type_rel_spectrum_exp": {
     "__sig_type__": "tuple",
     "data": [
       NaN,
       NaN
     ]
   },
-  "_per_type_entropy_exp": {
+  "per_type_entropy_exp": {
     "__sig_type__": "tuple",
     "data": [
       NaN,
       NaN
     ]
   },
-  "_subj_singular_values": {
+  "subj_singular_values": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": [
-      0.6889362987945975,
+      0.6889362987945977,
       0.4039564133824334,
-      0.15521584205333883,
-      0.1194286425859537,
-      0.09771946662933222,
-      0.09514211306097858,
-      0.09429309432135431,
+      0.1552158420533388,
+      0.11942864258595372,
+      0.09771946662933219,
+      0.09514211306097865,
+      0.09429309432135428,
       0.0783631515032341,
-      0.07461036083293011,
-      0.06860833610776722
+      0.07461036083293009,
+      0.06860833610776723
     ]
   },
-  "_obj_singular_values": {
+  "obj_singular_values": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": [
       0.2729554261235013,
-      0.24392975909735348,
-      0.11122604003098466,
-      0.0817881754498993,
-      0.06825487836624325,
-      0.06365583925920427,
-      0.05754516645434034,
-      0.05589373255108838,
-      0.05020151046734964,
-      0.04806060337055709
+      0.24392975909735368,
+      0.11122604003098463,
+      0.08178817544989933,
+      0.06825487836624322,
+      0.06365583925920423,
+      0.057545166454340345,
+      0.0558937325510884,
+      0.05020151046734969,
+      0.048060603370557085
     ]
   },
-  "_type_rel_singular_values": {
+  "type_rel_singular_values": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": []
   },
-  "_subj_row_entropies": {
+  "subj_row_entropies": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": [
@@ -329,7 +329,7 @@
       -0.0
     ]
   },
-  "_obj_row_entropies": {
+  "obj_row_entropies": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": [
@@ -554,12 +554,12 @@
       3.1131272764951556
     ]
   },
-  "_per_type_entropies": {
+  "per_type_entropies": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": []
   },
-  "_class_sizes": {
+  "class_sizes": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": []

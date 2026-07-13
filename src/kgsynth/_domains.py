@@ -1,4 +1,4 @@
-"""Per-feature domains and size-scaling classification for the 124-key signature.
+"""Per-feature domains and size-scaling classification for the 126-key signature.
 
 One source of truth for "what values may this feature legally take", shared by:
 
@@ -76,6 +76,7 @@ INTEGER_FEATURES: frozenset[str] = frozenset({
     "out_degree_xmin", "in_degree_xmin", "relation_zipf_xmin", "class_size_xmin",
     "cs_freq_vmin", "cs_freq_vmax", "inv_cs_freq_vmin", "inv_cs_freq_vmax",
     "two_step_vmin", "two_step_vmax",
+    "obj_mult_max", "subj_mult_max",
     "triangle_count", "four_cycle_count", "five_cycle_count", "six_cycle_count",
     "diamond_count", "k4_count", "tailed_triangle_count",
 })
@@ -95,6 +96,7 @@ MIN_ONE: frozenset[str] = frozenset({
     "out_degree_xmin", "in_degree_xmin", "relation_zipf_xmin", "class_size_xmin",
     "cs_freq_vmin", "cs_freq_vmax", "inv_cs_freq_vmin", "inv_cs_freq_vmax",
     "two_step_vmin", "two_step_vmax",
+    "obj_mult_max", "subj_mult_max",   # a measured maximum multiplicity is ≥ 1
 })
 
 # Type-block parameters held at the untyped default (NaN) by the population

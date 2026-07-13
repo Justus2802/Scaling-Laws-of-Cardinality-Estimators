@@ -6,7 +6,7 @@ A **transform** maps a signature's flat feature dict to another one:
 from kgsynth import Signature, Generator, Perturb, FeatureSpec
 import numpy as np
 
-feats = Signature.from_file("swdf.nt").as_features()          # 124 keys
+feats = Signature.from_file("swdf.nt").as_features()          # 126 keys
 feats, report = Perturb({"mean_degree": FeatureSpec(sigma=0.15)}).apply(
     feats, np.random.default_rng(0)
 )
@@ -26,9 +26,9 @@ attribute names.
 
 ---
 
-## The perturbation surface — 74 of 124 features
+## The perturbation surface — 78 of 126 features
 
-Only **74** of the signature's 124 features are read by the generator. Perturbing any of the other 50
+Only **78** of the signature's 126 features are read by the generator. Perturbing any of the other 48
 is a silent no-op: the graph comes out identical. `kgsynth.transform.validate()` therefore **raises**
 on an off-surface feature rather than accepting it — a duplicate graph produced by a knob that does
 nothing is the worst outcome for a sensitivity study.
@@ -36,12 +36,12 @@ nothing is the worst outcome for a sensitivity study.
 | Block | Reached / total | Not reached |
 |---|---|---|
 | A | 3 / 3 | — |
-| B | 30 / 33 | the three `*_xmin` — only `.alpha` / `.exponent` is read off those fits |
+| B | 32 / 35 | the three `*_xmin` — only `.alpha` / `.exponent` is read off those fits |
 | C | 10 / 29 | `class_size_xmin`; both `cooc_density`; the 14 `row_entropy_q*`; `per_type_entropy_rate/scale` |
-| D | 20 / 25 | `cs_freq_vmin`, `inv_cs_freq_vmin`; `two_step_alpha/vmin/vmax` |
+| D | 22 / 25 | `two_step_alpha/vmin/vmax` |
 | E | 7 / 27 | the 20 `path_template_*` / `tree_template_*` — their Stage-3 steering is gated off |
 | F | 4 / 7 | `shortest_path_max/mean/var` — unsteered |
-| | **74 / 124** | **50** |
+| | **78 / 126** | **48** |
 
 Two subsets are on the surface but perturb degenerately. `validate()` accepts them **with a warning**:
 

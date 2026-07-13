@@ -43,9 +43,9 @@ def _fit_powerlaw(data: np.ndarray) -> PowerLawStats:
     would produce noise. Skipping also avoids the package's stdout chatter,
     division-by-zero warnings, and per-call overhead on long-tail relations.
 
-    The fit is pinned at ``xmin=1`` (see the call site), so the reported
-    ``xmin`` is always 1.0 and ``alpha`` is the MLE over the full positive
-    range rather than an auto-searched tail.
+    The fit is pinned to ``[1, max]`` (see the call site), so the reported
+    ``xmin`` is always 1.0 and ``alpha`` is the **truncated** MLE over the data's
+    own bounded range rather than an auto-searched, unbounded tail.
 
     Returns a PowerLawStats with:
       - alpha, xmin, ks from `fit.power_law` (the power-law fit itself)
@@ -62,12 +62,17 @@ def _fit_powerlaw(data: np.ndarray) -> PowerLawStats:
              np.errstate(divide="ignore", invalid="ignore"), \
              contextlib.redirect_stdout(io.StringIO()):
             warnings.simplefilter("ignore")
-            # Pin xmin=1 (the domain minimum after the `data > 0` filter) so the
-            # fitted alpha describes the whole range its consumers sample from,
-            # not an auto-searched Clauset-Shalizi-Newman tail that then gets
-            # extrapolated down to the body. Mirrors fit_truncated_powerlaw's
-            # pinning for Block D. See docs/signature.md (deviations) / plan 2.13.
-            fit = powerlaw.Fit(positive, discrete=True, xmin=1, verbose=False)
+            # Pin the support to [1, max] — the domain minimum after the `data > 0`
+            # filter, and the data's own upper bound. xmin=1 keeps alpha describing
+            # the whole range its consumers sample from, not an auto-searched
+            # Clauset-Shalizi-Newman tail that then gets extrapolated down to the
+            # body; xmax makes it a *truncated* MLE, matching the bounded law the
+            # generator draws from (degrees, class sizes and per-relation
+            # multiplicity are all inherently bounded). Mirrors
+            # fit_truncated_powerlaw's pinning for Block D. See docs/signature.md
+            # (deviations) / plan 2.13.
+            fit = powerlaw.Fit(positive, discrete=True, xmin=1,
+                               xmax=int(positive.max()), verbose=False)
             return PowerLawStats(
                 alpha=float(fit.power_law.alpha),
                 xmin=float(fit.power_law.xmin),

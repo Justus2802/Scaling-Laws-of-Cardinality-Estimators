@@ -68,6 +68,8 @@ def _make_block_b(
     b._in_degree_p90 = 8.0
     b._obj_alpha_q = _q(obj_alpha, 0.3, 1.4, 3.0)
     b._subj_alpha_q = _q(subj_alpha, 0.3, 1.4, 3.0)
+    b._obj_mult_max = 12      # upper bound of the per-relation multiplicity draws
+    b._subj_mult_max = 12
     b._a_obj = a_obj
     b._a_subj = 0.2
     # Reciprocity a complete reduced Block B always carries; all-NaN frac models

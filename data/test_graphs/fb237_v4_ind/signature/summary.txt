@@ -4,11 +4,12 @@
   mean_degree  : 4.7702
 
 === Reduced Block B: Relation Frequency & Multiplicity (G1/G2/G2b) ===
-  out-degree fit : alpha=2.9064  xmin=7.0
-  in-degree fit  : alpha=2.5507  xmin=6.0
-  relation Zipf  : exponent=1.7070  xmin=12.0
-  obj  mult-alpha quantiles: median=2.380 IQR=[2.063,2.614] cutoffs=[1.40,3.00]
-  subj mult-alpha quantiles: median=2.153 IQR=[2.006,2.575] cutoffs=[1.40,3.00]
+  out-degree fit : alpha=1.4250  xmin=1.0
+  in-degree fit  : alpha=1.5248  xmin=1.0
+  relation Zipf  : exponent=1.0000  xmin=1.0
+  obj  mult-alpha quantiles: median=1.868 IQR=[1.400,2.966] cutoffs=[1.40,3.00]
+  subj mult-alpha quantiles: median=1.884 IQR=[1.400,2.807] cutoffs=[1.40,3.00]
+  mult maxima    : obj=79  subj=304
   CS-size offset : a_obj=-0.0718  a_subj=0.0350
   out-degree     : max=146  p90=10.0
   in-degree      : max=318  p90=9.0

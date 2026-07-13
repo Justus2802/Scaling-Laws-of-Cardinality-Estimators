@@ -1,5 +1,5 @@
 {
-  "_class_size_fit": {
+  "class_size_fit": {
     "__sig_type__": "PowerLawStats",
     "data": [
       NaN,
@@ -10,16 +10,16 @@
       NaN
     ]
   },
-  "_num_classes": 0,
-  "_subj_cooc_exp": {
+  "num_classes": 0,
+  "subj_cooc_exp": {
     "__sig_type__": "tuple",
     "data": [
       0.7122925109151241,
       0.5441939046066501
     ]
   },
-  "_subj_cooc_density": 0.7037037037037037,
-  "_subj_row_entropy_q": {
+  "subj_cooc_density": 0.7037037037037037,
+  "subj_row_entropy_q": {
     "__sig_type__": "tuple",
     "data": [
       NaN,
@@ -31,15 +31,15 @@
       NaN
     ]
   },
-  "_obj_cooc_exp": {
+  "obj_cooc_exp": {
     "__sig_type__": "tuple",
     "data": [
-      0.7259141879187048,
+      0.7259141879187049,
       0.597699335866353
     ]
   },
-  "_obj_cooc_density": 0.5308641975308642,
-  "_obj_row_entropy_q": {
+  "obj_cooc_density": 0.5308641975308642,
+  "obj_row_entropy_q": {
     "__sig_type__": "tuple",
     "data": [
       NaN,
@@ -51,60 +51,60 @@
       NaN
     ]
   },
-  "_edge_multiplicity": 1.001934235976789,
-  "_bidirectional_ratio": 1.4477523949889461,
-  "_type_rel_spectrum_exp": {
+  "edge_multiplicity": 1.001934235976789,
+  "bidirectional_ratio": 1.4477523949889461,
+  "type_rel_spectrum_exp": {
     "__sig_type__": "tuple",
     "data": [
       NaN,
       NaN
     ]
   },
-  "_per_type_entropy_exp": {
+  "per_type_entropy_exp": {
     "__sig_type__": "tuple",
     "data": [
       NaN,
       NaN
     ]
   },
-  "_subj_singular_values": {
+  "subj_singular_values": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": [
-      1.2431248499552425,
-      0.20476429294439724,
-      0.04895307144465018,
-      0.04479506191438383,
-      0.042206622584056844,
+      1.2431248499552423,
+      0.20476429294439716,
+      0.04895307144465016,
+      0.04479506191438382,
+      0.04220662258405685,
       0.037882812556351717,
-      0.004590121000385903,
-      0.0040921503077731534,
+      0.004590121000385905,
+      0.004092150307773153,
       0.0,
       0.0
     ]
   },
-  "_obj_singular_values": {
+  "obj_singular_values": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": [
       0.8281864381699063,
-      0.253376492604714,
+      0.2533764926047139,
       0.0994778596248612,
-      0.06302953436411875,
+      0.06302953436411877,
       0.04539897845284844,
-      0.013625145286092051,
-      0.006468511915617558,
+      0.013625145286092048,
+      0.006468511915617556,
       0.0046048011764921945,
       0.0,
       0.0
     ]
   },
-  "_type_rel_singular_values": {
+  "type_rel_singular_values": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": []
   },
-  "_subj_row_entropies": {
+  "subj_row_entropies": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": [
@@ -119,7 +119,7 @@
       1.2321281639676984
     ]
   },
-  "_obj_row_entropies": {
+  "obj_row_entropies": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": [
@@ -134,12 +134,12 @@
       0.9946598802828004
     ]
   },
-  "_per_type_entropies": {
+  "per_type_entropies": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": []
   },
-  "_class_sizes": {
+  "class_sizes": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": []

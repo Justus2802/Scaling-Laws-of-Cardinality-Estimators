@@ -56,8 +56,8 @@ class TestFeatureOrder(unittest.TestCase):
         # The sampler deliberately excludes Block E (motifs / G5 are out of scope),
         # so FEATURE_ORDER must equal the measured schema with Block E's feature
         # names removed, in the same order.
-        self.assertEqual(len(FEATURE_ORDER), 97)
-        self.assertEqual(len(set(FEATURE_ORDER)), 97)  # no duplicates
+        self.assertEqual(len(FEATURE_ORDER), 99)
+        self.assertEqual(len(set(FEATURE_ORDER)), 99)  # no duplicates
         block_e_names = set(BlockE.feature_names())
         schema_minus_e = [
             k for k in ReducedGraphSignature().as_dict() if k not in block_e_names
@@ -97,7 +97,7 @@ class TestUniformRangeSampler(unittest.TestCase):
 
     def test_integer_features_are_whole(self):
         out = self.sampler.sample(seed=1)
-        # _INTEGER_FEATURES spans the whole 124-feature signature; the sampler
+        # _INTEGER_FEATURES spans the whole 126-feature signature; the sampler
         # covers only A/B/C/D/F (Block E motifs are out of its scope), so intersect.
         for feat in set(_INTEGER_FEATURES) & set(FEATURE_ORDER):
             if math.isnan(out[feat]):

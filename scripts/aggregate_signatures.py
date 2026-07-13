@@ -10,7 +10,7 @@ of block plots, per-block JSON, a text summary, and the combined
 This script emits the *public*, flat layout the proposal (§3.3 step 3) names:
 one ``data/signatures/<name>.json`` per graph, each the graph's combined
 ``{"source", "features"}`` signature — so a downstream consumer can read every
-KG's 124-feature vector from a single directory without walking the corpus tree.
+KG's 126-feature vector from a single directory without walking the corpus tree.
 
 It is a pure copy/normalise over what ``kgsynth measure`` already wrote; it does
 **not** re-measure anything. (Re-measuring the corpus — to pick up 2.5's public

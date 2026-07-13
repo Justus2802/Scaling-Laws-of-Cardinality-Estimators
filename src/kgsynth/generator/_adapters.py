@@ -30,19 +30,38 @@ def sample_quantiles_trunc(fit, n: int, rng: np.random.Generator):
     return np.interp(rng.random(n), QUANTILE_LEVELS, qs)
 
 
-def sample_powerlaw(alpha: float, n: int, rng: np.random.Generator) -> np.ndarray:
-    """``n`` continuous power-law(α) draws on ``[1, ∞)`` via inverse-CDF.
+def sample_powerlaw_trunc(alpha: float, lo: float, hi: float, n: int,
+                          rng: np.random.Generator) -> np.ndarray:
+    """``n`` continuous power-law(α) draws truncated to ``[lo, hi]`` via inverse-CDF.
 
-    For ``p(x) ∝ x^(−α)`` on ``x ≥ 1`` the inverse CDF is
-    ``x = (1 − u)^(−1/(α−1))``. Returns uniform ones when ``α`` is NaN or ``≤ 1``
-    (no usable tail shape → callers get equal weights = the neutral fallback).
+    For ``p(x) ∝ x^(−α)`` on ``lo ≤ x ≤ hi`` the inverse CDF is
+    ``x = (lo^a + u·(hi^a − lo^a))^(1/a)`` with ``a = 1 − α``. Every power law in
+    the generator is drawn this way: each quantity it samples (CS-template reuse,
+    per-relation multiplicity, degree) is bounded, and the fits are truncated MLEs
+    over those bounds. Drawing unbounded and clamping instead would deposit an atom
+    of probability mass on ``hi`` rather than redistributing it over the support.
+
+    Degenerate inputs collapse to a constant ``lo``, which normalises to equal
+    weights — the neutral fallback: an unusable exponent (NaN, or ``α ≤ 1``, which
+    includes the ``a = 0`` singularity) or an empty range (``hi ≤ lo``, or a NaN
+    bound from a fit that did not converge).
+
+    :param alpha: power-law exponent (NaN or ``≤ 1`` → flat).
+    :param lo: lower bound of the support (floored at 1).
+    :param hi: upper bound of the support.
+    :param n: number of draws.
+    :param rng: RNG for the sampling.
+    :returns: float array of length ``n``, all values in ``[lo, hi]``.
     """
     if n <= 0:
         return np.array([], dtype=float)
-    if math.isnan(alpha) or alpha <= 1.0:
-        return np.ones(n, dtype=float)
+    lo = float(lo) if math.isfinite(lo) and lo > 1.0 else 1.0
+    hi = float(hi)
+    if math.isnan(alpha) or alpha <= 1.0 or not math.isfinite(hi) or hi <= lo:
+        return np.full(n, lo, dtype=float)
+    a1 = 1.0 - alpha
     u = rng.random(n)
-    return (1.0 - u) ** (-1.0 / (alpha - 1.0))
+    return (lo ** a1 + u * (hi ** a1 - lo ** a1)) ** (1.0 / a1)
 
 
 # Default tail exponent when the degree power-law fit is degenerate but the
@@ -94,20 +113,14 @@ def sample_degree_sequence(alpha: float, p90: float, d_max: float, mean_deg: flo
     n_tail = max(1, int(round(n * _DEGSEQ_TAIL_FRACTION)))
     n_body = n - n_tail
 
-    def _trunc_powerlaw(lo_t: float, hi_t: float, size: int, exp_t: float) -> np.ndarray:
-        """Inverse-CDF draws from a power law(exp_t) truncated to [lo_t, hi_t]."""
-        if size <= 0:
-            return np.array([], dtype=np.int64)
-        if hi_t <= lo_t:
-            return np.full(size, int(round(lo_t)), dtype=np.int64)
-        a1 = 1.0 - exp_t
-        u = rng.random(size)
-        vals = (lo_t ** a1 + u * (hi_t ** a1 - lo_t ** a1)) ** (1.0 / a1)
+    def _degrees(lo_t: float, hi_t: float, size: int, exp_t: float) -> np.ndarray:
+        """Integer degrees from a power law(exp_t) truncated to [lo_t, hi_t]."""
+        vals = sample_powerlaw_trunc(exp_t, lo_t, hi_t, size, rng)
         return np.round(vals).astype(np.int64)
 
     # Extreme-value-matched tail exponent: expected max of n_tail draws = hi.
     alpha_tail = 1.0 + math.log(n_tail) / math.log(hi / lo) if hi > lo and n_tail > 1 else alpha
-    tail = _trunc_powerlaw(lo, hi, n_tail, alpha_tail)
+    tail = _degrees(lo, hi, n_tail, alpha_tail)
     if hi > lo:
         tail[np.argmax(tail)] = int(round(hi))   # ensure the sampled max hits the target max
 
@@ -115,7 +128,7 @@ def sample_degree_sequence(alpha: float, p90: float, d_max: float, mean_deg: flo
     # subset so the overall mean matches mean_deg (edge conservation) without
     # distorting the body shape. A body lighter than the budget is left as-is —
     # Stage 2's edge-budget top-up covers the shortfall.
-    body = _trunc_powerlaw(1.0, lo, n_body, alpha)
+    body = _degrees(1.0, lo, n_body, alpha)
     if n_body > 0 and np.isfinite(mean_deg):
         excess = float(body.sum() + tail.sum()) - n * float(mean_deg)
         nz = np.where(body > 0)[0]

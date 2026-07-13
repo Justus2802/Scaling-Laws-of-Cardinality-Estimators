@@ -18,7 +18,7 @@ from collections import defaultdict, deque
 import igraph
 import numpy as np
 
-from ._adapters import sample_powerlaw, sample_quantiles_trunc
+from ._adapters import sample_powerlaw_trunc, sample_quantiles_trunc
 from ._constants import _RDF_TYPE
 from .._logging import get_logger
 from .schema import Schema
@@ -315,22 +315,21 @@ def instantiate(
         return pool
 
     def _assign_templates(entities: list[int], pool: list[np.ndarray], reuse_zipf: float,
-                          target: list, reuse_vmax: float = float("nan")) -> None:
+                          target: list, reuse_vmin: float = float("nan"),
+                          reuse_vmax: float = float("nan")) -> None:
         """Assign entities to templates: floor each template at ≥1 entity (so every distinct
         (inverse-)CS is realised), then distribute the rest by a power-law(reuse_zipf) reuse
-        tail. ``reuse_vmax`` truncates the raw reuse draws, mirroring the measured truncated
-        power-law's upper bound so no template dominates beyond the target's observed max
-        recurrence; NaN → unbounded. Writes the chosen relation-set into ``target[v]``.
-        Empty pool → empty set."""
+        tail. The tail is drawn *truncated* to ``[reuse_vmin, reuse_vmax]`` — the support the
+        measured cs_freq law was fitted over — so no template's share exceeds the target's
+        observed max recurrence, and none of the mass a clamp would pile up at the bound
+        survives. Writes the chosen relation-set into ``target[v]``. Empty pool → empty set."""
         n_p = len(pool)
         if n_p == 0:
             for v in entities:
                 target[v] = np.array([], dtype=int)
             return
         order = rng.permutation(len(entities))
-        fit = sample_powerlaw(reuse_zipf, n_p, rng)
-        if np.isfinite(reuse_vmax) and reuse_vmax >= 1.0:
-            fit = np.minimum(fit, reuse_vmax)
+        fit = sample_powerlaw_trunc(reuse_zipf, reuse_vmin, reuse_vmax, n_p, rng)
         sfit = fit.sum()
         fit = fit / sfit if sfit > 0 else np.full(n_p, 1.0 / n_p)
         for rank, oi in enumerate(order):
@@ -366,6 +365,7 @@ def instantiate(
     for g in range(n_sg):
         _assign_templates(buckets_sg.get(g, []), group_fwd_pools[g],
                           schema.cs_template_zipf, entity_cs,
+                          reuse_vmin=schema.cs_template_vmin,
                           reuse_vmax=schema.cs_template_vmax)
     used = len({frozenset(int(x) for x in entity_cs[v])
                 for v in range(actual_V) if entity_cs[v] is not None and len(entity_cs[v])})
@@ -408,6 +408,7 @@ def instantiate(
     for g in range(n_og):
         _assign_templates(buckets_og.get(g, []), group_inv_pools[g],
                           schema.inv_cs_template_zipf, entity_inv_cs,
+                          reuse_vmin=schema.inv_cs_template_vmin,
                           reuse_vmax=schema.inv_cs_template_vmax)
     inv_used = len({frozenset(int(x) for x in entity_inv_cs[v])
                     for v in range(actual_V)
@@ -604,11 +605,13 @@ def instantiate(
             continue
         predicate = schema.relations[rel_idx]
 
-        # Out-side: edges per subject = power-law(α_obj) tail × cs_size^a_obj (G2b). Floor each
-        # subject at ≥1 (object-multiplicity ≥1 when r ∈ CS), distribute the surplus, then cap
-        # at |O_r| (a subject reaches ≤ |O_r| distinct objects) + redistribute.
+        # Out-side: edges per subject = power-law(α_obj) tail on [1, obj_mult_max] (the range
+        # α was fitted over) × cs_size^a_obj (G2b). Floor each subject at ≥1
+        # (object-multiplicity ≥1 when r ∈ CS), distribute the surplus, then cap at |O_r|
+        # (a subject reaches ≤ |O_r| distinct objects) + redistribute.
         subj_ids = np.asarray(S_r, dtype=np.int64)
-        w_out = sample_powerlaw(_relation_alpha(schema.obj_alpha_q), n_sr, rng)
+        w_out = sample_powerlaw_trunc(_relation_alpha(schema.obj_alpha_q),
+                                      1.0, schema.obj_mult_max, n_sr, rng)
         cs_sizes = np.array([len(entity_cs[s]) for s in S_r], dtype=float)
         w_out = w_out * np.power(np.maximum(cs_sizes, 1.0), schema.a_obj)
         # Capacity weighting: allocation ∝ remaining quota (target − placed).
@@ -633,10 +636,12 @@ def instantiate(
         out_cap = np.maximum(tgt_out[subj_ids] - out_degrees[subj_ids], 0).astype(np.int64)
         _cap_redistribute(m_obj, n_or, w_out, hard_cap=out_cap)
 
-        # In-side: edges per object (over O_r) = power-law(α_subj) subject-multiplicity tail ×
-        # capacity weighting × inv_cs_size^a_subj (G2b), then cap at |S_r| (≤ |S_r| distinct
-        # subjects per object) + redistribute. The object-stub multiset *is* the subject-mult law.
-        w_in = sample_powerlaw(_relation_alpha(schema.subj_alpha_q), n_or, rng)
+        # In-side: edges per object (over O_r) = power-law(α_subj) subject-multiplicity tail on
+        # [1, subj_mult_max] × capacity weighting × inv_cs_size^a_subj (G2b), then cap at |S_r|
+        # (≤ |S_r| distinct subjects per object) + redistribute. The object-stub multiset *is*
+        # the subject-mult law.
+        w_in = sample_powerlaw_trunc(_relation_alpha(schema.subj_alpha_q),
+                                     1.0, schema.subj_mult_max, n_or, rng)
         # in_degrees starts at ones, so placed edges = in_degrees − 1.
         w_in = w_in * np.maximum(tgt_in[obj_ids] - (in_degrees[obj_ids] - 1.0), 0.0)
         if schema.a_subj != 0.0:

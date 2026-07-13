@@ -35,14 +35,15 @@ _GENERATOR_READS = [
     "a.num_entities", "a.num_relations", "a.mean_degree",
     "b.out_degree_fit.alpha", "b.in_degree_fit.alpha", "b.relation_zipf.exponent",
     "b.obj_alpha_q", "b.subj_alpha_q", "b.a_obj", "b.a_subj",
+    "b.obj_mult_max", "b.subj_mult_max",
     "b.out_degree_max", "b.out_degree_p90", "b.in_degree_max", "b.in_degree_p90",
     "b.recip_symmetric_frac", "b.recip_symmetric_value",
     "c.num_classes", "c.class_size_fit.alpha", "c.edge_multiplicity",
     "c.bidirectional_ratio", "c.subj_cooc_exp", "c.obj_cooc_exp",
     "c.type_rel_spectrum_exp",
     "d.num_distinct_cs", "d.inv_num_distinct_cs", "d.cs_size_q", "d.inv_cs_size_q",
-    "d.cs_freq_fit.alpha", "d.cs_freq_fit.v_max",
-    "d.inv_cs_freq_fit.alpha", "d.inv_cs_freq_fit.v_max",
+    "d.cs_freq_fit.alpha", "d.cs_freq_fit.v_min", "d.cs_freq_fit.v_max",
+    "d.inv_cs_freq_fit.alpha", "d.inv_cs_freq_fit.v_min", "d.inv_cs_freq_fit.v_max",
     "e.triangle_count", "e.four_cycle_count", "e.five_cycle_count",
     "e.six_cycle_count", "e.diamond_count", "e.k4_count", "e.tailed_triangle_count",
     "f.num_components", "f.largest_component_fraction",
@@ -86,11 +87,11 @@ class TestFeatureDict(unittest.TestCase):
     def setUpClass(cls):
         cls.sig = _load()
 
-    def test_has_all_124_features(self):
+    def test_has_all_126_features(self):
         feats = self.sig.as_features()
         expected = sum(len(c.feature_names()) for c in _BLOCK_CLASSES.values())
         self.assertEqual(len(feats), expected)
-        self.assertEqual(len(feats), 124)
+        self.assertEqual(len(feats), 126)
 
     def test_keys_match_block_feature_names(self):
         feats = self.sig.as_features()

@@ -61,6 +61,8 @@ class BlockB(SignatureBlock):
         self._relation_zipf = _NOT_CALCULATED           # G1
         self._obj_alpha_q = _NOT_CALCULATED             # G2 object side
         self._subj_alpha_q = _NOT_CALCULATED            # G2 subject side
+        self._obj_mult_max = _NOT_CALCULATED            # G2 upper bound (object side)
+        self._subj_mult_max = _NOT_CALCULATED           # G2 upper bound (subject side)
         self._a_obj = _NOT_CALCULATED                   # G2b object-side offset
         self._a_subj = _NOT_CALCULATED                  # G2b subject-side offset
         self._recip_symmetric_frac = _NOT_CALCULATED    # P(symmetric) per edge-freq bin
@@ -101,6 +103,14 @@ class BlockB(SignatureBlock):
     @property
     def subj_alpha_q(self) -> QuantileFit:
         return QuantileFit(*self._require("subj_alpha_q", self._subj_alpha_q))
+
+    @property
+    def obj_mult_max(self) -> float:
+        return self._require("obj_mult_max", self._obj_mult_max)
+
+    @property
+    def subj_mult_max(self) -> float:
+        return self._require("subj_mult_max", self._subj_mult_max)
 
     @property
     def a_obj(self) -> float:
@@ -211,6 +221,19 @@ class BlockB(SignatureBlock):
             counts = np.fromiter(obj_map.values(), dtype=int, count=len(obj_map))
             subj_alphas.append(_fit_powerlaw(counts).alpha)
 
+        # Upper bound of each multiplicity law: the largest object-/subject-
+        # multiplicity any (subject, relation) / (object, relation) reaches. The
+        # per-relation alphas are truncated MLEs over a bounded range, so Stage 2
+        # needs that bound to draw from the same bounded law instead of an
+        # unbounded one. NaN when no relation has any (in-)edges to count — the
+        # same "nothing measured" outcome as the alpha quantiles below.
+        self._obj_mult_max = float(
+            max((max(m.values()) for m in subj_obj_count.values()), default=float("nan"))
+        )
+        self._subj_mult_max = float(
+            max((max(m.values()) for m in obj_subj_count.values()), default=float("nan"))
+        )
+
         self._obj_alphas = np.array([a for a in obj_alphas if np.isfinite(a)], dtype=float)
         self._subj_alphas = np.array([a for a in subj_alphas if np.isfinite(a)], dtype=float)
         self._obj_alpha_q = fit_quantiles(self._obj_alphas, lo=_ALPHA_LO, hi=_ALPHA_HI)
@@ -299,11 +322,12 @@ class BlockB(SignatureBlock):
         return self
 
     def as_vector(self) -> list[float]:
-        """Flatten to a fixed-length 32-vector for cross-KG comparison.
+        """Flatten to a fixed-length 35-vector for cross-KG comparison.
 
         Layout: out-degree (alpha, xmin); in-degree (alpha, xmin); relation Zipf
         (exponent, x_min); object-α quantile function (7 levels); subject-α
-        quantile function (7 levels); offsets a_obj, a_subj; out/in degree
+        quantile function (7 levels); object/subject multiplicity maxima (2 — the
+        upper bounds of the two α laws); offsets a_obj, a_subj; out/in degree
         max/p90 (4); per-relation reciprocity — P(symmetric) per edge-frequency bin
         (6 levels) + the symmetric-mode reciprocity magnitude (1 scalar).
 
@@ -320,6 +344,8 @@ class BlockB(SignatureBlock):
             self._safe_scalar(lambda: self.relation_zipf.x_min),
             *self._safe_iter(lambda: self.obj_alpha_q, n_q),
             *self._safe_iter(lambda: self.subj_alpha_q, n_q),
+            self._safe_scalar(lambda: self.obj_mult_max),
+            self._safe_scalar(lambda: self.subj_mult_max),
             self._safe_scalar(lambda: self.a_obj),
             self._safe_scalar(lambda: self.a_subj),
             self._safe_scalar(lambda: self.out_degree_max),
@@ -340,6 +366,7 @@ class BlockB(SignatureBlock):
         ]
         for side in ("obj", "subj"):
             names += [f"{side}_mult_alpha_{suffix}" for suffix in QUANTILE_SUFFIXES]
+        names += ["obj_mult_max", "subj_mult_max"]
         names += ["a_obj", "a_subj"]
         names += ["out_degree_max", "out_degree_p90", "in_degree_max", "in_degree_p90"]
         names += [f"recip_symmetric_frac_bin{i}" for i in range(len(QUANTILE_LEVELS) - 1)]
@@ -350,7 +377,7 @@ class BlockB(SignatureBlock):
     def get_na_vec(cls) -> list[float]:
         """Return a NaN vector the same length as as_vector()."""
         n_q = len(QUANTILE_LEVELS)
-        return [float("nan")] * (6 + 2 * n_q + 2 + 4 + (n_q - 1) + 1)
+        return [float("nan")] * (6 + 2 * n_q + 2 + 2 + 4 + (n_q - 1) + 1)
 
     @classmethod
     def _state_from_features(cls, feats: dict[str, float]) -> dict:
@@ -377,6 +404,8 @@ class BlockB(SignatureBlock):
             "_subj_alpha_q": QuantileFit(
                 *[feats[f"subj_mult_alpha_{s}"] for s in QUANTILE_SUFFIXES]
             ),
+            "_obj_mult_max": cls._int(feats, "obj_mult_max"),
+            "_subj_mult_max": cls._int(feats, "subj_mult_max"),
             "_a_obj": feats["a_obj"],
             "_a_subj": feats["a_subj"],
             "_out_degree_max": cls._int(feats, "out_degree_max"),
@@ -434,6 +463,7 @@ class BlockB(SignatureBlock):
             f"IQR=[{s.q25:.3f},{s.q75:.3f}] cutoffs=[{s.q0:.2f},{s.q100:.2f}]",
             f"  subj mult-alpha quantiles: median={ss.q50:.3f} "
             f"IQR=[{ss.q25:.3f},{ss.q75:.3f}] cutoffs=[{ss.q0:.2f},{ss.q100:.2f}]",
+            f"  mult maxima    : obj={self.obj_mult_max:.0f}  subj={self.subj_mult_max:.0f}",
             f"  CS-size offset : a_obj={self.a_obj:.4f}  a_subj={self.a_subj:.4f}",
             f"  out-degree     : max={self.out_degree_max}  p90={self.out_degree_p90:.1f}",
             f"  in-degree      : max={self.in_degree_max}  p90={self.in_degree_p90:.1f}",

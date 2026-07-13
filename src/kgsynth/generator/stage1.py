@@ -294,8 +294,9 @@ def sample_schema(
         float(d.cs_freq_fit.alpha)
         if not math.isnan(d.cs_freq_fit.alpha) else DEFAULT_ZIPF_EXPONENT
     )
-    # Truncate Stage-2 reuse draws at the measured max recurrence: the fitted
-    # α covers the full bounded range, so unbounded draws would over-skew.
+    # Support of the Stage-2 reuse draw: cs_freq's α is a truncated MLE over
+    # [v_min, v_max], so Stage 2 draws from that same bounded law.
+    cs_template_vmin = float(d.cs_freq_fit.v_min)
     cs_template_vmax = float(d.cs_freq_fit.v_max)
 
     # --- Degree targets from Block B ---
@@ -316,6 +317,10 @@ def sample_schema(
     # (a legitimate small-R outcome — obj_alpha_q/subj_alpha_q are per-relation fits).
     obj_alpha_q = tuple(b.obj_alpha_q)
     subj_alpha_q = tuple(b.subj_alpha_q)
+    # Upper bound of each multiplicity law — Stage 2 draws the per-relation tail on
+    # [1, max] rather than unbounded (α was fitted over exactly that range).
+    obj_mult_max = float(b.obj_mult_max)
+    subj_mult_max = float(b.subj_mult_max)
     a_obj = float(b.a_obj)
     a_subj = float(b.a_subj)
     cs_size_q = tuple(d.cs_size_q)
@@ -326,6 +331,7 @@ def sample_schema(
         float(d.inv_cs_freq_fit.alpha)
         if not math.isnan(d.inv_cs_freq_fit.alpha) else DEFAULT_ZIPF_EXPONENT
     )
+    inv_cs_template_vmin = float(d.inv_cs_freq_fit.v_min)
     inv_cs_template_vmax = float(d.inv_cs_freq_fit.v_max)
 
     log.info(
@@ -408,6 +414,7 @@ def sample_schema(
         relation_reciprocity=relation_reciprocity,
         cs_num_templates=cs_num_templates,
         cs_template_zipf=cs_template_zipf,
+        cs_template_vmin=cs_template_vmin,
         cs_template_vmax=cs_template_vmax,
         target_out_degrees=target_out_degrees,
         target_in_degrees=target_in_degrees,
@@ -415,10 +422,13 @@ def sample_schema(
         a_obj=a_obj,
         subj_alpha_q=subj_alpha_q,
         a_subj=a_subj,
+        obj_mult_max=obj_mult_max,
+        subj_mult_max=subj_mult_max,
         cs_size_q=cs_size_q,
         inv_cs_size_q=inv_cs_size_q,
         inv_cs_num_templates=inv_cs_num_templates,
         inv_cs_template_zipf=inv_cs_template_zipf,
+        inv_cs_template_vmin=inv_cs_template_vmin,
         inv_cs_template_vmax=inv_cs_template_vmax,
         subj_group_probs=subj_group_probs,
         subj_group_weights=subj_group_weights,

@@ -67,7 +67,10 @@ class Schema:
     # measurements — no "0/None → degraded mode" sentinels.
     cs_num_templates: int = 0       # number of reusable CS templates (Block D num_distinct_cs)
     cs_template_zipf: float = 2.0   # Zipf exponent for template frequency (cs_freq α)
-    cs_template_vmax: float = float("nan")  # reuse-draw truncation (cs_freq v_max); NaN → unbounded
+    # Support of the reuse draw — the bounds cs_freq's truncated power law was fitted
+    # over (v_min/v_max). NaN → flat reuse weights (degenerate fit).
+    cs_template_vmin: float = float("nan")
+    cs_template_vmax: float = float("nan")
     # Per-entity target degree sequences sampled from Block B's signature-vector
     # components (degree power-law α, p90/max scalars, mean degree); replace the
     # old global max-degree caps.
@@ -82,12 +85,17 @@ class Schema:
     # per-relation subj-mult α quantiles
     subj_alpha_q: tuple = field(default_factory=lambda: _NAN_Q)
     a_subj: float = 0.0                  # G2b inv_cs_size^a in-degree offset (0 → no effect)
+    # Upper bounds of the two multiplicity laws (Block B obj/subj_mult_max); the
+    # per-relation α is a truncated MLE over [1, max], so the draw is too.
+    obj_mult_max: float = float("nan")
+    subj_mult_max: float = float("nan")
     cs_size_q: tuple = field(default_factory=lambda: _NAN_Q)     # forward CS-size quantiles
     # Inverse CS (object side), symmetric to forward CS.
     inv_cs_size_q: tuple = field(default_factory=lambda: _NAN_Q)
     inv_cs_num_templates: int = 0        # number of reusable inverse-CS templates
     inv_cs_template_zipf: float = 2.0    # inverse-CS reuse skew (inv_cs_freq α)
-    inv_cs_template_vmax: float = float("nan")  # reuse-draw truncation (inv_cs_freq v_max)
+    inv_cs_template_vmin: float = float("nan")  # reuse-draw support (inv_cs_freq v_min/v_max)
+    inv_cs_template_vmax: float = float("nan")
     # Block F-derived connectivity targets.
     target_num_components: int = 1    # target weakly-connected component count
     target_lcc: float = 1.0           # target largest-component fraction of entity nodes

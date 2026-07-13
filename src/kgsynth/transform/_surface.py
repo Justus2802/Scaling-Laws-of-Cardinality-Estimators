@@ -1,7 +1,7 @@
 """The perturbation surface: which signature features a transform may move.
 
-Only **74 of the 124** signature features are read by the generator. Perturbing
-any of the other 50 is a silent no-op — the graph comes out identical — so a
+Only **78 of the 126** signature features are read by the generator. Perturbing
+any of the other 48 is a silent no-op — the graph comes out identical — so a
 config naming one is a user error, not a lenient default: :func:`validate` raises.
 
 Two further categories are accepted but warned about, because "perturbing" them
@@ -58,6 +58,7 @@ _SURFACE_A = ("num_entities", "num_relations", "mean_degree")
 _SURFACE_B = (
     "out_degree_alpha", "in_degree_alpha", "relation_zipf_exponent",
     "out_degree_max", "out_degree_p90", "in_degree_max", "in_degree_p90",
+    "obj_mult_max", "subj_mult_max",
     "a_obj", "a_subj", "recip_symmetric_value",
     *_q_group("obj_mult_alpha"), *_q_group("subj_mult_alpha"),
     *COUPLED[4],  # recip_symmetric_frac_bin0..5
@@ -72,7 +73,8 @@ _SURFACE_C = (
 
 _SURFACE_D = (
     "num_distinct_cs", "inv_num_distinct_cs",
-    "cs_freq_alpha", "cs_freq_vmax", "inv_cs_freq_alpha", "inv_cs_freq_vmax",
+    "cs_freq_alpha", "cs_freq_vmin", "cs_freq_vmax",
+    "inv_cs_freq_alpha", "inv_cs_freq_vmin", "inv_cs_freq_vmax",
     *_q_group("cs_size"), *_q_group("inv_cs_size"),
 )
 

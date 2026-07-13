@@ -1,6 +1,6 @@
 """Signature transforms — seeded, deterministic maps over the flat feature dict.
 
-A transform takes the 124-key feature dict of a measured signature
+A transform takes the 126-key feature dict of a measured signature
 (:meth:`kgsynth.Signature.as_features`) and returns a modified copy, which
 :meth:`kgsynth.Signature.from_features` turns back into a generator-usable target::
 
@@ -20,7 +20,7 @@ Available transforms
                       what it needs (a measured rescaling law for the extensive
                       features) and why that is blocked on data.
 
-Only **74 of the 124** features are read by the generator; perturbing any other is
+Only **78 of the 126** features are read by the generator; perturbing any other is
 a silent no-op, so :func:`validate` raises on one. See :mod:`._surface`.
 """
 
