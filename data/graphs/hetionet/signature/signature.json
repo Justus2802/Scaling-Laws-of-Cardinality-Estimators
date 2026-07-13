@@ -1,9 +1,10 @@
 {
-  "source": "/Users/cl/data/Cross_Platform_Work/Uni/tum/bpc/BPC-Data-Engeneering-Topic-2/data/graphs/hetionet/hetionet.nt",
+  "source": "data/graphs/hetionet/hetionet.nt",
   "features": {
     "num_entities": 45158.0,
     "num_relations": 24.0,
     "mean_degree": 49.82942114354046,
+    "type_edge_frac": 0.0,
     "out_degree_alpha": 1.1371395429202988,
     "out_degree_xmin": 1.0,
     "in_degree_alpha": 1.1401444378571928,
@@ -26,8 +27,8 @@
     "subj_mult_alpha_q100": 3.0,
     "obj_mult_max": 15036.0,
     "subj_mult_max": 2656.0,
-    "a_obj": 0.6644372712751447,
-    "a_subj": -0.2242982541593972,
+    "a_obj": 0.664437271275147,
+    "a_subj": -0.22429825415939972,
     "out_degree_max": 23866.0,
     "out_degree_p90": 103.0,
     "in_degree_max": 2718.0,

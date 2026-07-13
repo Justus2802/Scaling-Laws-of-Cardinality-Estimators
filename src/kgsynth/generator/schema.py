@@ -38,6 +38,10 @@ class Schema:
     num_triples : int
         Target |E| (from Block A's mean degree × |V|); used by Stage 2 to size
         the graph.
+    type_edge_frac : float
+        rdf:type share of |E| (Block A).  Splits the budget: Stage 2 emits
+        ``round(E · type_edge_frac)`` rdf:type edges outside the content budget, and
+        ``content_E = E − that`` is the budget the degree targets are built against.
     """
 
     relations: list
@@ -47,6 +51,7 @@ class Schema:
     type_relation_probs: np.ndarray
     num_entities: int
     num_triples: int
+    type_edge_frac: float = 0.0
     # Block C-derived pair-level edge multiplicity (overlap) targets. Defaults = 1.0
     # reproduce the legacy near-simple graph (no shared pairs). Stage 2 biases the
     # stub pairing toward already-used pairs (parallel) / reversed pairs (bidir) to

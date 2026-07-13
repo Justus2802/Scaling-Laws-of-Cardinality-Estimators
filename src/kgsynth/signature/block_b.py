@@ -156,11 +156,28 @@ class BlockB(SignatureBlock):
         per-relation power-law exponents, the across-relation quantile function
         of those exponents, the relation-usage Zipf exponent, and the
         CS-size→multiplicity OLS offsets.
+
+        The degree distributions are *entity content* degrees: rdf:type edges and
+        the class nodes they point at are both excluded. A class node is not an
+        entity — Stage 2 creates it separately, outside the content-edge budget —
+        so counting it inflates the in-degree tail with what is really a class's
+        instance count (aids: an in-degree max of 184493, i.e. |class0|), which the
+        generator would then impose on entities.
         """
-        non_lit_vs = g.vs.select(is_literal_eq=False)
-        if len(non_lit_vs):
-            out_degrees = np.array(g.degree(non_lit_vs, mode="out"), dtype=int)
-            in_degrees = np.array(g.degree(non_lit_vs, mode="in"), dtype=int)
+        # A class node is any target of an rdf:type edge; there is no is_class
+        # vertex attribute (kg_io stores rdf:type as an ordinary predicate).
+        class_vids = ({e.target for e in g.es if e["predicate"] == RDF_TYPE}
+                      if g.ecount() else set())
+        entity_vs = [v.index for v in g.vs
+                     if not v["is_literal"] and v.index not in class_vids]
+        if entity_vs and g.ecount():
+            content_g = g.subgraph_edges(g.es.select(predicate_ne=RDF_TYPE),
+                                         delete_vertices=False)
+            out_degrees = np.array(content_g.degree(entity_vs, mode="out"), dtype=int)
+            in_degrees = np.array(content_g.degree(entity_vs, mode="in"), dtype=int)
+        elif entity_vs:
+            out_degrees = np.zeros(len(entity_vs), dtype=int)
+            in_degrees = np.zeros(len(entity_vs), dtype=int)
         else:
             out_degrees = np.array([], dtype=int)
             in_degrees = np.array([], dtype=int)

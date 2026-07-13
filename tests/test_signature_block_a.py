@@ -6,7 +6,7 @@ import igraph
 from kgsynth.kg_io import load_kg
 from kgsynth.signature import BlockA
 
-_VECTOR_LEN = 3   # num_entities, num_relations, mean_degree
+_VECTOR_LEN = 4   # num_entities, num_relations, mean_degree, type_edge_frac
 
 
 class TestBlockASmallFixtures(unittest.TestCase):

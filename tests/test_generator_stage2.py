@@ -21,11 +21,13 @@ def _q(center: float, spread: float, lo: float, hi: float):
     return fit_quantiles(rng.normal(center, spread, 500), lo=lo, hi=hi)
 
 
-def _make_block_a(num_entities=300, num_triples=1200, num_relations=4) -> BlockA:
+def _make_block_a(num_entities=300, num_triples=1200, num_relations=4,
+                  type_edge_frac=0.0) -> BlockA:
     a = BlockA()
     a._num_entities = num_entities
     a._num_relations = num_relations
     a._mean_degree = num_triples / num_entities
+    a._type_edge_frac = type_edge_frac
     return a
 
 
@@ -99,11 +101,20 @@ def _content_edges(g) -> list:
     return [e for e in g.es if e["predicate"] != _RDF_TYPE]
 
 
+def _content_budget(schema) -> int:
+    """|E| minus the rdf:type edges, which are wired outside the content budget."""
+    n_type = min(schema.num_entities,
+                 round(schema.num_triples * schema.type_edge_frac)) if schema.types else 0
+    return schema.num_triples - n_type
+
+
 class TestStage2EdgeBudget(unittest.TestCase):
     """Phase-2 per-relation multiplicity-then-PA with edge conservation."""
 
     def setUp(self):
-        self.a = _make_block_a(num_entities=300, num_triples=1200, num_relations=4)
+        # type_edge_frac=0.25 → 300 rdf:type edges of 1200, i.e. one per entity.
+        self.a = _make_block_a(num_entities=300, num_triples=1200, num_relations=4,
+                               type_edge_frac=0.25)
         self.c = _make_block_c(num_classes=3)
         self.b = _make_block_b()
         self.d = _make_block_d()
@@ -113,8 +124,7 @@ class TestStage2EdgeBudget(unittest.TestCase):
         schema = sample_schema(self.a, self.c, b=self.b, d=self.d, f=self.f, seed=0)
         g = instantiate(schema, seed=1)
         content = _content_edges(g)
-        # content budget = |E| − one rdf:type edge per entity (types present)
-        target = schema.num_triples - schema.num_entities
+        target = _content_budget(schema)
         # Never exceeds budget (throttle); lands close (only duplicate-triple
         # rejection in PA can undershoot).
         self.assertLessEqual(len(content), target)
@@ -165,7 +175,8 @@ class TestStage2Reciprocity(unittest.TestCase):
     """Bidirectional pair-overlap construction driven by per-relation reciprocity."""
 
     def setUp(self):
-        self.a = _make_block_a(num_entities=300, num_triples=1200, num_relations=4)
+        self.a = _make_block_a(num_entities=300, num_triples=1200, num_relations=4,
+                               type_edge_frac=0.25)
         self.c = _make_block_c(num_classes=3)
         self.d = _make_block_d()
         self.f = _make_block_f()
@@ -200,7 +211,7 @@ class TestStage2Reciprocity(unittest.TestCase):
         schema = sample_schema(self.a, self.c, b=b_recip, d=self.d, f=self.f, seed=0)
         g = instantiate(schema, seed=1)
         content = _content_edges(g)
-        target = schema.num_triples - schema.num_entities
+        target = _content_budget(schema)
         self.assertLessEqual(len(content), target)
         self.assertGreaterEqual(len(content), 0.85 * target)
 

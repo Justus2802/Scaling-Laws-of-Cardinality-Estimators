@@ -1,9 +1,10 @@
 {
-  "source": "/Users/cl/data/Cross_Platform_Work/Uni/tum/bpc/BPC-Data-Engeneering-Topic-2/data/test_graphs/wn18rr_v4/wn18rr_v4.nt",
+  "source": "data/test_graphs/wn18rr_v4/wn18rr_v4.nt",
   "features": {
     "num_entities": 3861.0,
     "num_relations": 9.0,
     "mean_degree": 2.549080549080549,
+    "type_edge_frac": 0.0,
     "out_degree_alpha": 1.5541751232685757,
     "out_degree_xmin": 1.0,
     "in_degree_alpha": 1.8254892552055386,
@@ -26,8 +27,8 @@
     "subj_mult_alpha_q100": NaN,
     "obj_mult_max": 20.0,
     "subj_mult_max": 59.0,
-    "a_obj": 0.0870979980686068,
-    "a_subj": 0.1398547699499936,
+    "a_obj": 0.08709799806860687,
+    "a_subj": 0.13985476994999346,
     "out_degree_max": 26.0,
     "out_degree_p90": 5.0,
     "in_degree_max": 64.0,

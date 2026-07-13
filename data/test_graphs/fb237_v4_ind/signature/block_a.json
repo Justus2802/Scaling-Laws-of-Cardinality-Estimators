@@ -1,5 +1,6 @@
 {
-  "_num_entities": 3051,
-  "_num_relations": 200,
-  "_mean_degree": 4.770239265814487
+  "num_entities": 3051,
+  "num_relations": 200,
+  "mean_degree": 4.770239265814487,
+  "type_edge_frac": 0.0
 }

@@ -112,6 +112,62 @@ class TestBlockBSerialize(unittest.TestCase):
         np.testing.assert_array_equal(b.as_vector(), restored.as_vector())
 
 
+class TestBlockBDegreesExcludeTypes(unittest.TestCase):
+    """Degrees are *entity content* degrees: rdf:type edges and class nodes are excluded.
+
+    A class node is not an entity (Stage 2 creates it separately, outside the content-edge
+    budget), so counting it puts a class's instance count in the in-degree tail — aids
+    measured an in-degree max of 184493, i.e. |class0|, which the generator then imposed
+    on entities.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def _load_ttl(self, content: str) -> igraph.Graph:
+        path = os.path.join(self.tmp, "g.ttl")
+        with open(path, "w") as f:
+            f.write(content)
+        return load_kg(path)
+
+    def _typed_graph(self) -> igraph.Graph:
+        # a -> b, a -> c content edges; a, b, c all typed ex:C.  So ex:C has in-degree 3
+        # (it is the graph's highest-in-degree vertex) and a has out-degree 3 (2 content
+        # + 1 rdf:type).
+        return self._load_ttl(
+            "@prefix ex: <http://example.org/> .\n"
+            "ex:a ex:p ex:b . ex:a ex:p ex:c .\n"
+            "ex:a a ex:C . ex:b a ex:C . ex:c a ex:C .\n"
+        )
+
+    def test_type_edge_not_counted_in_out_degree(self):
+        b = BlockB().calculate(self._typed_graph())
+        # a's content out-degree is 2, not 3 — its rdf:type edge is wired outside the
+        # content budget and must not inflate the target the generator steers toward.
+        self.assertEqual(b.out_degree_max, 2)
+
+    def test_class_node_not_an_entity(self):
+        b = BlockB().calculate(self._typed_graph())
+        # ex:C has in-degree 3 (the graph max) but is a class, not an entity. The content
+        # in-degree max is 1 (b and c each receive one ex:p edge).
+        self.assertEqual(b.in_degree_max, 1)
+
+    def test_degree_node_set_excludes_class_nodes(self):
+        b = BlockB().calculate(self._typed_graph())
+        # 3 entities (a, b, c) — the class node ex:C is not one of them.
+        self.assertEqual(len(b._out_degrees), 3)
+        self.assertEqual(len(b._in_degrees), 3)
+
+    def test_untyped_graph_unaffected(self):
+        b = BlockB().calculate(self._load_ttl(
+            "@prefix ex: <http://example.org/> .\n"
+            "ex:a ex:p ex:b . ex:a ex:p ex:c .\n"
+        ))
+        self.assertEqual(b.out_degree_max, 2)
+        self.assertEqual(b.in_degree_max, 1)
+        self.assertEqual(len(b._out_degrees), 3)
+
+
 class TestBlockBReciprocity(unittest.TestCase):
     """Per-relation reciprocity: frequency-binned P(symmetric) + symmetric-mode value."""
 

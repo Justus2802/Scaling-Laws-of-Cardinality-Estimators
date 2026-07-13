@@ -18,7 +18,12 @@ from collections import defaultdict, deque
 import igraph
 import numpy as np
 
-from ._adapters import sample_powerlaw_trunc, sample_quantiles_trunc
+from ._adapters import (
+    _DEGSEQ_TAIL_FRACTION as DEGSEQ_TAIL_FRACTION,
+    repair_degree_sum,
+    sample_powerlaw_trunc,
+    sample_quantiles_trunc,
+)
 from ._constants import _RDF_TYPE
 from .._logging import get_logger
 from .schema import Schema
@@ -26,6 +31,7 @@ from .schema import Schema
 log = get_logger(__name__)
 
 # ── Tuning constants (Stage-2 wiring) — adjust here ─────────────────────────────
+DEGREE_QUOTA_SLACK = 1.0       # Σ degree targets / content_E (1.0 = no headroom over budget)
 MAX_PAIR_RETRY = 16            # stub-pairing attempts before an edge is dropped
 CAP_REDISTRIBUTE_PASSES = 8    # bounded passes when redistributing capped allocations
 SIZE_ESCAPE_FAILS = 32         # consecutive template collisions before growing min CS size
@@ -194,8 +200,12 @@ def instantiate(
     actual_V = max(2, schema.num_entities)
     actual_E_target = max(1, schema.num_triples)
 
-    # rdf:type edges (one per entity when types exist) come out of the budget
-    n_type_edges = actual_V if num_types > 0 else 0
+    # rdf:type edges come out of the budget, sized by the measured rdf:type share of E
+    # (Block A's type_edge_frac) rather than assumed to be one per entity — a target
+    # graph may type only some of its entities. Capped at |V| since Stage 2 gives an
+    # entity at most one type.
+    n_type_edges = (min(actual_V, int(round(actual_E_target * schema.type_edge_frac)))
+                    if num_types > 0 else 0)
     content_E_target = max(0, actual_E_target - n_type_edges)
 
     # CS size (number of relation slots per entity) comes from the measured cs_size
@@ -382,9 +392,19 @@ def instantiate(
     # non-empty template — so there is no "no CS to score" case to fall back from.
     if num_types > 0:
         log_ptr = np.log(np.maximum(schema.type_relation_probs, 1e-12))  # (T, R)
+        best_t = np.empty(actual_V, dtype=int)
+        best_score = np.empty(actual_V, dtype=float)
         for v in range(actual_V):
-            entity_types[v] = int(np.argmax(log_ptr[:, entity_cs[v]].sum(axis=1)))
-        log.info("Stage 2: post-hoc type assignment from CS (log P(CS|type) argmax)")
+            scores = log_ptr[:, entity_cs[v]].sum(axis=1)
+            best_t[v] = int(np.argmax(scores))
+            best_score[v] = float(scores[best_t[v]])
+        # Only n_type_edges entities are typed — the measured rdf:type share of E need
+        # not cover every entity. Type the best-scoring ones (the entities whose CS most
+        # clearly identifies a type); the rest stay untyped and emit no rdf:type edge.
+        typed = np.argsort(-best_score, kind="stable")[:n_type_edges]
+        entity_types[typed] = best_t[typed]
+        log.info("Stage 2: post-hoc type assignment from CS — %d/%d entities typed",
+                 len(typed), actual_V)
 
     # --- 3b. Inverse CS membership (in-relations per entity), symmetric to forward ---
     # Group-based inverse CS, symmetric to the forward group path above. obj_group_probs
@@ -465,18 +485,30 @@ def instantiate(
     #     Sampled target values are rank-matched to (inverse-)CS size so entities
     #     with larger characteristic sets receive the larger degree targets —
     #     preserving the CS-size↔degree correlation (G2b) and keeping the
-    #     ≥1-edge-per-CS-relation floor feasible.  A multinomial top-up ensures
-    #     Σ targets covers the content-edge budget so capacity caps cannot
-    #     starve edge conservation.
+    #     ≥1-edge-per-CS-relation floor feasible.  Both sides are then repaired to
+    #     the SAME quota budget, so Σ tgt_out == Σ tgt_in: a directed wiring needs
+    #     matched stub counts, and the old one-sided top-up could only ever add,
+    #     leaving an over-budget side (aids' in-side sat at ~3× content_E, so its
+    #     quota never bound and in-degree steering was inert there).
     # ------------------------------------------------------------------
+    # Quota headroom over content_E. tgt_out is a HARD per-node cap below, and an
+    # exhausted tgt_in zeroes an object's weight (which can drop edges in
+    # _cap_redistribute, or skip a relation outright), so the targets need slack
+    # over the budget or the wiring starves and the deficit-recovery pass has to
+    # place the remainder with a much blunter rule. 1.0 = no slack.
+    quota_budget = int(round(DEGREE_QUOTA_SLACK * content_E_target))
+    # Hub entries the sum repair must not touch — they carry the p90/max targets.
+    n_hub = max(1, int(round(actual_V * DEGSEQ_TAIL_FRACTION)))
 
     def _sample_target_degrees(
         samples: np.ndarray, rank_scores: np.ndarray, *, floor: np.ndarray | None = None,
     ) -> np.ndarray:
         """Rank-match sampled degree targets to per-entity scores (descending), apply an
-        optional per-entity floor, then top up multinomially so Σ targets ≥ content-edge
-        budget. Floor is applied before the top-up so the shortfall it can introduce is
-        always covered — the two steps are fused here rather than left to call-site order.
+        optional per-entity floor, then repair the sum to ``quota_budget`` exactly.
+
+        The repair is two-sided (it trims as well as tops up) and skips the hub entries,
+        so an over-budget side is brought back down without the p90/max targets being
+        rescaled along with it.
         """
         vals = np.sort(np.asarray(samples, dtype=np.int64))[::-1]
         if vals.size < actual_V:
@@ -487,23 +519,20 @@ def instantiate(
         tgt[order] = vals
         if floor is not None:
             tgt = np.maximum(tgt, floor)
-        shortfall = content_E_target - int(tgt.sum())
-        if shortfall > 0:
-            tot = float(tgt.sum())
-            p = tgt / tot if tot > 0 else np.full(actual_V, 1.0 / actual_V)
-            tgt = tgt + rng.multinomial(shortfall, p)
-        return tgt
+        adjustable = np.ones(actual_V, dtype=bool)
+        adjustable[np.argsort(-tgt, kind="stable")[:n_hub]] = False
+        return repair_degree_sum(
+            tgt, quota_budget, rng, floor=floor, adjustable=adjustable,
+        )
 
     cs_sizes_all = np.array(
         [len(entity_cs[v]) if entity_cs[v] is not None else 0 for v in range(actual_V)],
         dtype=np.int64,
     )
-    samples_out = np.asarray(schema.target_out_degrees, dtype=np.int64)
-    if num_types > 0:
-        # The measured out-degree includes each typed entity's rdf:type edge,
-        # which is wired separately from the content budget.
-        samples_out = np.maximum(samples_out - 1, 0)
+    # No rdf:type correction on either side: Block B measures entity *content* degrees
+    # (type edges and class nodes excluded), and Stage 1 sampled against the content mean.
     # floor=cs_sizes_all keeps the ≥1-edge-per-CS-relation floor feasible on the out-side.
+    samples_out = np.asarray(schema.target_out_degrees, dtype=np.int64)
     tgt_out = _sample_target_degrees(samples_out, cs_sizes_all.astype(float), floor=cs_sizes_all)
 
     in_scores = np.array(

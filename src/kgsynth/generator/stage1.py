@@ -304,8 +304,17 @@ def sample_schema(
     # — the degree power-law α, the p90/max degree scalars and the mean degree —
     # never Block B's raw retained arrays.  Stage 2 steers wiring toward these, so
     # the whole distribution (body, p90, max) is targeted rather than a single cap.
+    #
+    # The mean handed over is the *content* mean, not Block A's E/V.  Block B measures
+    # entity content degrees (rdf:type edges and class nodes excluded), and Stage 2
+    # wires rdf:type edges outside the content budget, so E/V would describe a
+    # different population than the fits do — an over-budget on both sides, and on the
+    # in-side (where entities never receive a type edge at all) it has no counterpart
+    # correction downstream.  Both sides now sum to exactly content_E, which is what
+    # a directed wiring needs (Σ out = Σ in = E).
     n_ent = a.num_entities
-    mean_deg = num_triples / n_ent if n_ent > 0 else float("nan")
+    content_E = num_triples * (1.0 - float(a.type_edge_frac))
+    mean_deg = content_E / n_ent if n_ent > 0 else float("nan")
     target_out_degrees = sample_degree_sequence(
         b.out_degree_fit.alpha, b.out_degree_p90, b.out_degree_max, mean_deg, n_ent, rng)
     target_in_degrees = sample_degree_sequence(
@@ -409,6 +418,7 @@ def sample_schema(
         type_relation_probs=type_relation_probs,
         num_entities=a.num_entities,
         num_triples=num_triples,
+        type_edge_frac=float(a.type_edge_frac),
         edge_multiplicity=edge_multiplicity,
         bidirectional_ratio=bidirectional_ratio,
         relation_reciprocity=relation_reciprocity,

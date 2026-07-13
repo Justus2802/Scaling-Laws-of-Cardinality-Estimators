@@ -3,10 +3,18 @@
 ## Context
 
 Stage 2 currently ends `_sample_target_degrees` (`stage2.py:490-494`) with a multinomial "top-up" that
-raises `Σ targets` until it reaches `content_E`. It reads as a rounding patch. It is not. Measured
-across all 9 corpus signatures, it is covering a **27–57% shortfall** in the Stage-1 out-degree
-sequence, and it pays for that by inflating the p90/max degree targets by **1.2–2.3×** — undoing the
-extreme-value matching in `_adapters.py:122-125` that exists specifically to land the max on target.
+raises `Σ targets` until it reaches `content_E`. It reads as a rounding patch. It is not: it is
+covering a systematic shortfall in the Stage-1 degree sequence, and it pays for that by inflating the
+p90/max degree targets — undoing the extreme-value matching in `_adapters.py:122-125` that exists
+specifically to land the max on target.
+
+> **Baseline note (measured against the regenerated signatures at `e97b1ef`).** The truncated-MLE
+> change in that commit already shrank the generic shortfall a lot: `Σout/content_E` is now 0.88–1.00
+> on most graphs (it was 0.43–0.63 under the old auto-searched-`xmin` fits) and max inflation is down
+> to 1.00–1.15×. What remains is concentrated exactly where the two root causes below bite: **aids**
+> (`Σout/E`=0.64, `Σin/E`=**2.98**, in:out 4.7×, max inflation 1.42×), **codex_l** (0.78 / 0.85,
+> 1.30×) and **hetionet** (0.88 / 0.69). Any earlier draft of this plan quoting a "27–57% shortfall"
+> was measured against the stale `data/signatures/*.json` aggregates — ignore those figures.
 
 Two root causes, both upstream of the top-up:
 
@@ -23,14 +31,14 @@ Two root causes, both upstream of the top-up:
    stub balance (`Σout = Σin = content_E`) for 8 of 9 graphs, which is its real and undersold job. But
    it cannot touch a side that *overshoots*, which is exactly aids' failure mode.
 
-Stage-1 sums today, as a fraction of `content_E`:
+Stage-1 sums today, as a fraction of `content_E` (measured at `e97b1ef`):
 
 | graph | Σout / E | Σin / E | in:out |
 |---|---|---|---|
-| aids | 0.43 | **2.47** | 5.8× |
-| codex_l | 0.50 | 0.78 | 1.6× |
-| dbpedia100k | 0.63 | 0.95 | 1.5× |
-| hetionet | 0.60 | 0.40 | 0.7× |
+| aids | 0.64 | **2.98** | 4.7× |
+| codex_l | 0.78 | 0.85 | 1.1× |
+| hetionet | 0.88 | 0.69 | 0.8× |
+| dbpedia100k | 0.91 | 1.00 | 1.1× |
 | swdf | 1.00 | 1.00 | 1.0× |
 
 **Intended outcome:** degree fits that describe entities and content edges only; a single explicit,

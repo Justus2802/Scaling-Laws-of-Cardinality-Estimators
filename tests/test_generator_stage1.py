@@ -24,16 +24,19 @@ def _make_block_a(
     num_entities: int = 100,
     num_triples: int = 500,
     num_relations: int = 10,
+    type_edge_frac: float = 0.0,
 ) -> BlockA:
     """Build a reduced BlockA by setting its measured fields directly.
 
     Reduced BlockA stores mean degree (E/V); the generator recovers the edge
-    budget as round(V × mean_degree).
+    budget as round(V × mean_degree). ``type_edge_frac`` splits that budget into
+    rdf:type vs content edges.
     """
     a = BlockA()
     a._num_entities = num_entities
     a._num_relations = num_relations
     a._mean_degree = (num_triples / num_entities) if num_entities else 0.0
+    a._type_edge_frac = type_edge_frac
     return a
 
 
@@ -388,6 +391,61 @@ class TestValidateTarget(unittest.TestCase):
         self.d._num_distinct_cs = float("nan")
         with self.assertRaises(ValueError):
             sample_schema(self.a, self.c, d=self.d, b=self.b, f=self.f, seed=0)
+
+
+class TestDegreeBudget(unittest.TestCase):
+    """Σ out == Σ in == content_E, and the hub tail survives the sum repair.
+
+    A directed wiring needs matched stub counts, but the two degree sequences are sampled
+    independently, so the sum has to be imposed. It is imposed *exactly*, on both sides,
+    and the repair skips the hub entries so the p90/max targets are not rescaled along
+    with it (the old one-sided ∝-target top-up inflated max by up to 2.3×).
+    """
+
+    def _schema(self, *, type_edge_frac=0.0, num_triples=500, num_entities=100):
+        a = _make_block_a(num_entities=num_entities, num_triples=num_triples,
+                          type_edge_frac=type_edge_frac)
+        return sample_schema(a, _make_block_c(), d=_make_block_d(), b=_make_block_b(),
+                             f=_make_block_f(), seed=0)
+
+    def _content_E(self, schema):
+        n_type = min(schema.num_entities,
+                     round(schema.num_triples * schema.type_edge_frac)) \
+            if schema.types else 0
+        return schema.num_triples - n_type
+
+    def test_both_sides_sum_to_content_budget_untyped(self):
+        s = self._schema(type_edge_frac=0.0)
+        content_E = self._content_E(s)
+        self.assertEqual(int(s.target_out_degrees.sum()), content_E)
+        self.assertEqual(int(s.target_in_degrees.sum()), content_E)
+
+    def test_both_sides_sum_to_content_budget_typed(self):
+        # 100 of 500 triples are rdf:type → the degree targets cover only the other 400.
+        s = self._schema(type_edge_frac=0.2)
+        content_E = self._content_E(s)
+        self.assertLess(content_E, s.num_triples)   # the split actually bites
+        self.assertEqual(int(s.target_out_degrees.sum()), content_E)
+        self.assertEqual(int(s.target_in_degrees.sum()), content_E)
+
+    def test_stub_balance(self):
+        s = self._schema(type_edge_frac=0.2)
+        self.assertEqual(int(s.target_out_degrees.sum()), int(s.target_in_degrees.sum()))
+
+    def test_max_degree_target_not_inflated(self):
+        # The sum repair must not touch the hub tail: _make_block_b sets out/in max = 20,
+        # and sample_degree_sequence pins the sampled max onto it.
+        s = self._schema()
+        self.assertEqual(int(s.target_out_degrees.max()), 20)
+        self.assertEqual(int(s.target_in_degrees.max()), 20)
+
+    def test_oversized_sequence_is_trimmed_not_left_high(self):
+        # A tiny edge budget against the same degree fits makes the raw sequence overshoot.
+        # The old top-up was one-sided (`if shortfall > 0`) and would leave it overshot —
+        # this is the aids in-side failure mode, where targets sat at ~3× the budget and
+        # the quota never bound.
+        s = self._schema(num_triples=120, num_entities=100)
+        self.assertEqual(int(s.target_out_degrees.sum()), self._content_E(s))
 
 
 if __name__ == "__main__":

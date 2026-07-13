@@ -1,9 +1,10 @@
 {
-  "source": "/Users/cl/data/Cross_Platform_Work/Uni/tum/bpc/BPC-Data-Engeneering-Topic-2/data/graphs/codex_l/codex_l.nt",
+  "source": "data/graphs/codex_l/codex_l.nt",
   "features": {
     "num_entities": 77951.0,
     "num_relations": 69.0,
     "mean_degree": 7.856692024476915,
+    "type_edge_frac": 0.0,
     "out_degree_alpha": 1.1560363552445607,
     "out_degree_xmin": 1.0,
     "in_degree_alpha": 1.4642528013125722,
@@ -26,8 +27,8 @@
     "subj_mult_alpha_q100": 3.0,
     "obj_mult_max": 195.0,
     "subj_mult_max": 14071.0,
-    "a_obj": -0.05583657407163421,
-    "a_subj": 0.03866258471443774,
+    "a_obj": -0.05583657407163418,
+    "a_subj": 0.03866258471443831,
     "out_degree_max": 265.0,
     "out_degree_p90": 14.0,
     "in_degree_max": 18433.0,

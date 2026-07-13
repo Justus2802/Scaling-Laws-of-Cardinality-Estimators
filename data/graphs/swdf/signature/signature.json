@@ -1,9 +1,10 @@
 {
-  "source": "/Users/cl/data/Cross_Platform_Work/Uni/tum/bpc/BPC-Data-Engeneering-Topic-2/data/graphs/swdf/swdf.nt",
+  "source": "data/graphs/swdf/swdf.nt",
   "features": {
     "num_entities": 76711.0,
     "num_relations": 170.0,
     "mean_degree": 3.158034701672511,
+    "type_edge_frac": 0.0,
     "out_degree_alpha": 1.2413986552468481,
     "out_degree_xmin": 1.0,
     "in_degree_alpha": 1.9838713813356172,
@@ -26,8 +27,8 @@
     "subj_mult_alpha_q100": 3.0,
     "obj_mult_max": 620.0,
     "subj_mult_max": 9148.0,
-    "a_obj": 0.175846142957884,
-    "a_subj": 0.12195176302582361,
+    "a_obj": 0.17584614295788317,
+    "a_subj": 0.12195176302582428,
     "out_degree_max": 623.0,
     "out_degree_p90": 10.0,
     "in_degree_max": 9148.0,

@@ -53,7 +53,7 @@ _GROUP_OF: dict[str, tuple[str, ...]] = {
 
 # Read by the generator (traced through generator/stage{1,2,3}.py). Grouped by
 # block for reviewability; the flat frozenset is what callers use.
-_SURFACE_A = ("num_entities", "num_relations", "mean_degree")
+_SURFACE_A = ("num_entities", "num_relations", "mean_degree", "type_edge_frac")
 
 _SURFACE_B = (
     "out_degree_alpha", "in_degree_alpha", "relation_zipf_exponent",

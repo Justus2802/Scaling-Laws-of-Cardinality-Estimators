@@ -54,8 +54,8 @@
   },
   "obj_mult_max": 20.0,
   "subj_mult_max": 59.0,
-  "a_obj": 0.0870979980686068,
-  "a_subj": 0.1398547699499936,
+  "a_obj": 0.08709799806860687,
+  "a_subj": 0.13985476994999346,
   "recip_symmetric_frac": {
     "__sig_type__": "ndarray",
     "dtype": "float64",

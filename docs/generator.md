@@ -44,11 +44,11 @@ independent of any single measured graph.
 
 ### The flat feature dict: `as_features()` / `from_features()`
 
-A third route in and out of a `Signature` — the **flat 124-key feature dict**, the same
+A third route in and out of a `Signature` — the **flat 127-key feature dict**, the same
 `{name: value}` mapping stored under `"features"` in a measured `signature.json`:
 
 ```python
-feats = sig.as_features()          # 124 public feature names -> float
+feats = sig.as_features()          # 127 public feature names -> float
 feats["mean_degree"] *= 1.2
 Generator(Signature.from_features(feats)).sample(seed=1)
 ```
@@ -76,7 +76,7 @@ new one (`kgsynth.signature_sampler`), interpolate — and still generate from t
 
 | Block | Field | Used for |
 |---|---|---|
-| A | `num_entities`, `num_relations`, `mean_degree` | `V`, `R`, edge budget `E = round(mean_degree·V)` |
+| A | `num_entities`, `num_relations`, `mean_degree`, `type_edge_frac` | `V`, `R`, edge budget `E = round(mean_degree·V)`, and its split into `n_type_edges = round(E·type_edge_frac)` + `content_E` |
 | B | `relation_zipf` | relation-frequency weights (Zipf exponent) |
 | B | `obj_alpha_q` | per-relation **object**-multiplicity tail α (out-degree shape), as a quantile function |
 | B | `subj_alpha_q` | per-relation **subject**-multiplicity tail α (in-side shape), as a quantile function |
@@ -199,9 +199,14 @@ legitimately still be NaN (small-R Zipf/CS fits, untyped-KG class stats) are cal
    the expected maximum of the tail draws lands on the measured max) rather than
    the fitted degree α — the global fit is too shallow for this range and would
    overshoot mid-tail mass; the remaining 90% (the body) draw from the *same*
-   fitted-α power law truncated to `[1, p90]`, then a random subset of nonzero
-   draws is zero-inflated so the overall mean matches `E/V` (edge conservation)
-   without distorting the body shape. The whole distribution (body, p90,
+   fitted-α power law truncated to `[1, p90]`, then repaired — up *or* down, via
+   `repair_degree_sum` — so the sequence sums to exactly `content_E` (edge
+   conservation). The repair is confined to the body: the tail carries p90/max and is
+   never touched. The mean it targets is the **content** mean `content_E/V`, not `E/V`
+   — Block B measures entity content degrees (rdf:type edges and class nodes excluded)
+   and Stage 2 wires rdf:type edges outside this budget, so `E/V` would describe a
+   different population than the fits do. Both sides sum to `content_E`, which is what
+   a directed wiring needs (`Σ out = Σ in = E`). The whole distribution (body, p90,
    max) is targeted, not just a single hard bound; `out_degree_p90`/`max` and
    `in_degree_p90`/`max` are never NaN on a real graph, so degree steering is always active.
 
@@ -212,7 +217,11 @@ legitimately still be NaN (small-R Zipf/CS fits, untyped-KG class stats) are cal
 Builds the graph by sampling characteristic sets first, then wiring edges per relation. This is
 where most of the structural fidelity is established.
 
-1. **Budget split.** `content_E = E − n_type_edges` (one `rdf:type` edge per entity when `T>0`).
+1. **Budget split.** `content_E = E − n_type_edges`, where `n_type_edges = round(E ·
+   type_edge_frac)` (Block A), capped at `|V|` since an entity gets at most one type. Sized from the
+   *measured* rdf:type share rather than assumed to be one per entity — a target graph may type only
+   some of its entities. The `n_type_edges` best-scoring entities (by the CS→type score in §5b) are
+   typed; the rest stay untyped and emit no `rdf:type` edge.
 2. **CS size source.** Each CS's *size* is drawn from `cs_size_q` (`sample_quantiles_trunc`,
    inverse-transform of the stored quantile function) — never NaN on a real graph, so the
    quantile draw always applies (no budget-derived fallback). CS size sets **relation
@@ -247,11 +256,27 @@ where most of the structural fidelity is established.
 5c. **Target degree assignment** (`target_out_degrees`/`target_in_degrees`, always sampled by
    Stage 1 — see Stage 1 §7): sampled target values
    are **rank-matched** to CS size (out-side; largest target → largest CS, floored at `|CS|` so the
-   ≥1-edge-per-CS-relation floor stays feasible) and to inverse-CS size (in-side). A multinomial
-   top-up ensures `Σ targets ≥ content_E` so quota caps cannot starve edge conservation. Allocation
-   weight is ∝ remaining quota `(target − placed)⁺` ("capacity" weighting), plus a **hard per-node
-   quota** via `_cap_redistribute(hard_cap=…)`. (An expected-degree "chunglu" alternative — weight ∝
-   target degree, no hard cap — was evaluated and rejected: tail overshoot ≈ +116% on max-out.)
+   ≥1-edge-per-CS-relation floor stays feasible) and to inverse-CS size (in-side). Both sides are then
+   repaired to the **same** quota budget `round(DEGREE_QUOTA_SLACK · content_E)` via
+   `repair_degree_sum`, so `Σ tgt_out == Σ tgt_in`: a directed wiring needs matched stub counts, and
+   the two sides are sampled independently. Allocation weight is ∝ remaining quota `(target − placed)⁺`
+   ("capacity" weighting), plus a **hard per-node quota** via `_cap_redistribute(hard_cap=…)`.
+   (An expected-degree "chunglu" alternative — weight ∝ target degree, no hard cap — was evaluated and
+   rejected: tail overshoot ≈ +116% on max-out.)
+
+   The repair is **two-sided** (it trims as well as tops up) and **skips the hub entries**, which is
+   what an earlier one-directional multinomial top-up (`if shortfall > 0`, weight ∝ target) could not
+   do. That top-up had two failure modes. It could not bring an *over*-budget side down — aids' in-side
+   sat at ~3× `content_E`, so its quota never bound and in-degree steering was inert there — and
+   because its weight was ∝ target it acted as a rescale, multiplying the hubs by the same factor and
+   inflating the p90/max targets the tail was built to hit (up to 2.3× on max-out), undoing the
+   extreme-value matching in `sample_degree_sequence`.
+
+   `DEGREE_QUOTA_SLACK` (default **1.0**, i.e. no headroom) trades the deficit-recovery volume against
+   degree fidelity. Slack lets the wiring loop place more edges through the main path — deficit on
+   fb237_v4 falls 3229 → 1076 at slack 1.25 — but a loose quota spreads edges evenly instead of feeding
+   the hubs, so the realised max degree decays monotonically (fb237_v4 max-out 195 → 137 → 115 at slack
+   1.0 / 1.25 / 1.5, against a signature target of 195). 1.0 hits the target exactly and is kept.
 5d. **Pool overlap for reciprocal relations** (when `relation_reciprocity` is set):
    real graphs pack directed content edges onto **shared** node pairs (parallel/multi-relational
    overlap and bidirectional pairs), whereas the CS-first construction above assigns forward and
@@ -489,8 +514,12 @@ the concrete quantities Stage 1/2 need (NaN-safe; NaN → neutral fallback):
   via inverse-CDF; constant `lo` (→ equal weights after normalisation, the neutral fallback) when
   α is NaN/≤1 or the range is empty. The single power-law sampler — see the contract below.
 - `sample_degree_sequence(alpha, p90, d_max, mean_deg, n, rng)` — the per-entity target degree
-  sequence behind Stage 1 §7: an extreme-value-matched tail on `[p90, max]` plus a
-  zero-inflated fitted-α body on `[1, p90]`; `None` when `p90`/`max` are unavailable.
+  sequence behind Stage 1 §7: an extreme-value-matched tail on `[p90, max]` plus a fitted-α body on
+  `[1, p90]`, body-repaired to sum to exactly `n · mean_deg`; `None` when `p90`/`max` are unavailable.
+- `repair_degree_sum(seq, target_sum, rng, floor=…, adjustable=…)` — forces a degree sequence onto an
+  exact sum. Two-sided (trims as well as tops up), and the caller marks the hub entries
+  non-`adjustable` so the p90/max targets survive. Shared by `sample_degree_sequence` (Stage 1) and
+  `_sample_target_degrees` (Stage 2), which is why both sides of the wiring balance.
 
 ### The truncated power-law contract
 

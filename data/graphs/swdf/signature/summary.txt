@@ -1,7 +1,8 @@
 === Reduced Block A: Size & Vocabulary (G0) ===
-  num_entities : 76711
-  num_relations: 170
-  mean_degree  : 3.1580
+  num_entities  : 76711
+  num_relations : 170
+  mean_degree   : 3.1580
+  type_edge_frac: 0.0000
 
 === Reduced Block B: Relation Frequency & Multiplicity (G1/G2/G2b) ===
   out-degree fit : alpha=1.2414  xmin=1.0

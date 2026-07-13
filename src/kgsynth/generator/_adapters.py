@@ -72,6 +72,73 @@ _DEGSEQ_FALLBACK_ALPHA = 2.5
 _DEGSEQ_TAIL_FRACTION = 0.1
 
 
+def repair_degree_sum(
+    seq: np.ndarray,
+    target_sum: int,
+    rng: np.random.Generator,
+    *,
+    floor: np.ndarray | None = None,
+    adjustable: np.ndarray | None = None,
+) -> np.ndarray:
+    """Adjust ``seq`` so it sums to exactly ``target_sum``, two-sided and shape-safe.
+
+    A degree sequence has to satisfy two things at once: its *shape* (the α / p90 /
+    max targets) and its *sum* (the edge budget — Σ out = Σ in = E is what makes a
+    directed wiring possible at all). They conflict, and the sum is the one that
+    cannot bend: everything downstream is built against the edge count.
+
+    So the sum is enforced here, and the distortion is pushed into the part of the
+    distribution that carries the least information:
+
+    * **Deficit** — spread the missing units uniformly over the adjustable entries.
+      Uniform, *not* ∝ seq: a proportional top-up is a rescale, which multiplies the
+      hubs by the same factor and destroys the p90/max targets the tail was built to
+      hit (it inflated max by up to 2.3× before this existed).
+    * **Surplus** — remove units from adjustable entries weighted by their headroom
+      above ``floor``, so the trim comes off the entries that have room to give.
+
+    ``adjustable`` (default: all) marks entries the repair may touch — callers pass a
+    mask that **excludes the tail**, so the extreme-value-matched max survives intact.
+    ``floor`` (default: 0) is a per-entry lower bound the trim will not cross; when the
+    floor makes ``target_sum`` unreachable the sequence is left at its floor and the
+    residual is returned unrepaired (the caller's budget is then simply infeasible).
+
+    :param seq: integer degree sequence to repair (not modified in place).
+    :param target_sum: the exact sum to hit.
+    :param rng: RNG for the spread/trim draws.
+    :param floor: per-entry lower bound for trimming.
+    :param adjustable: boolean mask of entries the repair may change.
+    :returns: int64 copy of ``seq`` summing to ``target_sum`` (floor permitting).
+    """
+    out = np.asarray(seq, dtype=np.int64).copy()
+    n = out.size
+    if n == 0:
+        return out
+    lower = (np.zeros(n, dtype=np.int64) if floor is None
+             else np.asarray(floor, dtype=np.int64))
+    idx = (np.arange(n) if adjustable is None
+           else np.where(np.asarray(adjustable, dtype=bool))[0])
+    if idx.size == 0:
+        return out
+
+    delta = int(target_sum) - int(out.sum())
+    if delta > 0:
+        out[idx] += rng.multinomial(delta, np.full(idx.size, 1.0 / idx.size))
+    elif delta < 0:
+        need = -delta
+        while need > 0:
+            headroom = np.maximum(out[idx] - lower[idx], 0)
+            total = int(headroom.sum())
+            if total == 0:
+                break                      # floor-bound: cannot trim any further
+            take = min(need, total)
+            cut = rng.multinomial(take, headroom / total)
+            cut = np.minimum(cut, headroom)   # a multinomial cell can overshoot its entry
+            out[idx] -= cut
+            need -= int(cut.sum())
+    return out
+
+
 def sample_degree_sequence(alpha: float, p90: float, d_max: float, mean_deg: float,
                            n: int, rng: np.random.Generator):
     """Sample an ``n``-node target degree sequence from signature-vector components.
@@ -88,9 +155,14 @@ def sample_degree_sequence(alpha: float, p90: float, d_max: float, mean_deg: flo
       shallow for this range (the empirical tail has a finite-size cutoff) and
       would overshoot mid-tail mass (p99, star counts);
     * the remaining 90% draw from the same power law truncated to ``[1, p90]``
-      (the fit's own body range), then a random subset is zero-inflated so the
-      overall sequence mean matches ``mean_deg`` (edge conservation) without
-      distorting the body shape.
+      (the fit's own body range), and are then repaired — up *or* down — so the
+      sequence sums to exactly ``n · mean_deg`` (edge conservation). The repair is
+      confined to the body: the tail is what carries p90/max, so it is never touched.
+
+    The sum is exact on return, which is what lets Stage 2 drop its old one-sided
+    "top up until Σ ≥ content_E" multinomial. That top-up could only ever *add*, so a
+    sequence that overshot the budget stayed overshot (aids' in-side sat at ~3× the
+    edge budget, leaving its in-degree quota unable to bind at all).
 
     Returns ``None`` when ``p90``/``max`` are unavailable (NaN or < 1) — Stage 2
     then wires without degree steering.
@@ -98,10 +170,11 @@ def sample_degree_sequence(alpha: float, p90: float, d_max: float, mean_deg: flo
     :param alpha: degree power-law exponent (falls back to 2.5 when unusable).
     :param p90: 90th-percentile degree from the signature.
     :param d_max: maximum degree from the signature.
-    :param mean_deg: target mean degree (E/V from Block A).
+    :param mean_deg: target mean degree — the *content* mean (rdf:type edges are
+        wired outside this budget and are excluded from Block B's degree fits).
     :param n: number of target values to draw.
     :param rng: RNG for the sampling.
-    :returns: int64 array of length ``n``, or ``None``.
+    :returns: int64 array of length ``n`` summing to ``round(n · mean_deg)``, or ``None``.
     """
     if n <= 0 or not np.isfinite([p90, d_max]).all() or d_max < 1:
         return None
@@ -124,20 +197,17 @@ def sample_degree_sequence(alpha: float, p90: float, d_max: float, mean_deg: flo
     if hi > lo:
         tail[np.argmax(tail)] = int(round(hi))   # ensure the sampled max hits the target max
 
-    # Body: same power law on its own [1, p90] range, then zero-inflate a random
-    # subset so the overall mean matches mean_deg (edge conservation) without
-    # distorting the body shape. A body lighter than the budget is left as-is —
-    # Stage 2's edge-budget top-up covers the shortfall.
+    # Body: same power law on its own [1, p90] range.
     body = _degrees(1.0, lo, n_body, alpha)
-    if n_body > 0 and np.isfinite(mean_deg):
-        excess = float(body.sum() + tail.sum()) - n * float(mean_deg)
-        nz = np.where(body > 0)[0]
-        if excess > 0 and nz.size:
-            mean_nz = float(body[nz].mean())
-            k = min(nz.size, int(round(excess / max(mean_nz, 1e-9))))
-            if k > 0:
-                body[rng.choice(nz, size=k, replace=False)] = 0
     seq = np.concatenate([body, tail]) if n_body > 0 else tail
+
+    # Repair the sum to the edge budget, body-only (the tail carries p90/max).
+    if n_body > 0 and np.isfinite(mean_deg):
+        is_body = np.zeros(seq.size, dtype=bool)
+        is_body[:n_body] = True
+        seq = repair_degree_sum(
+            seq, int(round(n * float(mean_deg))), rng, adjustable=is_body,
+        )
     return rng.permutation(seq)
 
 
