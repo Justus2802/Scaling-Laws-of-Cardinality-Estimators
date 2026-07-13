@@ -274,9 +274,19 @@ where most of the structural fidelity is established.
 
    `DEGREE_QUOTA_SLACK` (default **1.0**, i.e. no headroom) trades the deficit-recovery volume against
    degree fidelity. Slack lets the wiring loop place more edges through the main path — deficit on
-   fb237_v4 falls 3229 → 1076 at slack 1.25 — but a loose quota spreads edges evenly instead of feeding
-   the hubs, so the realised max degree decays monotonically (fb237_v4 max-out 195 → 137 → 115 at slack
-   1.0 / 1.25 / 1.5, against a signature target of 195). 1.0 hits the target exactly and is kept.
+   fb237_v4 falls 3229 → 1076 at slack 1.25, on aids 89413 → 23055 — but it costs more than it buys, on
+   two counts:
+
+   * a loose quota spreads edges evenly instead of feeding the hubs, so the realised max degree decays
+     monotonically (fb237_v4 max-out 195 → 137 → 115 at slack 1.0 / 1.25 / 1.5, against a signature
+     target of 195);
+   * at high slack the main loop saturates the whole per-relation budget, and `_connect_components`
+     then appends its bridging edges *on top* — so the graph **overshoots |E|** (aids at slack 1.5:
+     804721 edges against a target of 802066). Only slack 1.0 leaves the main loop short enough that
+     bridging + deficit recovery land the edge count exactly on budget.
+
+   So 1.0 is not merely the best point on a tradeoff curve — it is the only value that currently
+   conserves the edge count. Raising it means fixing the bridging-edge double-count first.
 5d. **Pool overlap for reciprocal relations** (when `relation_reciprocity` is set):
    real graphs pack directed content edges onto **shared** node pairs (parallel/multi-relational
    overlap and bidirectional pairs), whereas the CS-first construction above assigns forward and
