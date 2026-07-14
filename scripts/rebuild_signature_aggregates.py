@@ -46,7 +46,10 @@ import matplotlib
 matplotlib.use("Agg")  # block.visualize(mode="text") must not need a display
 
 from kgsynth.corpus import DEFAULT_SEARCH_DIRS  # noqa: E402
-from kgsynth.signature import load_signature_dir  # noqa: E402
+from kgsynth.signature import _BLOCK_CLASSES, load_signature_dir  # noqa: E402
+
+# Signature width, derived rather than hard-coded so it tracks the blocks.
+_N_FEATURES = sum(len(c.feature_names()) for c in _BLOCK_CLASSES.values())
 
 
 def _nan_count(features: dict) -> int:
@@ -136,7 +139,8 @@ def main() -> None:
         is_stale = before != after
         stale += is_stale
         status = ("REPAIRED" if not args.check else "STALE") if is_stale else "ok"
-        print(f"{name:<16} {f'{before}/124 NaN':>16} {f'{after}/124 NaN':>14}   {status}")
+        print(f"{name:<16} {f'{before}/{_N_FEATURES} NaN':>16} "
+              f"{f'{after}/{_N_FEATURES} NaN':>14}   {status}")
 
     if args.check:
         print(f"\n{stale} of {len(targets)} aggregates are stale.")

@@ -39,7 +39,7 @@ python scripts/measure_all_raw.py --graphs aids fb237_v4        # only these gra
 ```
 
 ### `aggregate_signatures.py`
-Copies each graph's combined `signature.json` from the nested per-graph tree (`data/graphs/<name>/signature/`, `data/test_graphs/<name>/signature/`) into the flat public layout `data/signatures/<name>.json` (one `{"source", "features"}` file per graph, 124 features each). Pure copy/normalise — does **not** re-measure. Run it after a corpus re-measurement to refresh the flat copies.
+Copies each graph's combined `signature.json` from the nested per-graph tree (`data/graphs/<name>/signature/`, `data/test_graphs/<name>/signature/`) into the flat public layout `data/signatures/<name>.json` (one `{"source", "features"}` file per graph, 127 features each). Pure copy/normalise — does **not** re-measure. Run it after a corpus re-measurement to refresh the flat copies.
 
 ```
 python scripts/aggregate_signatures.py                 # all corpus graphs

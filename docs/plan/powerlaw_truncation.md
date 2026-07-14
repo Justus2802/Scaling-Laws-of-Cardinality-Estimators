@@ -1,9 +1,20 @@
 # Plan: make every power law consistently truncated (fit **and** sample)
 
-Status: **planned, not started**. Companion to
-[remove_unnecessary_fallbacks.md](remove_unnecessary_fallbacks.md) — do **that** plan first (pure
-deletion, no feature-vector change), then this one, which changes measured values and needs one
-corpus regeneration at the end.
+Status: **executed 2026-07-13** (see `CHANGELOG.md`). Companion to
+[remove_unnecessary_fallbacks.md](remove_unnecessary_fallbacks.md), which landed first (`953eb90`).
+
+Two findings that contradict what is written below, recorded here so the plan is not read as
+retrospectively correct:
+
+1. **The truncated α is *shallower*, not steeper** (Verification §3 predicted steeper). An
+   unbounded MLE must normalise over an infinite tail, which forces `α > 1` and biases it upward;
+   the truncated one is free of that. Corpus degree exponents fell from ≈2.2–2.9 to ≈1.0–1.8.
+   Confirmed against a brute-force MLE, so this is the real optimum, not a fitter artifact.
+2. **Not every feature improved** (Verification §2 asked for no regression). `in_degree_max` got
+   worse (0.038 → 0.239 on fb237_v4) because the old *unbounded* multiplicity draw emitted
+   occasional enormous weights that concentrated in-edges onto a single object — it was hitting the
+   in-degree hub target by accident. The overall error still fell sharply (mean 0.641 → 0.182), and
+   the clamp's runaway CS reuse (max 683 vs a target of 156) is gone.
 
 ## Motivation
 
