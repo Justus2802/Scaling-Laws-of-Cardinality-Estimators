@@ -120,7 +120,7 @@ def _distances(target: Signature, achieved: Signature) -> dict:
     """Per-block distances between the requested target and what was generated.
 
     Two views, matching ``scripts/signature_roundtrip.py``: per-feature relative
-    error over the 126-vector, and the normalised Wasserstein-1 between the fitted
+    error over the 127-vector, and the normalised Wasserstein-1 between the fitted
     distributions (blocks B/C/D expose ``distribution_fits()``).
     """
     t_feats, a_feats = target.as_features(), achieved.as_features()

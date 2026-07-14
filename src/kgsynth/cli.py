@@ -19,6 +19,7 @@ from pathlib import Path
 import numpy as np
 
 from .corpus import DEFAULT_SEARCH_DIRS, load_target_from_corpus
+from .dataset import cli as dataset_cli
 from .generator import Generator, Signature
 from .kg_io import load_kg, save_kg
 from .signature import _ALL_BLOCKS, compute_reduced_signature, write_signature_outputs
@@ -149,18 +150,24 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("right", help="Second KG file")
     c.set_defaults(func=_cmd_compare)
 
+    dataset_cli.add_parser(sub)
+
     return parser
 
 
 def main(argv: list[str] | None = None) -> None:
     """Entry point for the ``kgsynth`` console script.
 
+    Exits non-zero when a subcommand reports failures (``dataset`` returns its
+    failed-unit count), so a partially-failed run is visible to a caller.
+
     :param argv: Argument list; defaults to ``sys.argv[1:]``.
     """
     args = build_parser().parse_args(argv)
-    if args.verbose:
+    # A dataset run logs its progress; without -v it would be silent for hours.
+    if args.verbose or args.command == "dataset":
         logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT)
-    args.func(args)
+    raise SystemExit(args.func(args) or 0)
 
 
 if __name__ == "__main__":

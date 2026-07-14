@@ -1,6 +1,6 @@
 """The perturbation surface: which signature features a transform may move.
 
-Only **78 of the 126** signature features are read by the generator. Perturbing
+Only **79 of the 127** signature features are read by the generator. Perturbing
 any of the other 48 is a silent no-op — the graph comes out identical — so a
 config naming one is a user error, not a lenient default: :func:`validate` raises.
 

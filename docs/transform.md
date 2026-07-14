@@ -6,7 +6,7 @@ A **transform** maps a signature's flat feature dict to another one:
 from kgsynth import Signature, Generator, Perturb, FeatureSpec
 import numpy as np
 
-feats = Signature.from_file("swdf.nt").as_features()          # 126 keys
+feats = Signature.from_file("swdf.nt").as_features()          # 127 keys
 feats, report = Perturb({"mean_degree": FeatureSpec(sigma=0.15)}).apply(
     feats, np.random.default_rng(0)
 )
@@ -26,22 +26,25 @@ attribute names.
 
 ---
 
-## The perturbation surface — 78 of 126 features
+## The perturbation surface — 79 of 127 features
 
-Only **78** of the signature's 126 features are read by the generator. Perturbing any of the other 48
+Only **79** of the signature's 127 features are read by the generator. Perturbing any of the other 48
 is a silent no-op: the graph comes out identical. `kgsynth.transform.validate()` therefore **raises**
 on an off-surface feature rather than accepting it — a duplicate graph produced by a knob that does
 nothing is the worst outcome for a sensitivity study.
 
 | Block | Reached / total | Not reached |
 |---|---|---|
-| A | 3 / 3 | — |
+| A | 4 / 4 | — |
 | B | 32 / 35 | the three `*_xmin` — only `.alpha` / `.exponent` is read off those fits |
 | C | 10 / 29 | `class_size_xmin`; both `cooc_density`; the 14 `row_entropy_q*`; `per_type_entropy_rate/scale` |
 | D | 22 / 25 | `two_step_alpha/vmin/vmax` |
 | E | 7 / 27 | the 20 `path_template_*` / `tree_template_*` — their Stage-3 steering is gated off |
 | F | 4 / 7 | `shortest_path_max/mean/var` — unsteered |
-| | **78 / 126** | **48** |
+| | **79 / 127** | **48** |
+
+These counts are asserted by `test_transform.py::TestSurface`, so a block gaining or losing a feature
+fails there rather than silently changing what a sweep covers.
 
 Two subsets are on the surface but perturb degenerately. `validate()` accepts them **with a warning**:
 
