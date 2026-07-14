@@ -245,6 +245,15 @@ python scripts/signature_pca_trajectory.py wn18rr_v4
 python scripts/signature_pca_trajectory.py wn18rr_v4 --num-checkpoints 5 --rewire-budget 20000
 ```
 
+### `roundtrip_pca.py`
+Takes a path to **any** `.ttl`/`.nt` graph and runs the full pipeline end to end — measure the target signature once, then generate `--num-graphs` synthetic KGs from it (one per seed, mirroring the repeated generation loop's population output), re-measuring each — then projects the target and every synthetic graph into the corpus-fit PCA space (grey dots = real graphs) as a target star with a cloud of synthetic triangles around it, faint arrows from target to each, and reports the mean/std PC drift across the population. Unlike `plot_signature_pca.py` (which needs a corpus *name* and a pre-existing `signature_synth/` sibling), this works from a raw graph path and produces every synthetic graph itself. `--size-agnostic` drops size-dependent features; `--sample-budget` lowers Block E's walk budget on every measurement to trade accuracy for speed (full-fidelity measurement runs `1 + num_graphs` times and dominates the runtime).
+
+```
+python scripts/roundtrip_pca.py data/graphs/swdf/swdf.nt
+python scripts/roundtrip_pca.py mygraph.ttl --num-graphs 20 --rewire-budget 50000
+python scripts/roundtrip_pca.py mygraph.ttl --sample-budget 5000 --out fig.png
+```
+
 ## Maintenance
 
 ### `rerender_signatures.py`
