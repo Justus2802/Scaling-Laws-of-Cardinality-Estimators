@@ -25,15 +25,16 @@ from ._adapters import (
     sample_quantiles_trunc,
 )
 from ._constants import _RDF_TYPE
+from ._ipf import build_support, fit_stubs, solve_edge_budget
 from .._logging import get_logger
 from .schema import Schema
 
 log = get_logger(__name__)
 
 # ── Tuning constants (Stage-2 wiring) — adjust here ─────────────────────────────
-DEGREE_QUOTA_SLACK = 1.0       # Σ degree targets / content_E (1.0 = no headroom over budget)
+# (DEGREE_QUOTA_SLACK is gone: it traded deficit-recovery volume against degree fidelity,
+#  and the IPF allocation leaves no deficit to trade against.)
 MAX_PAIR_RETRY = 16            # stub-pairing attempts before an edge is dropped
-CAP_REDISTRIBUTE_PASSES = 8    # bounded passes when redistributing capped allocations
 SIZE_ESCAPE_FAILS = 32         # consecutive template collisions before growing min CS size
 TEMPLATE_ATTEMPT_FLOOR = 64    # floor on rejection-sampling attempts per template pool
 TEMPLATE_ATTEMPT_FACTOR = 20   # rejection-sampling attempts per requested distinct template
@@ -214,41 +215,6 @@ def instantiate(
     def _draw_size(size_q) -> int:
         """Draw one (forward or inverse) CS size from a quantile fit."""
         return max(1, int(round(float(sample_quantiles_trunc(size_q, 1, rng)[0]))))
-
-    def _cap_redistribute(
-        m: np.ndarray, cap, w: np.ndarray, hard_cap: np.ndarray | None = None
-    ) -> None:
-        """Cap each count and redistribute overflow by weights ``w``.
-
-        ``cap`` is a scalar upper bound (used for |S_r| / |O_r| side caps).
-        ``hard_cap``, if given, is a per-node integer array of remaining capacity;
-        it overrides ``cap`` element-wise with ``min(cap, hard_cap[i])``.
-        Used on both sides: an object takes ≤ |S_r| distinct subjects, a subject
-        reaches ≤ |O_r| distinct objects. Bounded passes; tiny residual is dropped.
-        """
-        if m.size == 0:
-            return
-        caps = (
-            np.minimum(cap, hard_cap)
-            if hard_cap is not None
-            else np.full(m.shape, cap, dtype=np.int64)
-        )
-        if (caps <= 0).all():
-            m[:] = 0
-            return
-        for _ in range(CAP_REDISTRIBUTE_PASSES):
-            overflow = int(np.maximum(m - caps, 0).sum())
-            if overflow == 0:
-                break
-            np.minimum(m, caps, out=m)
-            free = np.where(m < caps)[0]
-            if free.size == 0:
-                break
-            wf = w[free]
-            swf = wf.sum()
-            pf = wf / swf if swf > 0 else np.full(free.size, 1.0 / free.size)
-            m[free] += rng.multinomial(overflow, pf)
-        np.minimum(m, caps, out=m)
 
     log.info(
         "Stage 2: instantiating (seed=%d) V=%d, content-edge target=%d (+%d type edges)",
@@ -481,22 +447,16 @@ def instantiate(
                  "(entities now emitting+receiving a symmetric relation)", n_shared)
 
     # ------------------------------------------------------------------
-    # 3c. Per-entity target degrees (replace the old global max-degree caps).
+    # 3c. Per-entity target degrees.
     #     Sampled target values are rank-matched to (inverse-)CS size so entities
     #     with larger characteristic sets receive the larger degree targets —
     #     preserving the CS-size↔degree correlation (G2b) and keeping the
-    #     ≥1-edge-per-CS-relation floor feasible.  Both sides are then repaired to
-    #     the SAME quota budget, so Σ tgt_out == Σ tgt_in: a directed wiring needs
-    #     matched stub counts, and the old one-sided top-up could only ever add,
-    #     leaving an over-budget side (aids' in-side sat at ~3× content_E, so its
-    #     quota never bound and in-degree steering was inert there).
+    #     ≥1-edge-per-CS-relation floor feasible.  Both sides are repaired to the
+    #     SAME budget, so Σ tgt_out == Σ tgt_in: these become the *row margins* of
+    #     the IPF allocation below, and a transportation problem is only solvable
+    #     when its two margins agree.
     # ------------------------------------------------------------------
-    # Quota headroom over content_E. tgt_out is a HARD per-node cap below, and an
-    # exhausted tgt_in zeroes an object's weight (which can drop edges in
-    # _cap_redistribute, or skip a relation outright), so the targets need slack
-    # over the budget or the wiring starves and the deficit-recovery pass has to
-    # place the remainder with a much blunter rule. 1.0 = no slack.
-    quota_budget = int(round(DEGREE_QUOTA_SLACK * content_E_target))
+    quota_budget = content_E_target
     # Hub entries the sum repair must not touch — they carry the p90/max targets.
     n_hub = max(1, int(round(actual_V * DEGSEQ_TAIL_FRACTION)))
 
@@ -504,26 +464,65 @@ def instantiate(
         samples: np.ndarray, rank_scores: np.ndarray, *, floor: np.ndarray | None = None,
     ) -> np.ndarray:
         """Rank-match sampled degree targets to per-entity scores (descending), apply an
-        optional per-entity floor, then repair the sum to ``quota_budget`` exactly.
+        optional per-entity floor, then repair the sum to ``quota_budget`` **exactly**.
 
-        The repair is two-sided (it trims as well as tops up) and skips the hub entries,
-        so an over-budget side is brought back down without the p90/max targets being
-        rescaled along with it.
+        Exactly is not a nicety here. These are the row margins of the IPF allocation in
+        §4, and a transportation problem is solvable only when its two margins agree: if
+        ``Σ tgt_out ≠ Σ tgt_in`` the wiring inflates or starves by the difference (an early
+        version of this overshot wn18rr_v4's edge count by 9%). So the repair escalates
+        rather than returning a residual:
+
+        1. trim the body only, preserving the hub tail that carries p90/max;
+        2. if the budget is still unreachable that way, **drop the CS-size floor** and fall
+           back to the unfloored degree law, which already sums to the budget by
+           construction (Stage 1 built it that way).
+
+        The hub tail is never bent. The two obvious alternatives to step 2 were both tried
+        against the corpus and both are worse:
+
+        * *Let the trim touch the hubs, keeping the floor.* Costs the max-degree target
+          exactly where it is hardest to hit — wn18rr_v4's realised max out-degree halved
+          (28 → 14) and fb237_v4's slipped off target (195 → 192).
+        * *Re-repair the floored sequence with ``floor=1``.* Far worse: the trim is weighted
+          by headroom above the floor, so the hubs — which have by far the most — absorb
+          nearly all of it, and swdf's max out-degree *target* collapsed 623 → 18.
+
+        So the ordering is deliberate: the degree law outranks the CS floor. An entity
+        emitting no edge for one relation in its CS costs a little Block-D fidelity; a
+        flattened degree sequence costs the whole of Block B. And the floor is not lost
+        outright — ``fit_stubs`` still honours it per relation wherever that relation's
+        budget can afford it.
+
+        Step 2 fires whenever the floor plus the frozen hub tail exceeds the budget, which
+        includes but is not limited to the floor being outright impossible
+        (``Σ|CS(v)| > content_E`` — swdf asks for 606 500 edges against a budget of 242 256).
         """
         vals = np.sort(np.asarray(samples, dtype=np.int64))[::-1]
         if vals.size < actual_V:
             vals = np.concatenate([vals, rng.choice(vals, size=actual_V - vals.size)])
         vals = vals[:actual_V]
         order = np.argsort(-rank_scores, kind="stable")
-        tgt = np.empty(actual_V, dtype=np.int64)
-        tgt[order] = vals
-        if floor is not None:
-            tgt = np.maximum(tgt, floor)
-        adjustable = np.ones(actual_V, dtype=bool)
-        adjustable[np.argsort(-tgt, kind="stable")[:n_hub]] = False
-        return repair_degree_sum(
-            tgt, quota_budget, rng, floor=floor, adjustable=adjustable,
-        )
+        unfloored = np.empty(actual_V, dtype=np.int64)
+        unfloored[order] = vals
+
+        def _hub_mask(seq: np.ndarray) -> np.ndarray:
+            keep = np.ones(actual_V, dtype=bool)
+            keep[np.argsort(-seq, kind="stable")[:n_hub]] = False
+            return keep
+
+        tgt = np.maximum(unfloored, floor) if floor is not None else unfloored.copy()
+        tgt = repair_degree_sum(tgt, quota_budget, rng, floor=floor,
+                                adjustable=_hub_mask(tgt))
+        if int(tgt.sum()) != quota_budget:
+            log.info(
+                "Stage 2: the ≥1-edge-per-CS-relation floor (Σ|CS|=%d) does not fit the "
+                "edge budget (content_E=%d) alongside the degree tail — dropping it; "
+                "fit_stubs still applies it per relation where affordable",
+                int(np.sum(floor)) if floor is not None else 0, quota_budget,
+            )
+            tgt = repair_degree_sum(unfloored, quota_budget, rng,
+                                    adjustable=_hub_mask(unfloored))
+        return tgt
 
     cs_sizes_all = np.array(
         [len(entity_cs[v]) if entity_cs[v] is not None else 0 for v in range(actual_V)],
@@ -541,6 +540,14 @@ def instantiate(
     )
     in_scores = in_scores + rng.random(actual_V)  # random tiebreak within equal inverse-CS sizes
     tgt_in = _sample_target_degrees(np.asarray(schema.target_in_degrees, dtype=np.int64), in_scores)
+
+    # The IPF allocation reads these as its two row margins, and a transportation problem
+    # with disagreeing margins has no solution — the wiring would silently inflate or
+    # starve by the difference rather than failing. Cheap to check, so check it.
+    assert int(tgt_out.sum()) == int(tgt_in.sum()) == quota_budget, (
+        f"degree-target margins disagree: Σout={int(tgt_out.sum())} "
+        f"Σin={int(tgt_in.sum())} budget={quota_budget}"
+    )
 
     log.info(
         "Stage 2: degree targets — out(max=%d, p90=%.1f) in(max=%d, p90=%.1f)",
@@ -598,95 +605,117 @@ def instantiate(
         for rel_idx in inv:
             objects_by_rel.setdefault(int(rel_idx), []).append(v)
 
-    # Per-relation edge budget over relations that can be wired (subjects and
-    # inverse-CS-eligible objects both present); renormalised to ~content_E.
+    # Relations that can be wired at all (subjects and inverse-CS-eligible objects both
+    # present). A relation missing either pool must carry exactly zero edges.
     present = sorted(r for r in subjects_by_rel if objects_by_rel.get(r))
-    if present:
-        w_present = np.array([schema.relation_weights[r] for r in present], dtype=float)
-        w_sum = w_present.sum()
-        w_present = w_present / w_sum if w_sum > 0 else np.full(len(present), 1.0 / len(present))
-        # Largest-remainder allocation: floor each share, then give the remaining
-        # integer edge(s) to relations with the biggest fractional parts.  This
-        # guarantees sum(edge_budget.values()) == content_E_target exactly.
-        raw = [content_E_target * float(w_present[i]) for i in range(len(present))]
-        floored = [int(r) for r in raw]
-        shortfall = content_E_target - sum(floored)
-        order = sorted(range(len(present)), key=lambda i: raw[i] - floored[i], reverse=True)
-        for i in order[:shortfall]:
-            floored[i] += 1
-        edge_budget = {r: floored[i] for i, r in enumerate(present)}
-    else:
-        edge_budget = {}
 
     def _relation_alpha(alpha_q) -> float:
         """One per-relation exponent drawn from a multiplicity-α quantile fit (NaN → flat)."""
         vals = sample_quantiles_trunc(alpha_q, 1, rng)
         return float(vals[0]) if vals is not None else float("nan")
 
+    # ── Joint stub allocation (IPF) ─────────────────────────────────────────────
+    # Decide every entity's out- and in-stub count *per relation*, for all relations at
+    # once, subject to both margins: the per-entity degree targets (rows) and the
+    # per-relation edge budget (columns). See generator/_ipf.py for why this is a
+    # transportation problem and not a sequence of independent draws.
+    #
+    # This replaces the old per-relation `Multinomial(edges_r, w)` pair. Those hit the
+    # column margin and said nothing about the rows, so the degree target had to be
+    # bolted on afterwards as a hard cap — and capping each side independently is exactly
+    # what broke the column margin again, leaving the two sides with unequal stub counts
+    # and dumping the difference into a uniform-random deficit pass.
+    #
+    # The seed weights are the ones the loop used to compute inline: a per-relation
+    # power-law multiplicity draw times the G2b CS-size offset. IPF only rescales whole
+    # rows and columns, so their cross-ratios survive the fit exactly — the multiplicity
+    # law and the CS-size coupling are preserved, and only the margins are forced.
+    cs_by_rel = [np.array([r for r in cs if r in subjects_by_rel and objects_by_rel.get(r)],
+                          dtype=np.int64) for cs in entity_cs]
+    inv_by_rel = [np.array([r for r in inv if r in subjects_by_rel and objects_by_rel.get(r)],
+                           dtype=np.int64) for inv in entity_inv_cs]
+    out_rows, out_cols = build_support(cs_by_rel, num_relations)
+    in_rows, in_cols = build_support(inv_by_rel, num_relations)
+
+    # Per-relation multiplicity exponents, drawn once each (was: once per loop iteration).
+    alpha_obj = {r: _relation_alpha(schema.obj_alpha_q) for r in present}
+    alpha_subj = {r: _relation_alpha(schema.subj_alpha_q) for r in present}
+
+    # Seed weights, in the support's column-major order. `build_support` sorts by
+    # (relation, entity), and subjects_by_rel[r] / objects_by_rel[r] are likewise built by
+    # ascending entity, so a column's slice lines up with that relation's pool entry for
+    # entry — which is what lets a column slice be used directly as its stub vector below.
+    if present:
+        out_val = np.concatenate([
+            sample_powerlaw_trunc(alpha_obj[r], 1.0, schema.obj_mult_max,
+                                  len(subjects_by_rel[r]), rng)
+            for r in present
+        ]) * np.power(np.maximum(cs_sizes_all[out_rows], 1.0), schema.a_obj)
+        inv_sizes_all = np.array(
+            [len(entity_inv_cs[v]) if entity_inv_cs[v] is not None else 0
+             for v in range(actual_V)], dtype=float)
+        in_val = np.concatenate([
+            sample_powerlaw_trunc(alpha_subj[r], 1.0, schema.subj_mult_max,
+                                  len(objects_by_rel[r]), rng)
+            for r in present
+        ]) * np.power(np.maximum(inv_sizes_all[in_rows], 1.0), schema.a_subj)
+    else:
+        out_val = in_val = np.array([], dtype=float)
+
+    # Starting budget from the relation-frequency fit; the solver renegotiates it where a
+    # relation's pools cannot absorb it. An edge needs a distinct (subject, object) pair,
+    # so |S_r|·|O_r| is a hard ceiling.
+    w_rel = np.zeros(num_relations, dtype=float)
+    for r in present:
+        w_rel[r] = schema.relation_weights[r]
+    w_sum = w_rel.sum()
+    w_rel = (w_rel / w_sum if w_sum > 0
+             else np.array([1.0 / len(present) if r in present else 0.0
+                            for r in range(num_relations)]))
+    col_cap = np.zeros(num_relations, dtype=float)
+    for r in present:
+        col_cap[r] = len(subjects_by_rel[r]) * len(objects_by_rel[r])
+
+    edge_budget_arr = solve_edge_budget(
+        out_rows, out_cols, out_val, tgt_out,
+        in_rows, in_cols, in_val, tgt_in,
+        w_rel * content_E_target, actual_V, num_relations, col_cap=col_cap,
+    )
+
+    # Final fit against the solved budget. Column sums come out exactly equal to it on both
+    # sides — that is what makes the two sides' stubs pairable. The out side carries the
+    # ≥1-edge-per-CS-relation floor; the in side does not (an entity's inverse CS is
+    # completed later, best-effort, by the redirect pass in §4b).
+    stub_out = fit_stubs(out_rows, out_cols, out_val, tgt_out, edge_budget_arr,
+                         actual_V, num_relations, rng, floor=True)
+    stub_in = fit_stubs(in_rows, in_cols, in_val, tgt_in, edge_budget_arr,
+                        actual_V, num_relations, rng)
+
+    # Column slices: `*_cols` are sorted, so relation r owns one contiguous run.
+    out_starts = np.concatenate(([0], np.cumsum(np.bincount(out_cols, minlength=num_relations))))
+    in_starts = np.concatenate(([0], np.cumsum(np.bincount(in_cols, minlength=num_relations))))
+
+    _shortfall = int(np.abs(edge_budget_arr - (w_rel * content_E_target)).sum() / 2)
+    log.info(
+        "Stage 2: IPF stub allocation — %d/%d out/in support entries, budget %d edges "
+        "(%d redistributed off bottlenecked relations)",
+        out_rows.size, in_rows.size, int(edge_budget_arr.sum()), _shortfall,
+    )
+
     for rel_idx in present:
         S_r = subjects_by_rel[rel_idx]
         O_r = objects_by_rel[rel_idx]
         obj_ids = np.asarray(O_r, dtype=np.int64)
         n_sr, n_or = len(S_r), int(obj_ids.shape[0])
-        # An edge needs a distinct (subject, object) pair → at most |S_r|·|O_r| of them.
-        edges_r = min(edge_budget.get(rel_idx, 0), n_sr * n_or)
+        edges_r = int(edge_budget_arr[rel_idx])
         if edges_r <= 0 or n_sr == 0 or n_or == 0:
             continue
         predicate = schema.relations[rel_idx]
+        # Stub counts for this relation, straight off the joint allocation. Both sum to
+        # edges_r by construction — no cap, no truncation, no imbalance.
+        m_obj = stub_out[out_starts[rel_idx]:out_starts[rel_idx + 1]].copy()
+        m_in = stub_in[in_starts[rel_idx]:in_starts[rel_idx + 1]].copy()
 
-        # Out-side: edges per subject = power-law(α_obj) tail on [1, obj_mult_max] (the range
-        # α was fitted over) × cs_size^a_obj (G2b). Floor each subject at ≥1
-        # (object-multiplicity ≥1 when r ∈ CS), distribute the surplus, then cap at |O_r|
-        # (a subject reaches ≤ |O_r| distinct objects) + redistribute.
-        subj_ids = np.asarray(S_r, dtype=np.int64)
-        w_out = sample_powerlaw_trunc(_relation_alpha(schema.obj_alpha_q),
-                                      1.0, schema.obj_mult_max, n_sr, rng)
-        cs_sizes = np.array([len(entity_cs[s]) for s in S_r], dtype=float)
-        w_out = w_out * np.power(np.maximum(cs_sizes, 1.0), schema.a_obj)
-        # Capacity weighting: allocation ∝ remaining quota (target − placed).
-        w_out = w_out * np.maximum(tgt_out[subj_ids] - out_degrees[subj_ids], 0.0)
-        sw_out = w_out.sum()
-        w_out = w_out / sw_out if sw_out > 0 else np.full(n_sr, 1.0 / n_sr)
-        if edges_r >= n_sr:
-            m_obj = np.ones(n_sr, dtype=np.int64) + rng.multinomial(edges_r - n_sr, w_out)
-        else:
-            m_obj = np.zeros(n_sr, dtype=np.int64)
-            nz = int((w_out > 0).sum())
-            if nz >= edges_r:
-                m_obj[rng.choice(n_sr, size=edges_r, replace=False, p=w_out)] = 1
-            else:
-                # Capacity exhausted for most subjects: take every positive-weight
-                # subject and fill the remainder uniformly from the zero-weight pool.
-                m_obj[w_out > 0] = 1
-                zero_pool = np.where(w_out <= 0)[0]
-                m_obj[rng.choice(zero_pool, size=edges_r - nz, replace=False)] = 1
-        _cap_redistribute(m_obj, n_or, w_out)
-        # Hard per-subject quota: never exceed the sampled target degree.
-        out_cap = np.maximum(tgt_out[subj_ids] - out_degrees[subj_ids], 0).astype(np.int64)
-        _cap_redistribute(m_obj, n_or, w_out, hard_cap=out_cap)
-
-        # In-side: edges per object (over O_r) = power-law(α_subj) subject-multiplicity tail on
-        # [1, subj_mult_max] × capacity weighting × inv_cs_size^a_subj (G2b), then cap at |S_r|
-        # (≤ |S_r| distinct subjects per object) + redistribute. The object-stub multiset *is*
-        # the subject-mult law.
-        w_in = sample_powerlaw_trunc(_relation_alpha(schema.subj_alpha_q),
-                                     1.0, schema.subj_mult_max, n_or, rng)
-        # in_degrees starts at ones, so placed edges = in_degrees − 1.
-        w_in = w_in * np.maximum(tgt_in[obj_ids] - (in_degrees[obj_ids] - 1.0), 0.0)
-        if schema.a_subj != 0.0:
-            inv_sizes = np.array([len(entity_inv_cs[o]) for o in O_r], dtype=float)
-            w_in = w_in * np.power(np.maximum(inv_sizes, 1.0), schema.a_subj)
-        sw_in = w_in.sum()
-        if sw_in <= 0.0:
-            continue
-        m_in = rng.multinomial(edges_r, w_in / sw_in)
-        _cap_redistribute(m_in, n_sr, w_in)
-        # Hard per-object quota: never exceed the sampled target in-degree.  The
-        # multinomial above can still over-allocate to a single node within one
-        # relation pass (all edges placed before in_degrees is updated), so the
-        # excess is redistributed proportionally to nodes with remaining quota.
-        global_cap = np.maximum(tgt_in[obj_ids] - (in_degrees[obj_ids] - 1.0), 0).astype(np.int64)
-        _cap_redistribute(m_in, n_sr, w_in, hard_cap=global_cap)
 
         # Reciprocity: guarantee both an out-stub AND an in-stub of r for a ρ_r-sized
         # subset of the entities eligible for both (S_r ∩ O_r, populated by the §3b2
@@ -708,15 +737,35 @@ def instantiate(
                 pos_in = {int(o): i for i, o in enumerate(obj_ids.tolist())}
 
                 def _reserve(m: np.ndarray, pos: dict) -> None:
-                    for e in reserved:
-                        i = pos.get(e)
-                        if i is None or m[i] > 0:
-                            continue
-                        j = int(np.argmax(m))
-                        if m[j] <= 0:
-                            break               # no spare stub anywhere on this side
-                        m[j] -= 1
-                        m[i] += 1
+                    """Give a stub to each reserved entity that has none, taking it from an
+                    entity that has one to spare. Column-sum-preserving, so the per-relation
+                    stub balance the IPF allocation establishes survives.
+
+                    Donors are drawn **uniformly among the entities with a surplus**. Taking
+                    from ``argmax(m)`` instead — as this did originally — robs the same entry
+                    over and over, and that entry is by definition the hub carrying the
+                    max/p90 degree target. It was harmless while ``m_obj`` came from
+                    ``ones + multinomial`` (no zeros, so nothing to reserve), but the IPF
+                    allocation puts real hub mass in ``m``, and on a highly reciprocal graph
+                    with tens of thousands of reservations it flattened the peak completely:
+                    aids' realised max out-degree collapsed to 4 against a target of 11.
+                    """
+                    idx = np.fromiter((pos[e] for e in reserved if e in pos),
+                                      dtype=np.int64, count=-1)
+                    if idx.size == 0:
+                        return
+                    starving = idx[m[idx] == 0]
+                    surplus = np.maximum(m - 1, 0)
+                    donors = np.where(surplus > 0)[0]
+                    take = min(starving.size, int(surplus.sum()))
+                    if take <= 0 or donors.size == 0:
+                        return
+                    cut = np.bincount(rng.choice(donors, size=take, replace=True),
+                                      minlength=m.size)
+                    cut = np.minimum(cut, surplus)     # a donor cannot give more than it has
+                    moved = int(cut.sum())
+                    m -= cut
+                    m[starving[:moved]] += 1
 
                 _reserve(m_obj, pos_out)
                 _reserve(m_in, pos_in)
@@ -950,7 +999,52 @@ def instantiate(
                 seen_src[o].add(s)
                 unique_src_count[o] += 1
             placed += 1
-        log.info("Stage 2: deficit recovery placed %d/%d missing edges", placed, deficit)
+        log.warning("Stage 2: pairing residual — recovered %d/%d edges (%.2f%% of budget)",
+                    placed, deficit, 100.0 * deficit / max(content_E_target, 1))
+
+    # ------------------------------------------------------------------
+    # 5b. Trim back to the edge budget.  _connect_components appends its bridging edges
+    #     *on top* of whatever the main loop placed.  That used to be invisible, because
+    #     the old wiring always finished short and the bridges landed in the shortfall;
+    #     the IPF allocation saturates the budget, so those bridges now push |E| over it
+    #     (aids overshot by 456).  Give the bridges room by removing an equal number of
+    #     edges from elsewhere.
+    #
+    #     Only **non-bridge** edges (in the undirected sense) are eligible: removing one
+    #     cannot split a component, so the target_nc / target_lcc structure that
+    #     _connect_components just established survives untouched.  Among those, drop the
+    #     edges whose endpoints most *exceed* their degree targets — the excess has to
+    #     come off somewhere, and taking it from over-served nodes improves degree
+    #     fidelity rather than degrading it.
+    # ------------------------------------------------------------------
+    excess = len(content_edges) - content_E_target
+    if excess > 0:
+        tmp = igraph.Graph(n=actual_V, directed=False)
+        tmp.add_edges([(s, o) for s, o, _ in content_edges if s != o])
+        # `bridges()` indexes into tmp's edge list, which skips self-loops — map back.
+        idx_map = [i for i, (s, o, _) in enumerate(content_edges) if s != o]
+        is_bridge = np.zeros(len(content_edges), dtype=bool)
+        for ei in tmp.bridges():
+            is_bridge[idx_map[ei]] = True
+
+        over = np.zeros(len(content_edges), dtype=float)
+        for i, (s, o, _) in enumerate(content_edges):
+            over[i] = (max(out_degrees[s] - tgt_out[s], 0)
+                       + max(in_degrees[o] - 1.0 - tgt_in[o], 0))
+        cand = np.where(~is_bridge)[0]
+        if cand.size < excess:
+            log.warning("Stage 2: only %d non-bridge edges for an excess of %d — "
+                        "|E| will overshoot by %d", cand.size, excess, excess - cand.size)
+        # Most over-served first; random tiebreak so a run of equal-scored edges is not
+        # taken in index order (which would concentrate the trim on one relation).
+        rank = over[cand] + rng.random(cand.size)
+        drop = set(cand[np.argsort(-rank)[:excess]].tolist())
+        for i in sorted(drop, reverse=True):
+            s, o, _ = content_edges[i]
+            out_degrees[s] -= 1
+            in_degrees[o] -= 1.0
+            del content_edges[i]
+        log.info("Stage 2: trimmed %d edges to make room for bridging", len(drop))
 
     # ------------------------------------------------------------------
     # 6. Build rdf:type edges

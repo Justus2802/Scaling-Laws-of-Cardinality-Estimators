@@ -108,33 +108,74 @@ def ipf(
     """
     if rows.size == 0:
         return np.array([], dtype=float)
-    v = np.maximum(np.asarray(val, dtype=float), _EPS)
     rt = np.asarray(row_target, dtype=float)
     ct = np.asarray(col_target, dtype=float)
-    u = np.ones(n_rows)
-    w = np.ones(n_cols)
+
+    # Rescale the values themselves rather than accumulating the row/column multipliers
+    # ``u``/``w``. The two are algebraically identical (``a = W·u·w``), but the multiplier
+    # form **overflows**: a column whose target far exceeds what its support can supply
+    # drives ``w`` up without bound, and once one entry hits ``inf`` the next product is
+    # ``nan`` and the whole allocation is silently destroyed (swdf did exactly this and came
+    # out with a 170-edge budget). Scaling ``a`` in place cannot overflow — every row sweep
+    # renormalises it back to ``rt``, so it stays bounded by the margins throughout.
+    a = np.maximum(np.asarray(val, dtype=float), _EPS)
     for _ in range(iters):
-        a = v * u[rows] * w[cols]
-        rs = np.bincount(rows, a, minlength=n_rows)
-        u *= rt / np.maximum(rs, _EPS)
+        a *= (rt / np.maximum(np.bincount(rows, a, minlength=n_rows), _EPS))[rows]
+        a *= (ct / np.maximum(np.bincount(cols, a, minlength=n_cols), _EPS))[cols]
 
-        a = v * u[rows] * w[cols]
-        cs = np.bincount(cols, a, minlength=n_cols)
-        w *= ct / np.maximum(cs, _EPS)
+    # Final row step: row margins exact on return (see the docstring — this asymmetry is
+    # what lets solve_edge_budget read the achievable column sums off the result).
+    a *= (rt / np.maximum(np.bincount(rows, a, minlength=n_rows), _EPS))[rows]
+    return a
 
-    # Final row step: row margins exact on return.
-    a = v * u[rows] * w[cols]
-    rs = np.bincount(rows, a, minlength=n_rows)
-    u *= rt / np.maximum(rs, _EPS)
-    return v * u[rows] * w[cols]
+
+def _fill_to_total(
+    e: np.ndarray, total: int, cap: np.ndarray, live: np.ndarray
+) -> np.ndarray:
+    """Push ``e`` up (or down) to sum to ``total``, never crossing ``cap``.
+
+    The per-relation ceilings mean a single proportional rescale is not enough: scaling up
+    pins some relations at their cap, which leaves the total short again. So the surplus is
+    poured into the remaining headroom, repeatedly, until it is all placed or every relation
+    is full.
+
+    This is what keeps the returned budget *spendable*. ``Σ e`` must equal ``Σ tgt_out``, or
+    the graph either cannot place all its stubs (a deficit) or is asked to place stubs that
+    do not exist (an overshoot).
+    """
+    out = np.clip(np.asarray(e, dtype=float), 0.0, cap)
+    out[~live] = 0.0
+    for _ in range(16):
+        short = total - out.sum()
+        if abs(short) < 0.5:
+            break
+        if short > 0:
+            room = np.where(live, np.maximum(cap - out, 0.0), 0.0)
+            if room.sum() <= _EPS:
+                break                       # every relation is at its ceiling
+            out = np.minimum(out + short * room / room.sum(), cap)
+        else:
+            scale = total / max(out.sum(), _EPS)
+            out = out * scale
+    return out
 
 
 def _largest_remainder(values: np.ndarray, total: int) -> np.ndarray:
-    """Round ``values`` to non-negative integers summing exactly to ``total``."""
+    """Round ``values`` to non-negative integers summing exactly to ``total``.
+
+    This *rounds*; it does not *scale*. It can move each entry by at most one, so it only
+    reaches ``total`` when ``values`` already sums to within ``len(values)`` of it — call
+    :func:`_fill_to_total` first. (Handing it a badly-scaled vector silently returns a sum
+    of ``len(values)``: an early version did exactly that and produced a 170-edge budget
+    for swdf's 170 relations, against a target of 242 256.)
+    """
     if values.size == 0:
         return np.array([], dtype=np.int64)
     floors = np.floor(values).astype(np.int64)
     short = int(total) - int(floors.sum())
+    if abs(short) > values.size:
+        log.warning("IPF: budget vector is off by %d over %d relations — rounding cannot "
+                    "reach the total", short, values.size)
     if short > 0:
         order = np.argsort(-(values - floors), kind="stable")
         floors[order[:short]] += 1
@@ -195,10 +236,75 @@ def round_to_columns(
     return out
 
 
+def fit_stubs(
+    rows: np.ndarray, cols: np.ndarray, val: np.ndarray,
+    row_target: np.ndarray, col_target: np.ndarray,
+    n_rows: int, n_cols: int, rng: np.random.Generator,
+    floor: bool = False,
+) -> np.ndarray:
+    """Fit integer stub counts to both margins, optionally with a ≥1-per-entry floor.
+
+    With ``floor``, every support entry is guaranteed at least one stub. ``r ∈ CS(v)``
+    means "v emits r", so v should emit at least one r-edge — otherwise the realised
+    characteristic sets drift from the assigned ones and Block D's CS statistics stop
+    describing the graph.
+
+    The floor is imposed by **substitution**, not by repair: fit ``X'`` to the reduced
+    margins ``(tgt_out[v] − |elig(v)|, e_r − |S_r|)`` and return ``X = 1 + X'``. Both
+    margins then come out exact, because the constant 1 contributes ``|elig(v)|`` to each
+    row and ``|S_r|`` to each column, which is precisely what was subtracted.
+
+    Doing it the other way round — fit first, then hand a stub to each starved entry by
+    taking one from a heavy entry in the same column — is what a first version did, and it
+    *decapitates the hubs*: the entries with the most to give are the ones carrying the
+    ``max``/``p90`` degree targets, so the trim lands squarely on them (it cost fb237_v4's
+    max out-degree 195 → 166 and aids' 11 → 5). The floor has to be in the margins.
+
+    A column with fewer edges than eligible subjects (``e_r < |S_r|``) cannot give every
+    subject an edge; the floor is simply dropped for that column and its entries fall back
+    to the plain fit.
+
+    :param floor: guarantee ≥1 stub per support entry where the column can afford it.
+    :returns: int64 stub count per non-zero, with column sums exactly ``col_target``.
+    """
+    if rows.size == 0:
+        return np.array([], dtype=np.int64)
+    ct = np.asarray(col_target, dtype=np.int64)
+    rt = np.asarray(row_target, dtype=np.int64)
+
+    if not floor:
+        a = ipf(rows, cols, val, rt, np.maximum(ct, _EPS), n_rows, n_cols)
+        return round_to_columns(cols, a, ct, n_cols)
+
+    per_col = np.bincount(cols, minlength=n_cols)
+    affordable = ct >= per_col                       # column can seat one stub per entry
+    base = affordable[cols].astype(np.int64)         # the "1" of X = 1 + X'
+    rt2 = rt - np.bincount(rows, base, minlength=n_rows).astype(np.int64)
+    ct2 = ct - np.bincount(cols, base, minlength=n_cols).astype(np.int64)
+
+    # tgt_out[v] ≥ |CS(v)| ≥ |elig(v)| normally (that is what floor=cs_sizes_all buys in
+    # §3c), so rt2 is already non-negative. It can dip below zero only when that floor had
+    # to be relaxed because the CS sizes over-determined the edge budget; clip, then put
+    # the clipped units back so the two margins still agree — they must, or IPF has no
+    # solution at all.
+    if (rt2 < 0).any():
+        rt2 = np.maximum(rt2, 0)
+    gap = int(ct2.sum()) - int(rt2.sum())
+    if gap > 0:
+        has = np.where(np.bincount(rows, minlength=n_rows) > 0)[0]
+        rt2[has] += rng.multinomial(gap, np.full(has.size, 1.0 / has.size))
+    elif gap < 0:
+        rt2 = _largest_remainder(rt2.astype(float), int(ct2.sum()))
+
+    a = ipf(rows, cols, val, rt2, np.maximum(ct2, _EPS), n_rows, n_cols)
+    return round_to_columns(cols, a, ct2, n_cols) + base
+
+
 def solve_edge_budget(
     out_rows, out_cols, out_val, tgt_out,
     in_rows, in_cols, in_val, tgt_in,
     edge_budget: np.ndarray, n_entities: int, n_relations: int,
+    col_cap: "np.ndarray | None" = None,
     iters: int = OUTER_ITERS,
 ) -> np.ndarray:
     """Find per-relation edge counts both sides can actually realise.
@@ -224,12 +330,35 @@ def solve_edge_budget(
 
     :param edge_budget: the target per-relation edge counts (from the relation-frequency
         fit) — the starting point, not a guarantee.
+    :param col_cap: hard per-relation ceiling, e.g. ``|S_r|·|O_r|`` (an edge needs a
+        distinct subject/object pair, so a relation cannot carry more than that many).
     :returns: int64 per-relation edge counts summing to ``Σ tgt_out``.
     """
     total = int(np.sum(tgt_out))
-    e = np.asarray(edge_budget, dtype=float).copy()
     if n_relations == 0 or total <= 0:
         return np.zeros(n_relations, dtype=np.int64)
+
+    # A relation with no eligible subject *or* no eligible object cannot carry an edge at
+    # all. It must be held at exactly zero throughout: hand it even one unit of budget and
+    # that unit is unplaceable — a deficit reintroduced by the back door.
+    live = (
+        (np.bincount(out_cols, minlength=n_relations) > 0)
+        & (np.bincount(in_cols, minlength=n_relations) > 0)
+    )
+    # Cap defaults to the whole budget (a relation cannot carry more edges than exist) and
+    # is clipped to it. A finite ceiling is required, not cosmetic: _fill_to_total pours the
+    # shortfall in proportion to the remaining headroom, and an infinite headroom makes that
+    # ratio inf/inf = nan.
+    cap = (np.full(n_relations, float(total)) if col_cap is None
+           else np.minimum(np.asarray(col_cap, dtype=float), float(total)))
+    cap = np.where(live, cap, 0.0)
+    if cap.sum() < total:
+        log.warning(
+            "IPF: relation capacity %d < edge budget %d — the graph cannot hold its "
+            "edge count within the CS pools", int(cap.sum()), total,
+        )
+
+    e = np.minimum(np.where(live, np.asarray(edge_budget, dtype=float), 0.0), cap)
 
     for _ in range(iters):
         e_safe = np.maximum(e, _EPS)
@@ -238,23 +367,28 @@ def solve_edge_budget(
         got_out = np.bincount(out_cols, a_out, minlength=n_relations)
         got_in = np.bincount(in_cols, a_in, minlength=n_relations)
 
-        # A relation can carry only as many edges as its *weaker* side supports.
-        new_e = np.minimum(got_out, got_in)
-        short = total - new_e.sum()
-        if short > _EPS:
-            # Give the shortfall back only to relations that are NOT bottlenecked — ones
-            # where both sides met the budget they were asked for. A bottlenecked relation
-            # would simply hand the units straight back on the next sweep (that is what
-            # made it the minimum), so topping it up cannot converge.
-            free = (got_out >= e - 0.5) & (got_in >= e - 0.5)
-            head = np.where(free, np.maximum(new_e, _EPS), 0.0)
-            if head.sum() <= _EPS:            # everything is bottlenecked — spread evenly
-                head = np.maximum(new_e, _EPS)
-            new_e = new_e + short * head / head.sum()
+        # A relation can carry only as many edges as its *weaker* side supports; whatever
+        # that leaves unspent is pushed onto the relations that still have room.
+        new_e = _fill_to_total(np.minimum(np.minimum(got_out, got_in), cap),
+                              total, cap, live)
         if np.allclose(new_e, e, rtol=1e-3, atol=0.5):
             e = new_e
             break
         e = new_e
 
-    budget = _largest_remainder(np.maximum(e, 0.0), total)
+    budget = _largest_remainder(e, total)
+    # Rounding to the total can nudge a relation past its ceiling; move any such unit to a
+    # relation that still has room, so the |S_r|·|O_r| bound is never violated.
+    over = np.maximum(budget - np.floor(cap).astype(np.int64), 0)
+    spill = int(over.sum())
+    if spill > 0:
+        budget -= over
+        room = (np.floor(cap).astype(np.int64) - budget) * live
+        for _ in range(spill):
+            i = int(np.argmax(room))
+            if room[i] <= 0:
+                log.warning("IPF: %d edges cannot be placed within the relation caps", spill)
+                break
+            budget[i] += 1
+            room[i] -= 1
     return budget

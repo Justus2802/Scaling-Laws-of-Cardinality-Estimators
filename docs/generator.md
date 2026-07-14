@@ -260,39 +260,28 @@ where most of the structural fidelity is established.
    `type_weights`. This makes type labels emerge from relation usage (the real causal direction)
    rather than being set independently of CS content.
 5c. **Target degree assignment** (`target_out_degrees`/`target_in_degrees`, always sampled by
-   Stage 1 — see Stage 1 §7): sampled target values
-   are **rank-matched** to CS size (out-side; largest target → largest CS, floored at `|CS|` so the
-   ≥1-edge-per-CS-relation floor stays feasible) and to inverse-CS size (in-side). Both sides are then
-   repaired to the **same** quota budget `round(DEGREE_QUOTA_SLACK · content_E)` via
-   `repair_degree_sum`, so `Σ tgt_out == Σ tgt_in`: a directed wiring needs matched stub counts, and
-   the two sides are sampled independently. Allocation weight is ∝ remaining quota `(target − placed)⁺`
-   ("capacity" weighting), plus a **hard per-node quota** via `_cap_redistribute(hard_cap=…)`.
-   (An expected-degree "chunglu" alternative — weight ∝ target degree, no hard cap — was evaluated and
-   rejected: tail overshoot ≈ +116% on max-out.)
+   Stage 1 — see Stage 1 §7): sampled target values are **rank-matched** to CS size (out-side;
+   largest target → largest CS, floored at `|CS|`) and to inverse-CS size (in-side). Both sides are
+   then repaired by `repair_degree_sum` to the **same** budget, `content_E`.
 
-   The repair is **two-sided** (it trims as well as tops up) and **skips the hub entries**, which is
-   what an earlier one-directional multinomial top-up (`if shortfall > 0`, weight ∝ target) could not
-   do. That top-up had two failure modes. It could not bring an *over*-budget side down — aids' in-side
-   sat at ~3× `content_E`, so its quota never bound and in-degree steering was inert there — and
-   because its weight was ∝ target it acted as a rescale, multiplying the hubs by the same factor and
-   inflating the p90/max targets the tail was built to hit (up to 2.3× on max-out), undoing the
-   extreme-value matching in `sample_degree_sequence`.
+   `Σ tgt_out == Σ tgt_in == content_E` is asserted, not merely intended. These two vectors are the
+   **row margins** of the IPF allocation in §6, and a transportation problem whose margins disagree
+   has no solution at all — the wiring would silently inflate or starve by the difference rather than
+   fail. (An early version of this overshot wn18rr_v4's edge count by 9% for exactly that reason.)
 
-   `DEGREE_QUOTA_SLACK` (default **1.0**, i.e. no headroom) trades the deficit-recovery volume against
-   degree fidelity. Slack lets the wiring loop place more edges through the main path — deficit on
-   fb237_v4 falls 3229 → 1076 at slack 1.25, on aids 89413 → 23055 — but it costs more than it buys, on
-   two counts:
+   The repair escalates rather than returning a residual: trim the body first, preserving the hub tail
+   that carries p90/max; and if the budget is *still* unreachable, the CS-size floor itself
+   over-determines it (`Σ|CS(v)| > content_E` — swdf's characteristic sets ask for 606 500 edges
+   against a budget of 242 256), so **drop the floor** and fall back to the unfloored degree law, which
+   already sums to the budget by construction. Trimming *towards* the floor instead is what a first
+   version did, and it destroys the degree law: the trim is weighted by headroom above the floor, so
+   the hubs — which have by far the most — absorb nearly all of it (swdf's max out-degree target
+   collapsed 623 → 18). The floor is the softer constraint: an entity emitting no edge for one CS
+   relation costs a little Block-D fidelity, whereas a flattened degree sequence costs the whole of
+   Block B. `fit_stubs` still honours the floor per relation wherever that relation's budget affords it.
 
-   * a loose quota spreads edges evenly instead of feeding the hubs, so the realised max degree decays
-     monotonically (fb237_v4 max-out 195 → 137 → 115 at slack 1.0 / 1.25 / 1.5, against a signature
-     target of 195);
-   * at high slack the main loop saturates the whole per-relation budget, and `_connect_components`
-     then appends its bridging edges *on top* — so the graph **overshoots |E|** (aids at slack 1.5:
-     804721 edges against a target of 802066). Only slack 1.0 leaves the main loop short enough that
-     bridging + deficit recovery land the edge count exactly on budget.
-
-   So 1.0 is not merely the best point on a tradeoff curve — it is the only value that currently
-   conserves the edge count. Raising it means fixing the bridging-edge double-count first.
+   `DEGREE_QUOTA_SLACK` is **gone**. It existed to trade deficit-recovery volume against degree
+   fidelity; the IPF allocation leaves no deficit to trade against.
 5d. **Pool overlap for reciprocal relations** (when `relation_reciprocity` is set):
    real graphs pack directed content edges onto **shared** node pairs (parallel/multi-relational
    overlap and bidirectional pairs), whereas the CS-first construction above assigns forward and
@@ -303,28 +292,31 @@ where most of the structural fidelity is established.
    entity receives changes), enlarging `S_r ∩ O_r` before the wiring loop below needs it. See
    `docs/notes/motif_reachability_and_edge_multiplicity.md` and
    `docs/notes/relation_reciprocity_and_bidirectionality.md` for the diagnosis.
-6. **Per-relation wiring — multiplicity-then-degree-targeting with edge conservation, matched
-   within `S_r × O_r`.** `S_r` = subjects whose forward CS contains `r`; `O_r` = objects whose
-   inverse CS contains `r` (all entities when no inverse templates). For each present relation
-   (`S_r`, `O_r` non-empty; weights renormalised over them):
-   - `|edges_r| = min(edge_budget[r], |S_r|·|O_r|)` (capacity bound), where `edge_budget` is a
-     largest-remainder integer allocation of `content_E` across all present relations by
-     `renorm_weight` (same technique as `_allocate_quotas` above), so the per-relation budgets
-     sum to `content_E` exactly.
-   - **Out-side** (per subject): weight `power-law(α_obj_r) · cs_size^a_obj · degree-target factor`
-     (G2 tail × G2b × capacity/expected-degree). **Floor each subject at 1**, allocate the surplus
-     by `multinomial`, then **cap at `|O_r|`** + redistribute; in capacity mode a per-subject hard
-     quota (`target − placed`) is enforced via `_cap_redistribute`.
-   - **In-side** (per object over `O_r`): weight `power-law(α_subj_r) · degree-target factor ·
-     inv_cs_size^a_subj` (subject-multiplicity tail × quota/expected-degree × **G2b in-side
-     offset**); allocate by `multinomial`, then **cap at `|S_r|`** + redistribute, plus the
-     per-object hard quota in capacity mode. When no degree targets exist, no degree factor
-     is applied.
-   - **Stub reservation** (when `ρ_r > 0`): even with `S_r ∩ O_r` enlarged by 5d, the out-side and
-     in-side multinomials above are independent draws, so an entity eligible for both roles rarely
-     gets a stub on *both* sides by chance. For up to `round(ρ_r·edges_r/2)` entities in
-     `S_r ∩ O_r`, force their out-stub count and in-stub count to ≥1 each — stealing one stub from
-     the current max-count entity on the respective side, so the edge budget is untouched.
+6. **Joint stub allocation (IPF), then per-relation pairing within `S_r × O_r`.** `S_r` = subjects
+   whose forward CS contains `r`; `O_r` = objects whose inverse CS contains `r`. Every entity's
+   out- and in-stub count **per relation** is decided for all relations at once, by iterative
+   proportional fitting — see [§ The IPF stub allocation](#the-ipf-stub-allocation) for what that
+   is and why. In outline:
+   - Build the sparse (entity × relation) supports `Ω_out = {(v,r) : r ∈ CS(v)}` and
+     `Ω_in = {(v,r) : r ∈ invCS(v)}`, seeded with the weights the loop used to compute inline:
+     `power-law(α_obj_r) · cs_size^a_obj` and `power-law(α_subj_r) · inv_cs_size^a_subj`.
+   - `solve_edge_budget` finds the per-relation edge counts `e_r` **both sides can actually
+     realise**, starting from the relation-frequency allocation and shrinking any relation whose
+     pools cannot absorb it, redistributing the surplus to relations with room (bounded above by
+     `|S_r|·|O_r|`, since an edge needs a distinct pair).
+   - `fit_stubs` fits each side to those margins: rows to the degree targets, columns to `e_r`. The
+     column sums come out **exactly `e_r` on both sides**, so every relation's out-stubs and
+     in-stubs match and can be paired. The out side carries the ≥1-edge-per-CS-relation floor,
+     imposed by substitution (`X = 1 + X'`) rather than by post-hoc repair.
+   - **Stub reservation** (when `ρ_r > 0`): the two sides are fitted independently, so an entity
+     eligible for both roles rarely gets a stub on *both* by chance. For up to
+     `round(ρ_r·edges_r/2)` entities in `S_r ∩ O_r`, force their out- and in-stub counts to ≥1,
+     taking the stub from an entity with a surplus. The donor is drawn **uniformly among entities
+     with a surplus** — taking it from `argmax` instead (as this originally did) robs the same
+     entry repeatedly, and that entry is by definition the hub carrying the max/p90 degree target.
+     It was harmless when the allocation came from `ones + multinomial` (no zeros, nothing to
+     reserve), but with real hub mass in the allocation it flattened the peak completely: aids'
+     realised max out-degree collapsed to 4 against a target of 11.
    - **Pair** subject-stubs with object-stubs within `S_r × O_r` (configuration model); on a
      self-loop or duplicate `(s,o)` **retry** by swapping in another pending object stub. Within
      this pairing:
@@ -354,18 +346,28 @@ where most of the structural fidelity is established.
    steps and returns an `is_satellite` mask that the two passes below must respect — neither may
    place an edge touching a satellite node, or it would silently reconnect a component this step
    chose to leave isolated, undoing the `target_nc` / `target_lcc` guarantee.
-7a. **Deficit recovery.** Per-relation budget vs degree-quota misalignment can leave part of the
-   edge budget unplaced (capacity mode drops overflow rather than exceeding a node's target).
-   The remainder is placed by sampling `(subject, object)` pairs weighted by remaining quota
-   (+1e-3 smoothing so saturated pools still accept soft overflow) — edge conservation always
-   wins. Subject/object pools are filtered to non-satellite nodes first; a relation left with an
-   empty pool on either side is skipped for that attempt.
+7a. **Pairing residual.** The IPF allocation leaves no *budget* deficit — every stub the degree law
+   asks for has a relation to be spent on. What can still fail is the **pairing**: the configuration
+   model draws objects at random, and a subject's last few stubs may find only self-loops or
+   already-used `(s,o)` pairs within `MAX_PAIR_RETRY` attempts. The residual is small (0–0.6% of the
+   budget across the corpus, zero on four of the nine graphs) and is placed by sampling
+   `(subject, object)` pairs weighted by remaining quota. Subject/object pools are filtered to
+   non-satellite nodes first. Driving it to zero needs a smarter endgame (bipartite Havel–Hakimi:
+   process stubs in decreasing-remaining order), which is not done.
+7b. **Trim to the edge budget.** `_connect_components` appends its bridging edges *on top* of
+   whatever the main loop placed. That used to be invisible, because the old wiring always finished
+   short and the bridges landed in the shortfall; the IPF allocation saturates the budget, so those
+   bridges now push `|E|` over it (aids overshot by 456). An equal number of edges is removed to make
+   room. Only **non-bridge** edges (undirected sense, via `igraph.bridges()`) are eligible — removing
+   one cannot split a component, so the `target_nc` / `target_lcc` structure just established
+   survives — and among those, the edges whose endpoints most *exceed* their degree targets go first,
+   so the trim improves degree fidelity rather than degrading it.
 8. **`rdf:type` edges** for typed entities; assemble the `igraph.Graph` with the `kg_io.load_kg`
    attribute contract (so `compute_reduced_signature` can read it back).
 
-The `_cap_redistribute` helper implements the symmetric cap (object ≤ `|S_r|`, subject ≤ `|O_r|`).
-Stage-2 tuning constants (`MAX_PAIR_RETRY`, `CAP_REDISTRIBUTE_PASSES`, `SIZE_ESCAPE_FAILS`,
-`TEMPLATE_ATTEMPT_*`) are module-level at the top of `stage2.py`.
+Stage-2 tuning constants (`MAX_PAIR_RETRY`, `SIZE_ESCAPE_FAILS`, `TEMPLATE_ATTEMPT_*`) are
+module-level at the top of `stage2.py`; the IPF constants (`IPF_ITERS`, `OUTER_ITERS`) at the top of
+`_ipf.py`.
 
 ---
 
@@ -577,21 +579,114 @@ The load-bearing design choices behind the Stage-1/2 wiring:
   preferential-attachment mechanism in the current code — an earlier PA-based in-degree lever was
   replaced by this target-degree-sequence approach (see Stage 1 §7 and Stage 2 §6's in-side
   wiring).
-- **Realizability cap + redistribute.** With `α_subj<2` (infinite mean), the in-side
-  `multinomial` would concentrate nearly all of `|edges_r|` on one object, leaving unplaceable
-  duplicates and collapsing the edge budget. Each object is capped at
-  `|S_r|` (the out-side symmetrically at `|O_r|`) and the overflow redistributed, so the realised
-  edge count stays near the budget.
+- **Realizability.** With `α_subj<2` (infinite mean), an unconstrained in-side draw would concentrate
+  nearly all of `|edges_r|` on one object, leaving unplaceable duplicates and collapsing the edge
+  budget. The IPF allocation bounds this at the source: each entity's in-stub count across all
+  relations is its degree target (a *row margin*, not a post-hoc cap), and `solve_edge_budget` bounds
+  each relation at `|S_r|·|O_r|` distinct pairs. The old `_cap_redistribute` clamp is gone — see
+  [§ The IPF stub allocation](#the-ipf-stub-allocation) for why clamping was the bug rather than the
+  fix.
 - **CS templating for `num_distinct_cs`.** Reaching the target distinct-CS count needs three
   floors working together: (a) distinct templates drawn by rejection + size-escape, (b) a floored
   entity→template assignment (≥1 entity per template) with a power-law reuse tail, and (c) an
-  out-side floor (every subject of `r` gets ≥1 edge). Without them a too-steep rank-Zipf leaves
-  most templates unused and out-side multinomial zeros shrink the realised CSs.
+  out-side floor (every subject of `r` gets ≥1 edge, imposed inside `fit_stubs` by substitution).
+  Without them a too-steep reuse tail leaves most templates unused and out-side allocation zeros
+  shrink the realised CSs.
 - **Symmetric inverse CS + `a_subj`.** Block D's `inv_num_distinct_cs` / `inv_cs_freq` and the
   inverse-CS templates (object side) let edges be matched within `S_r × O_r`, and the in-side
   weight gains the `inv_cs_size^a_subj` G2b offset — the object-side mirror of `a_obj`.
 - **Tuning constants** for each stage are module-level at the top of
   `stage1.py` / `stage2.py` / `stage3.py`.
+
+---
+
+## The IPF stub allocation
+
+Stage 2 must decide, for every entity `v` and every relation `r` it is eligible for, how many
+out-stubs `X[v,r]` and in-stubs `Y[v,r]` it gets. Two families of constraint bear on that at once:
+
+* **rows** — `Σ_r X[v,r] = tgt_out[v]`: the per-entity degree targets (Block B's degree law);
+* **columns** — `Σ_v X[v,r] = Σ_v Y[v,r] = e_r`: the per-relation edge budget, which must be the
+  *same on both sides* or the relation's stubs cannot be paired at all.
+
+### What was wrong before
+
+The old loop drew each relation's stubs independently, `m_obj ~ Multinomial(edges_r, w)` and
+`m_in ~ Multinomial(edges_r, w)`. That hits the **column** margin and says nothing about the rows, so
+the degree target was bolted on afterwards as a *cap* (`_cap_redistribute(hard_cap=…)`). Capping each
+side independently against the global remaining quota of its own pool is precisely what broke the
+column margin again: the two sides ended up with **different stub counts**, the surplus could not be
+paired, and the difference fell into a uniform-random deficit-recovery pass.
+
+Measured per-relation stub imbalance under the old scheme: fb237_v4 **1 843**, wn18rr_v4 **790**,
+aids **184 992** — and that imbalance *was* the deficit. On aids it meant a third of the content edges
+were placed with no multiplicity law, no preferential attachment and no degree law, at a cost of
+~185k `rng.choice` calls over 70–200k-element pools. The diagnosis is in
+`docs/plan/per_relation_stub_balance.md`.
+
+### What IPF does
+
+Seed a matrix `W` on the sparse support with the same weights the loop already computed
+(`power-law(α_r) × cs_size^a`), then alternately rescale rows to hit `tgt_out` and columns to hit
+`e_r` until both margins hold — Sinkhorn's algorithm, a.k.a. Deming–Stephan iterative proportional
+fitting. Every operation multiplies a whole row or column by one positive scalar, so the fitted
+matrix has the form `A[v,r] = W[v,r]·u[v]·w[r]`: the search is over `V + R` numbers, not `nnz`.
+
+That form is why this is the *right* tool and not merely a working one. All cross-ratios of `W`
+survive exactly — `A[v,r]·A[v',r'] / (A[v,r']·A[v',r]) == W[v,r]·W[v',r'] / (W[v,r']·W[v',r])`, since
+the `u`/`w` factors cancel. The multiplicity law and the G2b CS-size coupling come out untouched;
+only the margins are forced. Formally `A` is the I-projection of `W` onto the transportation polytope:
+the closest matrix to `W` in KL divergence with the required margins.
+
+Cost is trivial — the support is sparse (`nnz = Σ_v |CS(v)|`: ~21k on fb237_v4, ~570k on aids), and
+each sweep is two `bincount` passes over it.
+
+### Infeasibility is an output, not a failure
+
+Convergence holds iff a matrix with that support and those margins exists. Ending each fit on a **row**
+step means every entity's degree quota is spent exactly, and the achieved *column* sums then report
+what the supports could actually deliver — and they automatically sum to `Σ tgt_out = content_E`, so
+**the budget is fully spendable and there is no deficit by construction**. Where a relation's pool
+cannot absorb its budget, its column comes out short and the surplus has already flowed to relations
+with room. That is the "shrink `e_r`, redistribute" policy, obtained for free rather than as a separate
+mechanism, and `solve_edge_budget` logs it so a shrunk relation is visible.
+
+### Two numerical traps, both hit in practice
+
+* **Do not accumulate `u`/`w`.** Algebraically identical, numerically fatal: a column whose target far
+  exceeds what its support can supply drives `w` to `inf`, the next product is `nan`, and the whole
+  allocation is silently destroyed (swdf came out with a 170-edge budget against a target of 242 256).
+  `ipf()` rescales the value vector in place instead — each row sweep renormalises it back to the row
+  margins, so it stays bounded.
+* **`_largest_remainder` rounds; it does not scale.** It can move each entry by at most one, so it only
+  reaches the total when its input already sums to within `len(values)` of it. Call `_fill_to_total`
+  first. (Handing it a badly-scaled vector returns a sum of exactly `len(values)` — which is where that
+  170 came from: swdf has 170 relations.)
+
+### Results
+
+Against the previous wiring, across all 9 corpus graphs, `|E|` still lands exactly on target and:
+
+| graph | deficit before | deficit after | max-out (target) | max-in (target) |
+|---|---|---|---|---|
+| `wn18rr_v4` | 841 | **0** | 28 (26) | **64 (64)** |
+| `wn18rr_v4_ind` | — | **0** | 28 (29) | 20 (21) |
+| `fb237_v4` | 2 284 | **227** (0.7%) | 192 (195) | 1 110 (1 442) |
+| `fb237_v4_ind` | — | **96** (0.7%) | 144 (146) | 230 (318) |
+| `aids` | **184 992** | **0** | **11 (11)** | **11 (11)** |
+| `codex_l` | — | 463 (0.08%) | **265 (265)** | 15 542 (18 433) |
+| `swdf` | — | **0** | 610 (623) | 2 422 (9 148) |
+| `hetionet` | — | 8 709 (0.4%) | 21 848 (23 866) | 2 010 (2 718) |
+| `dbpedia100k` | — | 2 510 (0.4%) | 117 (115) | 5 676 (14 767) |
+
+aids' Stage 2 also drops from **15+ minutes to ~11 seconds**, because the deficit pass it no longer
+runs was `O(deficit × |pool|)`.
+
+The residual deficit is now entirely **pairing** loss, not budget loss. The remaining weakness is
+**max-in**, which still undershoots on the graphs with very heavy in-hubs (fb237_v4, codex_l,
+dbpedia100k): the allocation gives the hub its stubs, but the configuration-model pairing cannot find
+that many *distinct* subjects for it within `MAX_PAIR_RETRY`. That is a pairing-endgame problem, and
+the fix is the same bipartite Havel–Hakimi ordering that would take the residual to zero.
 
 ---
 

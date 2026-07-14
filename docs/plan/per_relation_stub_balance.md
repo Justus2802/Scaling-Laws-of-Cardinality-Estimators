@@ -1,9 +1,29 @@
 # Plan — per-relation stub balance: replace the greedy quota with a joint allocation
 
-Status: proposed, not implemented. Successor to `degree_budget_and_type_edges.md`, which made
-`Σ tgt_out == Σ tgt_in == content_E` hold *globally* and explicitly left the deficit-recovery
-blow-up as a follow-up. This plan closes that follow-up by enforcing the stronger constraint the
-wiring actually needs, and deletes the deficit pass rather than tuning it.
+**Status: IMPLEMENTED.** §2.1 (the relation-frequency quantile fit) and §2.2–2.6 (the IPF stub
+allocation) have both landed. The as-built design, the results and the numerical traps found on the
+way are documented in `docs/generator.md` — [§ The IPF stub
+allocation](../generator.md#the-ipf-stub-allocation) and [§ Relation
+frequency](../generator.md#relation-frequency). This file is kept as the diagnosis that motivated the
+change; where it disagrees with `generator.md`, `generator.md` is what was built.
+
+Deviations from the plan as written, all forced by measurement:
+
+- **§2.1 landed as a full replacement, not a fallback.** The plan proposed keeping the Zipf and gating
+  on a goodness-of-fit test. The gate degenerates to a constant — the quantile fit wins on all 9
+  graphs — so the Zipf is gone.
+- **The `≥1`-per-CS floor could not be a hard precondition.** On swdf the CS sizes over-determine the
+  edge budget outright (Σ|CS| = 606 500 > content_E = 242 256), so the floor is dropped in that case
+  rather than enforced.
+- **Three bugs the plan did not anticipate**, all found on the corpus: the reciprocity stub reservation
+  decapitates hubs (it took stubs from `argmax` repeatedly); Sinkhorn's multiplicative scalings
+  overflow to `inf`/`nan` on an infeasible column; and `_connect_components` appends bridging edges on
+  top of a now-saturated budget, overshooting `|E|`. See `generator.md`.
+
+Successor to `degree_budget_and_type_edges.md`, which made `Σ tgt_out == Σ tgt_in == content_E` hold
+*globally* and explicitly left the deficit-recovery blow-up as a follow-up. This plan closed that
+follow-up by enforcing the stronger constraint the wiring actually needs, and deleted the deficit pass
+rather than tuning it.
 
 ---
 
