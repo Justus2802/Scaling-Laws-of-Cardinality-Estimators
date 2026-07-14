@@ -7,7 +7,6 @@ from kgsynth.signature._fits import (  # noqa: E402
     fit_quantiles,
     fit_exp_decay_rank,
     fit_truncated_powerlaw,
-    fit_zipf,
     fit_cs_size_offset,
     nan_quantiles,
 )
@@ -81,15 +80,6 @@ class TestFitTruncatedPowerLaw(unittest.TestCase):
 
     def test_small_sample_is_nan(self):
         self.assertTrue(math.isnan(fit_truncated_powerlaw([1, 2, 3]).alpha))
-
-
-class TestFitZipf(unittest.TestCase):
-    def test_finite_exponent_on_heavy_tail(self):
-        rng = np.random.default_rng(4)
-        counts = (rng.zipf(2.0, size=500)).astype(float)
-        fit = fit_zipf(counts)
-        self.assertTrue(math.isfinite(fit.exponent))
-        self.assertGreater(fit.exponent, 1.0)
 
 
 class TestFitCsSizeOffset(unittest.TestCase):

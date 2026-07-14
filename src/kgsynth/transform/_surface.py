@@ -35,12 +35,15 @@ def _q_group(prefix: str) -> tuple[str, ...]:
 # non-decreasing. Jittering the seven levels independently can invert them and
 # corrupt the sampler, so a transform moves a whole group by one shared factor.
 # recip_symmetric_frac is a 6-bin probability vector — same treatment.
+_RECIP_BINS = tuple(f"recip_symmetric_frac_bin{i}" for i in range(len(_Q) - 1))
+
 COUPLED: tuple[tuple[str, ...], ...] = (
     _q_group("obj_mult_alpha"),
     _q_group("subj_mult_alpha"),
     _q_group("cs_size"),
     _q_group("inv_cs_size"),
-    tuple(f"recip_symmetric_frac_bin{i}" for i in range(len(_Q) - 1)),
+    _q_group("rel_freq_logq"),
+    _RECIP_BINS,
 )
 
 # feature name -> the group it belongs to (identity groups are omitted).
@@ -56,12 +59,13 @@ _GROUP_OF: dict[str, tuple[str, ...]] = {
 _SURFACE_A = ("num_entities", "num_relations", "mean_degree", "type_edge_frac")
 
 _SURFACE_B = (
-    "out_degree_alpha", "in_degree_alpha", "relation_zipf_exponent",
+    "out_degree_alpha", "in_degree_alpha",
     "out_degree_max", "out_degree_p90", "in_degree_max", "in_degree_p90",
     "obj_mult_max", "subj_mult_max",
     "a_obj", "a_subj", "recip_symmetric_value",
     *_q_group("obj_mult_alpha"), *_q_group("subj_mult_alpha"),
-    *COUPLED[4],  # recip_symmetric_frac_bin0..5
+    *_q_group("rel_freq_logq"),
+    *_RECIP_BINS,
 )
 
 _SURFACE_C = (

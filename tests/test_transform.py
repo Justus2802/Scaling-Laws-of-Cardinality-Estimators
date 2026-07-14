@@ -48,11 +48,11 @@ class TestSurface(unittest.TestCase):
     def test_size(self):
         # 79 of the 127 signature features reach the generator. If a stage starts
         # (or stops) reading one, this fails rather than silently changing the sweep.
-        self.assertEqual(len(SURFACE), 79)
+        self.assertEqual(len(SURFACE), 85)
 
     def test_all_names_are_real_features(self):
         known = {n for cls in _BLOCK_CLASSES.values() for n in cls.feature_names()}
-        self.assertEqual(len(known), 127)
+        self.assertEqual(len(known), 132)
         self.assertTrue(SURFACE <= known, sorted(SURFACE - known))
 
     def test_inert_and_constant_are_on_the_surface(self):

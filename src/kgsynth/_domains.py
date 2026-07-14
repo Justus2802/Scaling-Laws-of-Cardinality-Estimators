@@ -73,7 +73,7 @@ ALPHA = Domain(lo=1.4, hi=3.0)
 INTEGER_FEATURES: frozenset[str] = frozenset({
     "num_entities", "num_relations", "num_classes", "num_distinct_cs",
     "inv_num_distinct_cs", "num_components",
-    "out_degree_xmin", "in_degree_xmin", "relation_zipf_xmin", "class_size_xmin",
+    "out_degree_xmin", "in_degree_xmin", "class_size_xmin",
     "cs_freq_vmin", "cs_freq_vmax", "inv_cs_freq_vmin", "inv_cs_freq_vmax",
     "two_step_vmin", "two_step_vmax",
     "obj_mult_max", "subj_mult_max",
@@ -93,7 +93,7 @@ SIGNED_UNIT_FEATURES: frozenset[str] = frozenset({"degree_assortativity"})
 MIN_ONE: frozenset[str] = frozenset({
     "num_entities", "num_relations", "num_distinct_cs", "inv_num_distinct_cs",
     "num_components",
-    "out_degree_xmin", "in_degree_xmin", "relation_zipf_xmin", "class_size_xmin",
+    "out_degree_xmin", "in_degree_xmin", "class_size_xmin",
     "cs_freq_vmin", "cs_freq_vmax", "inv_cs_freq_vmin", "inv_cs_freq_vmax",
     "two_step_vmin", "two_step_vmax",
     "obj_mult_max", "subj_mult_max",   # a measured maximum multiplicity is ≥ 1
@@ -164,7 +164,7 @@ EXTENSIVE: frozenset[str] = frozenset({
 # scale linearly. Called out separately because a linear rescaling law is wrong
 # for them.
 WEAKLY_EXTENSIVE: frozenset[str] = frozenset({
-    "out_degree_xmin", "in_degree_xmin", "relation_zipf_xmin", "class_size_xmin",
+    "out_degree_xmin", "in_degree_xmin", "class_size_xmin",
     "cs_freq_vmax", "inv_cs_freq_vmax", "two_step_vmin",
     "shortest_path_max", "shortest_path_mean", "shortest_path_var",
 })

@@ -1,5 +1,5 @@
 {
-  "source": "data/graphs/fb237_v4/fb237_v4.nt",
+  "source": "/Users/cl/data/Cross_Platform_Work/Uni/tum/bpc/BPC-Data-Engeneering-Topic-2/data/graphs/fb237_v4/fb237_v4.nt",
   "features": {
     "num_entities": 4707.0,
     "num_relations": 219.0,
@@ -9,8 +9,13 @@
     "out_degree_xmin": 1.0,
     "in_degree_alpha": 1.5036899853847099,
     "in_degree_xmin": 1.0,
-    "relation_zipf_exponent": 1.0000005694251486,
-    "relation_zipf_xmin": 1.0,
+    "rel_freq_logq_q00": -9.73849497786395,
+    "rel_freq_logq_q10": -7.882701342497064,
+    "rel_freq_logq_q25": -7.38711972070047,
+    "rel_freq_logq_q50": -6.519619152995747,
+    "rel_freq_logq_q75": -5.571829754062222,
+    "rel_freq_logq_q90": -4.539066418955291,
+    "rel_freq_logq_q100": -2.829740198548728,
     "obj_mult_alpha_q00": 1.4,
     "obj_mult_alpha_q10": 1.4,
     "obj_mult_alpha_q25": 1.4,

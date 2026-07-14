@@ -1,5 +1,5 @@
 {
-  "source": "data/graphs/aids/AIDS.nt",
+  "source": "/Users/cl/data/Cross_Platform_Work/Uni/tum/bpc/BPC-Data-Engeneering-Topic-2/data/graphs/aids/AIDS.nt",
   "features": {
     "num_entities": 254207.0,
     "num_relations": 5.0,
@@ -9,8 +9,13 @@
     "out_degree_xmin": 1.0,
     "in_degree_alpha": 1.4159553067697646,
     "in_degree_xmin": 1.0,
-    "relation_zipf_exponent": NaN,
-    "relation_zipf_xmin": NaN,
+    "rel_freq_logq_q00": -5.710369667130679,
+    "rel_freq_logq_q10": -4.552534430759215,
+    "rel_freq_logq_q25": -2.8157815762020175,
+    "rel_freq_logq_q50": -1.260990561916984,
+    "rel_freq_logq_q75": -1.1492426470251722,
+    "rel_freq_logq_q90": -1.1130473181318654,
+    "rel_freq_logq_q100": -1.0889170988696608,
     "obj_mult_alpha_q00": NaN,
     "obj_mult_alpha_q10": NaN,
     "obj_mult_alpha_q25": NaN,

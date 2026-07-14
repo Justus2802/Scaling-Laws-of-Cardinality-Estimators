@@ -65,6 +65,38 @@ def _zipf_weights(n: int, exponent: float, rng: np.random.Generator) -> np.ndarr
     return weights
 
 
+def _relation_weights(n: int, logq, zipf_fallback: float,
+                      rng: np.random.Generator) -> np.ndarray:
+    """Rebuild ``n`` relation frequency weights from Block B's log-share quantile fit.
+
+    Reconstructs the *rank curve* directly: evaluate the stored quantile function of
+    ``log(E_r / Σ E_r)`` at ``n`` evenly-spaced levels, exponentiate, renormalise. This
+    replaces the old ``Zipf(exponent)`` weights, which lost on every corpus graph — the
+    curves are frequently not Zipf-shaped, and the exponent could not be fitted at all
+    below ~10 relations (see ``block_b.py``'s G1 note and the plan).
+
+    The evaluation is deterministic, not an iid draw from the quantile function: with R
+    small the rank curve *is* the signal, so sampling would only add variance to a
+    quantity that has almost no degrees of freedom left. Weights are still shuffled, so
+    relation *indices* carry no implicit rank ordering.
+
+    :param n: number of relations.
+    :param logq: Block B's ``rel_freq_logq`` quantile fit (all-NaN when unavailable).
+    :param zipf_fallback: Zipf exponent used only when the fit is unavailable.
+    :param rng: RNG for the index shuffle.
+    :returns: float array of length ``n`` summing to 1.
+    """
+    if n == 0:
+        return np.array([], dtype=float)
+    qs = np.asarray(logq, dtype=float)
+    if not np.isfinite(qs).all():
+        return _zipf_weights(n, zipf_fallback, rng)
+    weights = np.exp(np.interp(np.linspace(0.0, 1.0, n), QUANTILE_LEVELS, qs))
+    weights /= weights.sum()
+    rng.shuffle(weights)
+    return weights
+
+
 def _sample_type_relation_probs(
     num_types: int,
     num_relations: int,
@@ -230,17 +262,15 @@ def sample_schema(
     )
 
     # --- Relations ---
-    # Prefer the measured relation-usage Zipf exponent (Block B) over the
-    # hard-coded parameter default, matching the brief's "Zipf(s)" with s = target.
-    # NaN/non-positive measured exponent is a legitimate small-R fallback (too few
-    # relations to fit a Zipf curve) — DEFAULT_ZIPF_EXPONENT stands in.
-    rel_zipf = relation_zipf_exponent
-    measured = b.relation_zipf.exponent
-    if not math.isnan(measured) and measured > 0:
-        rel_zipf = float(measured)
-        log.info("Stage 1: using measured relation Zipf exponent %.3f", rel_zipf)
+    # Rebuild the rank curve from Block B's log-share quantile function: evaluate it at
+    # num_relations evenly-spaced levels, exponentiate, renormalise. Deterministic rather
+    # than iid-sampled — with R small the rank curve *is* the signal, and iid draws would
+    # add variance to a quantity with almost no degrees of freedom left. Falls back to a
+    # Zipf only when the fit is unavailable (a graph with no relations at all).
     relations = [f"http://kgsynth.org/rel/{i}" for i in range(num_relations)]
-    relation_weights = _zipf_weights(num_relations, rel_zipf, rng)
+    relation_weights = _relation_weights(
+        num_relations, b.rel_freq_logq, relation_zipf_exponent, rng
+    )
 
     # --- Types ---
     types = [f"http://kgsynth.org/type/{i}" for i in range(num_types)]

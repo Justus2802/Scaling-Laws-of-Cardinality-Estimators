@@ -6,7 +6,7 @@ A **transform** maps a signature's flat feature dict to another one:
 from kgsynth import Signature, Generator, Perturb, FeatureSpec
 import numpy as np
 
-feats = Signature.from_file("swdf.nt").as_features()          # 127 keys
+feats = Signature.from_file("swdf.nt").as_features()          # 132 keys
 feats, report = Perturb({"mean_degree": FeatureSpec(sigma=0.15)}).apply(
     feats, np.random.default_rng(0)
 )
@@ -28,7 +28,7 @@ attribute names.
 
 ## The perturbation surface — 79 of 127 features
 
-Only **79** of the signature's 127 features are read by the generator. Perturbing any of the other 48
+Only **85** of the signature's 132 features are read by the generator. Perturbing any of the other 47
 is a silent no-op: the graph comes out identical. `kgsynth.transform.validate()` therefore **raises**
 on an off-surface feature rather than accepting it — a duplicate graph produced by a knob that does
 nothing is the worst outcome for a sensitivity study.
@@ -41,7 +41,7 @@ nothing is the worst outcome for a sensitivity study.
 | D | 22 / 25 | `two_step_alpha/vmin/vmax` |
 | E | 7 / 27 | the 20 `path_template_*` / `tree_template_*` — their Stage-3 steering is gated off |
 | F | 4 / 7 | `shortest_path_max/mean/var` — unsteered |
-| | **79 / 127** | **48** |
+| | **85 / 132** | **47** |
 
 These counts are asserted by `test_transform.py::TestSurface`, so a block gaining or losing a feature
 fails there rather than silently changing what a sweep covers.

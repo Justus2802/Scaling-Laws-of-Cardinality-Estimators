@@ -4,7 +4,7 @@ import unittest
 import numpy as np
 import scipy.stats
 from kgsynth.signature import _distance, fit_quantiles  # noqa: E402
-from kgsynth.signature._fits import ZipfFit, ExpDecayFit, TruncPowerLawFit  # noqa: E402
+from kgsynth.signature._fits import ExpDecayFit, TruncPowerLawFit  # noqa: E402
 from kgsynth.signature._utils import PowerLawStats  # noqa: E402
 from kgsynth.generator._adapters import sample_quantiles_trunc  # noqa: E402
 
@@ -50,13 +50,11 @@ class TestWasserstein1(unittest.TestCase):
             places=6,
         )
 
-    def test_zero_on_identical_powerlaw_and_zipf_and_expdecay(self):
+    def test_zero_on_identical_powerlaw_and_expdecay(self):
         pl = PowerLawStats(2.5, 1.0, *([float("nan")] * 4))
-        zf = ZipfFit(2.5, 1.0)
         ed = ExpDecayFit(0.4, 10.0)
         tp = TruncPowerLawFit(2.0, 1.0, 50.0)
         self.assertEqual(_distance.wasserstein1(pl, pl, _distance.POWERLAW), 0.0)
-        self.assertEqual(_distance.wasserstein1(zf, zf, _distance.ZIPF), 0.0)
         self.assertEqual(_distance.wasserstein1(ed, ed, _distance.EXP_DECAY), 0.0)
         self.assertEqual(_distance.wasserstein1(tp, tp, _distance.TRUNC_POWERLAW), 0.0)
 

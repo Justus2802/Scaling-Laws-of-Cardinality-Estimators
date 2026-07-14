@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 from kgsynth.signature import BlockA, BlockB, BlockC, BlockD, BlockF  # noqa: E402
 from kgsynth.signature._fits import (  # noqa: E402
-    ExpDecayFit, TruncPowerLawFit, ZipfFit, fit_quantiles,
+    ExpDecayFit, TruncPowerLawFit, fit_quantiles,
 )
 from kgsynth.signature._utils import PowerLawStats  # noqa: E402
 from kgsynth.generator import sample_schema, instantiate  # noqa: E402
@@ -19,6 +19,18 @@ def _q(center: float, spread: float, lo: float, hi: float):
     """Quantile fit of a normal sample centred at ``center`` (truncated to [lo, hi])."""
     rng = np.random.default_rng(0)
     return fit_quantiles(rng.normal(center, spread, 500), lo=lo, hi=hi)
+
+
+def _rel_logq(exponent: float, n: int = 20):
+    """Block B's rel_freq_logq for a Zipf(exponent)-shaped relation-share curve.
+
+    The generator now rebuilds relation weights from the log-share quantile function,
+    so a fixture that wants "skewed relations" states the skew here. Higher exponent →
+    more unequal shares.
+    """
+    shares = np.arange(1, n + 1, dtype=float) ** (-exponent)
+    shares /= shares.sum()
+    return fit_quantiles(np.log(shares), min_samples=2)
 
 
 def _make_block_a(num_entities=300, num_triples=1200, num_relations=4,
@@ -61,7 +73,7 @@ def _make_block_b(
 ) -> BlockB:
     """Reduced BlockB with the fields sample_schema reads."""
     b = BlockB()
-    b._relation_zipf = ZipfFit(exponent=relation_zipf, x_min=1.0)
+    b._rel_freq_logq = _rel_logq(relation_zipf)
     b._in_degree_fit = _pls(in_alpha)
     b._out_degree_fit = _pls(2.5)
     b._out_degree_max = 20
@@ -157,8 +169,8 @@ class TestStage2EdgeBudget(unittest.TestCase):
         max_subjects = max((len(v) for v in po_counts.values()), default=0)
         self.assertGreater(max_subjects, 2)
 
-    def test_measured_relation_zipf_used(self):
-        # A very skewed measured relation Zipf should produce more unequal
+    def test_measured_relation_freq_used(self):
+        # A skewed measured relation-share curve should produce more unequal
         # relation weights than a flat one.
         b_flat = _make_block_b(relation_zipf=1.0)
         b_skew = _make_block_b(relation_zipf=4.0)

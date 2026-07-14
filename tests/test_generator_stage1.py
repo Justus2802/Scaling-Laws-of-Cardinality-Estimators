@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 from kgsynth.signature import BlockA, BlockB, BlockC, BlockD, BlockF
 from kgsynth.signature._fits import (
-    ExpDecayFit, TruncPowerLawFit, ZipfFit, fit_quantiles, nan_exp_decay,
+    ExpDecayFit, TruncPowerLawFit, fit_quantiles, nan_exp_decay, nan_quantiles,
 )
 from kgsynth.signature._utils import PowerLawStats
 from kgsynth.generator import Schema, sample_schema
@@ -18,6 +18,18 @@ def _q(center: float, spread: float, lo: float, hi: float):
     """Quantile fit of a normal sample centred at ``center`` (truncated to [lo, hi])."""
     rng = np.random.default_rng(0)
     return fit_quantiles(rng.normal(center, spread, 500), lo=lo, hi=hi)
+
+
+def _rel_logq(exponent: float, n: int = 20):
+    """Block B's rel_freq_logq for a Zipf(exponent)-shaped relation-share curve.
+
+    The generator now rebuilds relation weights from the log-share quantile function,
+    so a fixture that wants "skewed relations" states the skew here. Higher exponent →
+    more unequal shares.
+    """
+    shares = np.arange(1, n + 1, dtype=float) ** (-exponent)
+    shares /= shares.sum()
+    return fit_quantiles(np.log(shares), min_samples=2)
 
 
 def _make_block_a(
@@ -77,7 +89,7 @@ def _make_block_b(
 ) -> BlockB:
     """Reduced BlockB with the fields sample_schema/_validate_target read."""
     b = BlockB()
-    b._relation_zipf = ZipfFit(exponent=relation_zipf, x_min=1.0)
+    b._rel_freq_logq = _rel_logq(relation_zipf)
     b._in_degree_fit = PowerLawStats(in_alpha, 1.0, *([float("nan")] * 4))
     b._out_degree_fit = PowerLawStats(out_alpha, 1.0, *([float("nan")] * 4))
     b._out_degree_max = 20
@@ -273,15 +285,14 @@ class TestSampleSchemaReproducibility(unittest.TestCase):
 class TestSampleSchemaZipfEffect(unittest.TestCase):
     """Higher Zipf exponent → more skewed relation weights.
 
-    ``relation_zipf_exponent`` is only used as a fallback when Block B's own
-    measured exponent is unavailable (small R) — see sample_schema's
-    docstring — so these fixtures give Block B a NaN relation_zipf to exercise
-    the parameter path directly, rather than the (higher-precedence) measured one.
+    ``relation_zipf_exponent`` is only the fallback, used when Block B's measured
+    ``rel_freq_logq`` is unavailable — so these fixtures give Block B an all-NaN fit
+    to exercise the parameter path directly rather than the measured one.
     """
 
     def _nan_zipf_block_b(self):
         b = _make_block_b()
-        b._relation_zipf = ZipfFit(exponent=float("nan"), x_min=1.0)
+        b._rel_freq_logq = nan_quantiles()
         return b
 
     def test_higher_exponent_more_skewed(self):

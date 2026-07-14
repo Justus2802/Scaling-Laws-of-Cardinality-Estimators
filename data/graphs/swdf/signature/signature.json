@@ -1,5 +1,5 @@
 {
-  "source": "data/graphs/swdf/swdf.nt",
+  "source": "/Users/cl/data/Cross_Platform_Work/Uni/tum/bpc/BPC-Data-Engeneering-Topic-2/data/graphs/swdf/swdf.nt",
   "features": {
     "num_entities": 76711.0,
     "num_relations": 170.0,
@@ -9,8 +9,13 @@
     "out_degree_xmin": 1.0,
     "in_degree_alpha": 1.9838713813356172,
     "in_degree_xmin": 1.0,
-    "relation_zipf_exponent": 1.0135830504131271,
-    "relation_zipf_xmin": 1.0,
+    "rel_freq_logq_q00": -12.397750297248153,
+    "rel_freq_logq_q10": -12.397750297248153,
+    "rel_freq_logq_q25": -10.071337659303026,
+    "rel_freq_logq_q50": -7.341585637678414,
+    "rel_freq_logq_q75": -5.644614518388871,
+    "rel_freq_logq_q90": -4.169204430754977,
+    "rel_freq_logq_q100": -2.375546811007041,
     "obj_mult_alpha_q00": 1.4,
     "obj_mult_alpha_q10": 1.4,
     "obj_mult_alpha_q25": 2.460571289062499,

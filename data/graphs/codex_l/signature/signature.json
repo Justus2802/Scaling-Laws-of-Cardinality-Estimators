@@ -1,5 +1,5 @@
 {
-  "source": "data/graphs/codex_l/codex_l.nt",
+  "source": "/Users/cl/data/Cross_Platform_Work/Uni/tum/bpc/BPC-Data-Engeneering-Topic-2/data/graphs/codex_l/codex_l.nt",
   "features": {
     "num_entities": 77951.0,
     "num_relations": 69.0,
@@ -9,8 +9,13 @@
     "out_degree_xmin": 1.0,
     "in_degree_alpha": 1.4642528013125722,
     "in_degree_xmin": 1.0,
-    "relation_zipf_exponent": 1.0000011858986815,
-    "relation_zipf_xmin": 1.0,
+    "rel_freq_logq_q00": -13.325201358968004,
+    "rel_freq_logq_q10": -10.491988014911787,
+    "rel_freq_logq_q25": -8.207207546551247,
+    "rel_freq_logq_q50": -6.313086064661624,
+    "rel_freq_logq_q75": -4.517729469252719,
+    "rel_freq_logq_q90": -3.2068427890466547,
+    "rel_freq_logq_q100": -1.181365884713569,
     "obj_mult_alpha_q00": 1.4,
     "obj_mult_alpha_q10": 1.5486567880588027,
     "obj_mult_alpha_q25": 2.358837890624999,

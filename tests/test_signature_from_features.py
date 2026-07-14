@@ -33,7 +33,7 @@ _NAN_FIT_GRAPH = "aids"
 # reading a new attribute, add it here.
 _GENERATOR_READS = [
     "a.num_entities", "a.num_relations", "a.mean_degree",
-    "b.out_degree_fit.alpha", "b.in_degree_fit.alpha", "b.relation_zipf.exponent",
+    "b.out_degree_fit.alpha", "b.in_degree_fit.alpha", "b.rel_freq_logq",
     "b.obj_alpha_q", "b.subj_alpha_q", "b.a_obj", "b.a_subj",
     "b.obj_mult_max", "b.subj_mult_max",
     "b.out_degree_max", "b.out_degree_p90", "b.in_degree_max", "b.in_degree_p90",
@@ -87,11 +87,11 @@ class TestFeatureDict(unittest.TestCase):
     def setUpClass(cls):
         cls.sig = _load()
 
-    def test_has_all_127_features(self):
+    def test_has_all_132_features(self):
         feats = self.sig.as_features()
         expected = sum(len(c.feature_names()) for c in _BLOCK_CLASSES.values())
         self.assertEqual(len(feats), expected)
-        self.assertEqual(len(feats), 127)
+        self.assertEqual(len(feats), 132)
 
     def test_keys_match_block_feature_names(self):
         feats = self.sig.as_features()

@@ -7,7 +7,7 @@
 === Reduced Block B: Relation Frequency & Multiplicity (G1/G2/G2b) ===
   out-degree fit : alpha=1.5542  xmin=1.0
   in-degree fit  : alpha=1.8255  xmin=1.0
-  relation Zipf  : exponent=nan  xmin=nan
+  relation shares: median=0.0227  top=0.5880
   obj  mult-alpha quantiles: median=nan IQR=[nan,nan] cutoffs=[nan,nan]
   subj mult-alpha quantiles: median=nan IQR=[nan,nan] cutoffs=[nan,nan]
   mult maxima    : obj=20  subj=59

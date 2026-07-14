@@ -594,7 +594,7 @@ for the consumer-side contract (`_validate_target`). From the measurement side:
 
 | Feature group | Occurs when | Why |
 |---|---|---|
-| `relation_zipf_*`, `obj/subj_mult_alpha_q*`, `subj/obj_row_entropy_q*` | fewer than `MIN_SAMPLES_FOR_FIT` (10) **relations** | too few points to fit a Zipf/power-law |
+| `obj/subj_mult_alpha_q*`, `subj/obj_row_entropy_q*` | fewer than `MIN_SAMPLES_FOR_FIT` (10) **relations** | too few points to fit a power-law |
 | `recip_symmetric_frac_bin*` | empty frequency bin (small `R`) | no relation landed in that bin; borrow the nearest non-empty one |
 | `recip_symmetric_value` | **no symmetric relation exists** | real outcome, not a fit failure |
 | `cs_freq_*`, `inv_cs_freq_*` | small `R` → too few distinct CSs to fit | relation-driven, same root cause as the first row |

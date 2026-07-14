@@ -1,5 +1,5 @@
 {
-  "source": "data/graphs/dbpedia100k/dbpedia100k.nt",
+  "source": "/Users/cl/data/Cross_Platform_Work/Uni/tum/bpc/BPC-Data-Engeneering-Topic-2/data/graphs/dbpedia100k/dbpedia100k.nt",
   "features": {
     "num_entities": 99604.0,
     "num_relations": 470.0,
@@ -9,8 +9,13 @@
     "out_degree_xmin": 1.0,
     "in_degree_alpha": 1.5628808296043424,
     "in_degree_xmin": 1.0,
-    "relation_zipf_exponent": 1.067996744562237,
-    "relation_zipf_xmin": 1.0,
+    "rel_freq_logq_q00": -13.455197575810896,
+    "rel_freq_logq_q10": -12.76205039525095,
+    "rel_freq_logq_q25": -10.970290926022894,
+    "rel_freq_logq_q50": -9.05461337484255,
+    "rel_freq_logq_q75": -6.931902039753117,
+    "rel_freq_logq_q90": -5.442847936483101,
+    "rel_freq_logq_q100": -2.400900682064897,
     "obj_mult_alpha_q00": 1.4,
     "obj_mult_alpha_q10": 1.4,
     "obj_mult_alpha_q25": 1.6099520417596669,

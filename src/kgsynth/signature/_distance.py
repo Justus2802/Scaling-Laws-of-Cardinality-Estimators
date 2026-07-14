@@ -29,7 +29,6 @@ _EXP_DECAY_RANKS = 10
 # Supported fit kinds (the second element of each ``distribution_fits`` entry).
 QUANTILE = "quantile"
 POWERLAW = "powerlaw"        # PowerLawStats (alpha, xmin, …)
-ZIPF = "zipf"                # ZipfFit (exponent, x_min)
 TRUNC_POWERLAW = "trunc_powerlaw"  # TruncPowerLawFit (alpha, v_min, v_max)
 EXP_DECAY = "exp_decay"      # ExpDecayFit (rate, scale)
 
@@ -75,8 +74,6 @@ def _reconstruct_sample(fit, kind: str, u: np.ndarray) -> np.ndarray:
         return np.interp(u, QUANTILE_LEVELS, qs)
     if kind == POWERLAW:
         return _powerlaw_sample(fit.alpha, fit.xmin, u)
-    if kind == ZIPF:
-        return _powerlaw_sample(fit.exponent, fit.x_min, u)
     if kind == TRUNC_POWERLAW:
         return _powerlaw_sample(fit.alpha, fit.v_min, u, x_max=fit.v_max)
     if kind == EXP_DECAY:

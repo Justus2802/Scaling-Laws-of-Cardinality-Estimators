@@ -2,11 +2,12 @@
 
 Stores the *shape* of each relation's fan-out/fan-in rather than redundant
 moments: the spread of per-relation power-law exponents as a quantile function, the
-relation-usage frequency as a Zipf exponent, and the CS-size→multiplicity offset
-``a`` (G2b) that injects the out-degree-shaping correlation the marginals
-discard. Aggregate out/in-degree power-laws are kept as *targets* (a compound
-sum the marginals do not pin). ``functionality`` and the multiplicity *scale*
-are dropped — both are guaranteed by the stored law and edge conservation.
+relation-usage frequency as a **log-share quantile function**, and the
+CS-size→multiplicity offset ``a`` (G2b) that injects the out-degree-shaping
+correlation the marginals discard. Aggregate out/in-degree power-laws are kept as
+*targets* (a compound sum the marginals do not pin). ``functionality`` and the
+multiplicity *scale* are dropped — both are guaranteed by the stored law and edge
+conservation.
 
 The unsummarised inputs to the fits (the per-relation exponents, the degree
 sequences and the per-relation edge counts) are kept on the object so
@@ -26,13 +27,11 @@ from ._fits import (
     QuantileFit,
     QUANTILE_LEVELS,
     QUANTILE_SUFFIXES,
-    ZipfFit,
     fit_quantiles,
-    fit_zipf,
     fit_cs_size_offset,
-    nan_zipf,
+    nan_quantiles,
 )
-from ._plot_helpers import overlay_quantiles, overlay_zipf
+from ._plot_helpers import overlay_quantiles
 from . import _distance
 
 log = get_logger(__name__)
@@ -58,7 +57,7 @@ class BlockB(SignatureBlock):
     def __init__(self) -> None:
         self._out_degree_fit = _NOT_CALCULATED          # target
         self._in_degree_fit = _NOT_CALCULATED           # target
-        self._relation_zipf = _NOT_CALCULATED           # G1
+        self._rel_freq_logq = _NOT_CALCULATED           # G1
         self._obj_alpha_q = _NOT_CALCULATED             # G2 object side
         self._subj_alpha_q = _NOT_CALCULATED            # G2 subject side
         self._obj_mult_max = _NOT_CALCULATED            # G2 upper bound (object side)
@@ -93,8 +92,8 @@ class BlockB(SignatureBlock):
         return self._require("in_degree_fit", self._in_degree_fit)
 
     @property
-    def relation_zipf(self) -> ZipfFit:
-        return ZipfFit(*self._require("relation_zipf", self._relation_zipf))
+    def rel_freq_logq(self) -> QuantileFit:
+        return QuantileFit(*self._require("rel_freq_logq", self._rel_freq_logq))
 
     @property
     def obj_alpha_q(self) -> QuantileFit:
@@ -219,14 +218,28 @@ class BlockB(SignatureBlock):
                     and not tgt_lit and not is_literal[e.source]):
                 rel_pairs[r].add((e.source, e.target))
 
-        # --- G1: relation-usage frequency (Zipf over per-predicate edge counts) ---
+        # --- G1: relation-usage frequency (quantile function of the log edge shares) ---
+        # Stored as the empirical quantile function of log(E_r / Σ E_r), not as a Zipf
+        # exponent. Three reasons, all measured (docs/plan/per_relation_stub_balance.md):
+        #   * these rank curves are frequently not Zipf-shaped at all — aids' shares are
+        #     .337/.284/.230/.060/.003 (flat head, then a cliff), which no single exponent
+        #     reproduces;
+        #   * a Zipf cannot be fitted below MIN_SAMPLES_FOR_FIT relations (aids R=5,
+        #     wn18rr R=9 both returned NaN), forcing the generator onto a hard-coded default;
+        #   * log space is required — the shares are heavy-tailed, and a linear-space
+        #     quantile fit reconstructs them worse than the Zipf did.
+        # min_samples=2: a relation's edge share is a directly-reliable statistic, not a
+        # noisy per-item power-law fit, so the Clauset small-sample caveat does not apply
+        # (same reasoning as the per-relation reciprocity fractions).
         self._rel_edge_counts = (
             np.fromiter(rel_edge_counts.values(), dtype=float, count=len(rel_edge_counts))
             if rel_edge_counts else np.array([], dtype=float)
         )
-        self._relation_zipf = (
-            fit_zipf(self._rel_edge_counts) if self._rel_edge_counts.size else nan_zipf()
-        )
+        if self._rel_edge_counts.size:
+            shares = self._rel_edge_counts / self._rel_edge_counts.sum()
+            self._rel_freq_logq = fit_quantiles(np.log(shares), min_samples=2)
+        else:
+            self._rel_freq_logq = nan_quantiles()
 
         # --- G2: per-relation exponents, then quantile function across relations ---
         obj_alphas: list[float] = []
@@ -327,9 +340,10 @@ class BlockB(SignatureBlock):
         self._recip_symmetric_value = symmetric_value
 
         log.info(
-            "Block B: rel_zipf=%.3f, obj_alpha(median=%.3f), a_obj=%.3f, a_subj=%.3f",
-            self._relation_zipf.exponent, self._obj_alpha_q.q50,
-            self._a_obj, self._a_subj,
+            "Block B: rel_freq_logq(median share=%.4f, top=%.4f), obj_alpha(median=%.3f), "
+            "a_obj=%.3f, a_subj=%.3f",
+            np.exp(self._rel_freq_logq.q50), np.exp(self._rel_freq_logq.q100),
+            self._obj_alpha_q.q50, self._a_obj, self._a_subj,
         )
         log.info(
             "Block B: per-relation reciprocity — frac_symmetric by edge-freq bin=%s, "
@@ -339,12 +353,12 @@ class BlockB(SignatureBlock):
         return self
 
     def as_vector(self) -> list[float]:
-        """Flatten to a fixed-length 35-vector for cross-KG comparison.
+        """Flatten to a fixed-length 40-vector for cross-KG comparison.
 
-        Layout: out-degree (alpha, xmin); in-degree (alpha, xmin); relation Zipf
-        (exponent, x_min); object-α quantile function (7 levels); subject-α
-        quantile function (7 levels); object/subject multiplicity maxima (2 — the
-        upper bounds of the two α laws); offsets a_obj, a_subj; out/in degree
+        Layout: out-degree (alpha, xmin); in-degree (alpha, xmin); relation
+        log-share quantile function (7 levels); object-α quantile function (7 levels);
+        subject-α quantile function (7 levels); object/subject multiplicity maxima (2 —
+        the upper bounds of the two α laws); offsets a_obj, a_subj; out/in degree
         max/p90 (4); per-relation reciprocity — P(symmetric) per edge-frequency bin
         (6 levels) + the symmetric-mode reciprocity magnitude (1 scalar).
 
@@ -357,8 +371,7 @@ class BlockB(SignatureBlock):
             self._safe_scalar(lambda: self.out_degree_fit.xmin),
             self._safe_scalar(lambda: self.in_degree_fit.alpha),
             self._safe_scalar(lambda: self.in_degree_fit.xmin),
-            self._safe_scalar(lambda: self.relation_zipf.exponent),
-            self._safe_scalar(lambda: self.relation_zipf.x_min),
+            *self._safe_iter(lambda: self.rel_freq_logq, n_q),
             *self._safe_iter(lambda: self.obj_alpha_q, n_q),
             *self._safe_iter(lambda: self.subj_alpha_q, n_q),
             self._safe_scalar(lambda: self.obj_mult_max),
@@ -379,8 +392,8 @@ class BlockB(SignatureBlock):
         names = [
             "out_degree_alpha", "out_degree_xmin",
             "in_degree_alpha", "in_degree_xmin",
-            "relation_zipf_exponent", "relation_zipf_xmin",
         ]
+        names += [f"rel_freq_logq_{suffix}" for suffix in QUANTILE_SUFFIXES]
         for side in ("obj", "subj"):
             names += [f"{side}_mult_alpha_{suffix}" for suffix in QUANTILE_SUFFIXES]
         names += ["obj_mult_max", "subj_mult_max"]
@@ -394,7 +407,7 @@ class BlockB(SignatureBlock):
     def get_na_vec(cls) -> list[float]:
         """Return a NaN vector the same length as as_vector()."""
         n_q = len(QUANTILE_LEVELS)
-        return [float("nan")] * (6 + 2 * n_q + 2 + 2 + 4 + (n_q - 1) + 1)
+        return [float("nan")] * (4 + 3 * n_q + 2 + 2 + 4 + (n_q - 1) + 1)
 
     @classmethod
     def _state_from_features(cls, feats: dict[str, float]) -> dict:
@@ -412,8 +425,8 @@ class BlockB(SignatureBlock):
             "_in_degree_fit": PowerLawStats(
                 feats["in_degree_alpha"], feats["in_degree_xmin"], nan, nan, nan, nan
             ),
-            "_relation_zipf": ZipfFit(
-                feats["relation_zipf_exponent"], feats["relation_zipf_xmin"]
+            "_rel_freq_logq": QuantileFit(
+                *[feats[f"rel_freq_logq_{s}"] for s in QUANTILE_SUFFIXES]
             ),
             "_obj_alpha_q": QuantileFit(
                 *[feats[f"obj_mult_alpha_{s}"] for s in QUANTILE_SUFFIXES]
@@ -444,7 +457,7 @@ class BlockB(SignatureBlock):
         return [
             ("out_degree", self.out_degree_fit, _distance.POWERLAW),
             ("in_degree", self.in_degree_fit, _distance.POWERLAW),
-            ("relation_freq", self.relation_zipf, _distance.ZIPF),
+            ("relation_freq", self.rel_freq_logq, _distance.QUANTILE),
             ("obj_mult_alpha", self.obj_alpha_q, _distance.QUANTILE),
             ("subj_mult_alpha", self.subj_alpha_q, _distance.QUANTILE),
         ]
@@ -474,8 +487,8 @@ class BlockB(SignatureBlock):
             f"xmin={self.out_degree_fit.xmin}",
             f"  in-degree fit  : alpha={self.in_degree_fit.alpha:.4f}  "
             f"xmin={self.in_degree_fit.xmin}",
-            f"  relation Zipf  : exponent={self.relation_zipf.exponent:.4f}  "
-            f"xmin={self.relation_zipf.x_min}",
+            f"  relation shares: median={np.exp(self.rel_freq_logq.q50):.4f}  "
+            f"top={np.exp(self.rel_freq_logq.q100):.4f}",
             f"  obj  mult-alpha quantiles: median={s.q50:.3f} "
             f"IQR=[{s.q25:.3f},{s.q75:.3f}] cutoffs=[{s.q0:.2f},{s.q100:.2f}]",
             f"  subj mult-alpha quantiles: median={ss.q50:.3f} "
@@ -506,17 +519,20 @@ class BlockB(SignatureBlock):
             self._plot_degree_hist(axes[0, 1], in_degrees, self.in_degree_fit,
                                    "In-degree distribution (target)", False)
 
-            # Relation-usage frequency: raw per-predicate edge counts + Zipf tail.
+            # Relation-usage frequency: raw log edge shares + stored quantile markers.
             ax = axes[0, 2]
             if self._rel_edge_counts is _NOT_CALCULATED:
                 ax.text(0.5, 0.5, "not in serialized data\n(re-run measurement)", ha="center",
                         va="center", transform=ax.transAxes, fontsize=8)
-            elif not overlay_zipf(ax, self._rel_edge_counts, self.relation_zipf,
-                                  label="relation usage", color="teal"):
-                ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
-            ax.set_xlabel("edge count per relation")
-            ax.set_ylabel("P(X ≥ x)")
-            ax.set_title("Relation-usage frequency (fit: Zipf, CCDF)")
+            else:
+                log_shares = np.log(self._rel_edge_counts / self._rel_edge_counts.sum())
+                if not overlay_quantiles(ax, log_shares, self.rel_freq_logq,
+                                         label="relation log-share", color="teal"):
+                    ax.text(0.5, 0.5, "no data", ha="center", va="center",
+                            transform=ax.transAxes)
+            ax.set_xlabel("log(edge share) per relation")
+            ax.set_ylabel("density")
+            ax.set_title("Relation-usage frequency (fit: log-share quantiles)")
 
             # Per-relation exponents: raw histogram + stored quantile markers.
             ax = axes[1, 0]

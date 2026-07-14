@@ -134,25 +134,6 @@ def overlay_powerlaw(ax, values: np.ndarray, fit, *,
                                   color=color, fit_label=f"power-law (α={fit.alpha:.2f})")
 
 
-def overlay_zipf(ax, values: np.ndarray, fit, *,
-                 label: str = "data", color: str = "teal") -> bool:
-    """Log-log histogram of ``values`` with the fitted Zipf tail overlaid.
-
-    Zipf variant of :func:`overlay_powerlaw` for ``ZipfFit`` (``exponent`` above
-    ``x_min``); used for relation-usage frequency counts.
-
-    Args:
-        ax: matplotlib axis.
-        values: the raw usage counts the Zipf law was fit to.
-        fit: a ``ZipfFit`` (uses ``exponent`` and ``x_min``).
-
-    Returns:
-        True if anything was drawn, False if there was no positive data.
-    """
-    return _overlay_open_powerlaw(ax, values, fit.exponent, fit.x_min, label=label,
-                                  color=color, fit_label=f"Zipf (α={fit.exponent:.2f})")
-
-
 def overlay_truncated_powerlaw(ax, values: np.ndarray, fit, *,
                                label: str = "data", color: str = "darkorange") -> bool:
     """Empirical CCDF of ``values`` with the fitted truncated power-law overlaid.

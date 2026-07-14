@@ -25,7 +25,7 @@ import scipy.stats
 
 # Reuse the existing power-law fitter and the shared minimum-sample threshold so
 # the two signatures agree on when a fit is trustworthy.
-from ._utils import MIN_SAMPLES_FOR_FIT, _fit_powerlaw
+from ._utils import MIN_SAMPLES_FOR_FIT
 
 # Rank curves (singular-value spectra, per-type entropy) are inherently short —
 # only a handful of ranks exist — so they use a smaller minimum than the
@@ -83,12 +83,6 @@ class TruncPowerLawFit(NamedTuple):
     v_max: float
 
 
-class ZipfFit(NamedTuple):
-    """Zipf / power-law frequency law: ``exponent`` plus the fit's ``x_min``."""
-    exponent: float
-    x_min: float
-
-
 # The NamedTuple field count must track the level grid (they are splatted together).
 assert len(QuantileFit._fields) == len(QUANTILE_LEVELS)
 
@@ -106,11 +100,6 @@ def nan_exp_decay() -> ExpDecayFit:
 def nan_trunc_powerlaw() -> TruncPowerLawFit:
     """Return the canonical 'fit unavailable' truncated-power-law value."""
     return TruncPowerLawFit(_NAN, _NAN, _NAN)
-
-
-def nan_zipf() -> ZipfFit:
-    """Return the canonical 'fit unavailable' Zipf value."""
-    return ZipfFit(_NAN, _NAN)
 
 
 # ── fitters ────────────────────────────────────────────────────────────────────
@@ -219,20 +208,6 @@ def fit_truncated_powerlaw(values) -> TruncPowerLawFit:
         return TruncPowerLawFit(alpha, v_min, v_max)
     except Exception:
         return nan_trunc_powerlaw()
-
-
-def fit_zipf(counts) -> ZipfFit:
-    """Fit a Zipf / power-law frequency law to a set of usage counts.
-
-    Reuses the shared ``_fit_powerlaw`` (the ``powerlaw`` package) and exposes
-    its exponent and ``x_min``. Used for relation-usage frequency.
-
-    Args:
-        counts: iterable of per-item occurrence counts.
-    """
-    arr = np.asarray(list(counts), dtype=float)
-    stats = _fit_powerlaw(arr)
-    return ZipfFit(float(stats.alpha), float(stats.xmin))
 
 
 def fit_cs_size_offset(cs_size, mult) -> float:

@@ -1,5 +1,5 @@
 {
-  "source": "data/test_graphs/wn18rr_v4/wn18rr_v4.nt",
+  "source": "/Users/cl/data/Cross_Platform_Work/Uni/tum/bpc/BPC-Data-Engeneering-Topic-2/data/test_graphs/wn18rr_v4/wn18rr_v4.nt",
   "features": {
     "num_entities": 3861.0,
     "num_relations": 9.0,
@@ -9,8 +9,13 @@
     "out_degree_xmin": 1.0,
     "in_degree_alpha": 1.8254892552055386,
     "in_degree_xmin": 1.0,
-    "relation_zipf_exponent": NaN,
-    "relation_zipf_xmin": NaN,
+    "rel_freq_logq_q00": -8.095801932757814,
+    "rel_freq_logq_q10": -6.662394357375369,
+    "rel_freq_logq_q25": -5.975538396557723,
+    "rel_freq_logq_q50": -3.7872424499658046,
+    "rel_freq_logq_q75": -3.1144810263303335,
+    "rel_freq_logq_q90": -1.1219036299460077,
+    "rel_freq_logq_q100": -0.5310449198520848,
     "obj_mult_alpha_q00": NaN,
     "obj_mult_alpha_q10": NaN,
     "obj_mult_alpha_q25": NaN,

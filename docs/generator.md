@@ -77,7 +77,7 @@ new one (`kgsynth.signature_sampler`), interpolate — and still generate from t
 | Block | Field | Used for |
 |---|---|---|
 | A | `num_entities`, `num_relations`, `mean_degree`, `type_edge_frac` | `V`, `R`, edge budget `E = round(mean_degree·V)`, and its split into `n_type_edges = round(E·type_edge_frac)` + `content_E` |
-| B | `relation_zipf` | relation-frequency weights (Zipf exponent) |
+| B | `rel_freq_logq` | relation-frequency weights (quantile function of the log edge shares) |
 | B | `obj_alpha_q` | per-relation **object**-multiplicity tail α (out-degree shape), as a quantile function |
 | B | `subj_alpha_q` | per-relation **subject**-multiplicity tail α (in-side shape), as a quantile function |
 | B | `obj_mult_max`, `subj_mult_max` | upper bounds of those two multiplicity laws (the range their α was fitted over) |
@@ -140,7 +140,8 @@ away — `_validate_target` deliberately does not check them:
 
 | Feature | Reason | Fallback |
 |---|---|---|
-| `relation_zipf.exponent`, `cs_freq_fit.alpha`, `inv_cs_freq_fit.alpha` | small R (too few relations/CSs to fit a Zipf/power-law) | `DEFAULT_ZIPF_EXPONENT` |
+| `cs_freq_fit.alpha`, `inv_cs_freq_fit.alpha` | small R (too few CSs to fit a power-law) | `DEFAULT_ZIPF_EXPONENT` |
+| `rel_freq_logq` | a graph with no relations at all (never on a real KG — the fit needs only 2 relations) | `Zipf(relation_zipf_exponent)` |
 | `obj_alpha_q[i]`, `subj_alpha_q[i]` (per-relation) | small R for that one relation | flat weights for that relation (`sample_powerlaw` returns uniform ones) |
 | `class_size_fit.alpha` | small `T`, or **untyped KG** (the majority case — 7 of 9 corpus KGs) | uniform type weights |
 | `type_rel_spectrum_exp` | untyped KG (no `P(r|t)` signal) | uniform per-type relation weights |
@@ -166,9 +167,14 @@ legitimately still be NaN (small-R Zipf/CS fits, untyped-KG class stats) are cal
 
 1. **Counts & budget.** `R = max(1, num_relations)`, `T = max(0, num_classes)`,
    `E = round(num_entities · mean_degree)` (reduced Block A stores mean degree, not `|E|`).
-2. **Relations.** `relation_weights = Zipf(R, exponent)` where the exponent is the **measured**
-   `b.relation_zipf.exponent`, falling back to the `relation_zipf_exponent` param only when the
-   measured exponent is NaN/non-positive (small R — too few relations to fit a Zipf curve).
+2. **Relations.** `relation_weights` are rebuilt from Block B's `rel_freq_logq` — the quantile
+   function of `log(E_r / Σ E_r)` — by evaluating it at `R` evenly-spaced levels (reconstructing the
+   rank curve directly), exponentiating and renormalising, then shuffling so relation *indices* carry
+   no implicit rank ordering. The evaluation is deterministic rather than an iid draw: with `R` small
+   the rank curve *is* the signal, so sampling would only add variance to a quantity with almost no
+   degrees of freedom left. The old `Zipf(R, relation_zipf.exponent)` path is gone — see
+   [§ Relation frequency](#relation-frequency) — and `relation_zipf_exponent` survives only as the
+   fallback for a graph with no relations at all.
 3. **Types.** `type_weights = Zipf(T, class_size_fit.alpha)`, uniform fallback when α is NaN
    (untyped KGs — the majority case in the corpus — or `T` too small to fit).
 4. **`P(r|t)`.** Reconstruct a singular-value spectrum from `type_rel_spectrum_exp`
@@ -560,8 +566,9 @@ The load-bearing design choices behind the Stage-1/2 wiring:
 - **`P(r|t)` from its own spectrum.** Stage 1 reconstructs `P(r|t)` from `type_rel_spectrum_exp`
   (the T×R spectrum), kept separate from the `M` co-occurrence spectrum — they are different
   quantities, so one cannot target the other.
-- **Measured relation Zipf.** Relation weights use the measured `relation_zipf` exponent, not a
-  fixed value.
+- **Measured relation frequency.** Relation weights are rebuilt from the measured `rel_freq_logq`
+  quantile function, not from a fitted Zipf exponent (which lost on every corpus graph — see
+  [§ Relation frequency](#relation-frequency)).
 - **Per-relation multiplicity + edge conservation.** Out-side wiring allocates each relation's
   edges by `multinomial` on per-relation α (`obj_alpha`) and the G2b `a_obj` CS-size offset,
   hitting each relation's edge budget `|edges_r| = freq(r)·E` exactly. In-side allocation draws
@@ -585,6 +592,60 @@ The load-bearing design choices behind the Stage-1/2 wiring:
   weight gains the `inv_cs_size^a_subj` G2b offset — the object-side mirror of `a_obj`.
 - **Tuning constants** for each stage are module-level at the top of
   `stage1.py` / `stage2.py` / `stage3.py`.
+
+---
+
+## Relation frequency
+
+Block B stores relation usage as `rel_freq_logq` — the empirical quantile function of
+`log(E_r / Σ E_r)` — and Stage 1 rebuilds the rank curve from it. It used to store a Zipf
+exponent (`relation_zipf`) and Stage 1 built `relation_weights = Zipf(R, exponent)`. That path was
+replaced because it was wrong in three separate ways.
+
+**It was a unit error.** `fit_zipf` called `_fit_powerlaw(counts)`, which fits the *count
+distribution* `P(count = x) ∝ x^(−α)` with `xmin` pinned to 1. Stage 1 then consumed that α as a
+*rank-frequency* exponent (`ranks ** (−α)`). These are different laws — a rank-Zipf with exponent
+`s` has `α = 1 + 1/s`.
+
+**The fitted exponent carried no information.** It came out pinned at ≈1.0 on all six corpus graphs
+where it could be fitted at all (1.000, 1.068, 1.000, 1.000, 1.000, 1.014), so `relation_weights ≈
+rank⁻¹` on *every* graph regardless of shape — which is why `fb237_v4`'s top relation was handed
+16.8% of the edge budget against a real share of 5.9%. On the other three (`aids` R=5, `wn18rr_v4`
+R=9) the fit returned NaN and the generator fell back to a hard-coded `Zipf(2.0)`.
+
+**These curves are frequently not Zipf-shaped at all**, so no exponent — however fitted — can
+represent them. `aids`' shares are `.337 / .284 / .230 / .060 / .003`: a flat head, then a cliff. A
+`Zipf(2.33)` (its own log-log slope) over R=5 puts 0.75 on the top relation against a real 0.337.
+
+Reconstruction error against the true share vector, all 9 corpus graphs (log-share RMSE; `top err` is
+the relative error on the largest relation's share):
+
+| graph | R | Zipf (old) | top err | OLS rank exp. | top err | **log-quantile** | top err |
+|---|---|---|---|---|---|---|---|
+| `aids` | 5 | 1.199 | 103% | 1.185 | 122% | **0.000** | 0.0% |
+| `codex_l` | 69 | 2.511 | 32% | 2.435 | 145% | **0.534** | 28% |
+| `dbpedia100k` | 470 | 2.429 | 97% | 4.091 | 708% | **0.480** | 37% |
+| `fb237_v4` | 219 | 0.597 | 184% | 0.798 | 455% | **0.152** | 6.7% |
+| `fb237_v4_ind` | 200 | 0.581 | 145% | 0.743 | 378% | **0.189** | 9.4% |
+| `hetionet` | 24 | 1.804 | 6.5% | 1.326 | 184% | **0.252** | 11% |
+| `swdf` | 170 | 2.806 | 94% | 3.839 | 740% | **0.149** | 6.0% |
+| `wn18rr_v4` | 9 | 1.371 | 11% | 1.029 | 45% | **0.287** | 7.3% |
+| `wn18rr_v4_ind` | 9 | 0.804 | 0.0% | 0.400 | 21% | **0.119** | 4.0% |
+
+Three design consequences, each measured rather than assumed:
+
+- **No goodness-of-fit gate.** One was built, to pick the Zipf where it fits and the quantile
+  function where it doesn't. It degenerates to a constant — the quantile fit wins on every graph —
+  so the Zipf is simply gone rather than gated.
+- **Log space is mandatory.** The shares are heavy-tailed; a *linear*-space quantile fit reconstructs
+  them worse than the Zipf did.
+- **Fixing the units is not enough.** An OLS rank exponent — the natural repair — loses on 8 of 9
+  graphs, for the "not Zipf-shaped" reason above. It was evaluated and rejected.
+
+`min_samples=2` on the fit: a relation's edge share is a directly-reliable statistic, not a noisy
+per-item power-law fit, so the Clauset small-sample caveat that justifies `MIN_SAMPLES_FOR_FIT=10`
+elsewhere does not apply (the same reasoning already used for the per-relation reciprocity fractions).
+This is what makes `aids` (R=5) and `wn18rr_v4` (R=9) measurable at all.
 
 ---
 

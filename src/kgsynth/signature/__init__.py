@@ -29,11 +29,9 @@ from ._fits import (
     QUANTILE_LEVELS,
     ExpDecayFit,
     TruncPowerLawFit,
-    ZipfFit,
     fit_quantiles,
     fit_exp_decay_rank,
     fit_truncated_powerlaw,
-    fit_zipf,
     fit_cs_size_offset,
 )
 
@@ -239,7 +237,7 @@ __all__ = [
     "ReducedGraphSignature", "compute_reduced_signature", "write_signature_outputs",
     "load_signature_dir",
     "_ALL_BLOCKS", "_BLOCK_CLASSES",
-    "QuantileFit", "QUANTILE_LEVELS", "ExpDecayFit", "TruncPowerLawFit", "ZipfFit",
+    "QuantileFit", "QUANTILE_LEVELS", "ExpDecayFit", "TruncPowerLawFit",
     "fit_quantiles", "fit_exp_decay_rank", "fit_truncated_powerlaw",
-    "fit_zipf", "fit_cs_size_offset",
+    "fit_cs_size_offset",
 ]
