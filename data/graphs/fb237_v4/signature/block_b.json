@@ -78,6 +78,8 @@
   "out_degree_p90": 15.0,
   "in_degree_max": 1442,
   "in_degree_p90": 11.0,
+  "subject_frac": 0.912258338644572,
+  "object_frac": 0.8415126407478224,
   "obj_alphas": {
     "__sig_type__": "ndarray",
     "dtype": "float64",

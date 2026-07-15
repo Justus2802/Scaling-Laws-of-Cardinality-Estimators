@@ -22,6 +22,8 @@ _BOUNDED = {
     "obj_cooc_density": (0.9, 0.95, 1.0),
     "largest_component_fraction": (0.9, 0.95, 1.0),
     "degree_assortativity": (-1.0, -0.9, -0.8),
+    "subject_frac": (0.3, 0.6, 0.9),
+    "object_frac": (0.3, 0.6, 0.9),
 }
 # Truly-constant features (range 0) must be reproduced exactly.
 _CONST = {"obj_mult_alpha_q00": 1.4, "obj_mult_alpha_q100": 3.0}
@@ -56,8 +58,8 @@ class TestFeatureOrder(unittest.TestCase):
         # The sampler deliberately excludes Block E (motifs / G5 are out of scope),
         # so FEATURE_ORDER must equal the measured schema with Block E's feature
         # names removed, in the same order.
-        self.assertEqual(len(FEATURE_ORDER), 105)
-        self.assertEqual(len(set(FEATURE_ORDER)), 105)  # no duplicates
+        self.assertEqual(len(FEATURE_ORDER), 107)
+        self.assertEqual(len(set(FEATURE_ORDER)), 107)  # no duplicates
         block_e_names = set(BlockE.feature_names())
         schema_minus_e = [
             k for k in ReducedGraphSignature().as_dict() if k not in block_e_names

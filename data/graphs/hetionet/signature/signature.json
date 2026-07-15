@@ -38,6 +38,8 @@
     "out_degree_p90": 103.0,
     "in_degree_max": 2718.0,
     "in_degree_p90": 108.0,
+    "subject_frac": 0.4459453474467425,
+    "object_frac": 0.978874175118473,
     "recip_symmetric_frac_bin0": NaN,
     "recip_symmetric_frac_bin1": 0.0,
     "recip_symmetric_frac_bin2": 0.0,

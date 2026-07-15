@@ -84,6 +84,7 @@ new one (`kgsynth.signature_sampler`), interpolate — and still generate from t
 | B | `a_obj` | G2b forward CS-size→multiplicity offset (`cs_size^a_obj`) |
 | B | `a_subj` | G2b inverse CS-size→multiplicity offset (`inv_cs_size^a_subj`) |
 | B | `in_degree_fit.alpha` | tail-shape input to the Stage-1-sampled target in-degree sequence (`_adapters.sample_degree_sequence`) |
+| B | `subject_frac`, `object_frac` | share of entities with a nonzero out- / in-degree; places the zero-degree entities (non-subjects / non-objects) |
 | C | `num_classes`, `class_size_fit.alpha` | type count + type-size weights |
 | C | `type_rel_spectrum_exp` | `P(r\|t)` low-rank reconstruction (used for post-hoc type scoring) |
 | C | `subj_cooc_exp` | forward co-occurrence group prototypes (CS source) |
@@ -199,16 +200,24 @@ legitimately still be NaN (small-R Zipf/CS fits, untyped-KG class stats) are cal
    multiplicity bounds `obj_mult_max` / `subj_mult_max` passed through (per-relation NaN fits are a
    legitimate small-R outcome — Stage 2 falls back to flat weights for that one relation). Per-entity **target degree sequences** (`target_out_degrees`,
    `target_in_degrees`) are sampled purely from **signature-vector components** —
-   never Block B's raw retained arrays (`_adapters.sample_degree_sequence`):
-   the top 10% of nodes (the tail) draw from a power law truncated to `[p90, max]`
-   whose exponent is **extreme-value matched** (`1 + ln(n_tail)/ln(max/p90)`, so
-   the expected maximum of the tail draws lands on the measured max) rather than
-   the fitted degree α — the global fit is too shallow for this range and would
-   overshoot mid-tail mass; the remaining 90% (the body) draw from the *same*
-   fitted-α power law truncated to `[1, p90]`, then repaired — up *or* down, via
-   `repair_degree_sum` — so the sequence sums to exactly `content_E` (edge
-   conservation). The repair is confined to the body: the tail carries p90/max and is
-   never touched. The mean it targets is the **content** mean `content_E/V`, not `E/V`
+   never Block B's raw retained arrays (`_adapters.sample_degree_sequence`).
+   A `(1 − subject_frac)·V` share of entities draw degree **0** — the non-subjects (and
+   symmetrically non-objects on the in-side). Not every entity emits an edge: on swdf only
+   30% do, and spreading the whole out-budget over all `V` entities both flattens the
+   distribution and, via Stage 2's ≥1-edge-per-CS floor, drives `Σ|CS|` far past the edge
+   budget (swdf: 606 500 vs 242 256), collapsing the realised CS size from 6 to 1. Of the
+   nonzero nodes, the top `10%` of *all* `V` (the tail) draw from a power law truncated to
+   `[p90, max]` whose exponent is **extreme-value matched** (`1 + ln(n_tail)/ln(max/p90)`,
+   so the expected maximum of the tail draws lands on the measured max) rather than the
+   fitted degree α — the global fit is too shallow for this range and would overshoot
+   mid-tail mass; the remaining active nodes (the body) draw from the *same* fitted-α power
+   law truncated to `[1, p90]`, then repaired — up *or* down, via `repair_degree_sum` — so
+   the sequence sums to exactly `content_E` (edge conservation). The repair is confined to
+   the body, at a **floor of 1** so the active nodes keep degree ≥1 (a heavy in-hub would
+   otherwise make the tail so heavy that the repair zeroes out the body, inventing
+   non-objects the signature never had); the tail carries p90/max and is bent only as a last
+   resort when the tail alone exceeds the budget. The zeros carry `subject_frac`/`object_frac`
+   and are never disturbed. The mean it targets is the **content** mean `content_E/V`, not `E/V`
    — Block B measures entity content degrees (rdf:type edges and class nodes excluded)
    and Stage 2 wires rdf:type edges outside this budget, so `E/V` would describe a
    different population than the fits do. Both sides sum to `content_E`, which is what
@@ -263,6 +272,15 @@ where most of the structural fidelity is established.
    Stage 1 — see Stage 1 §7): sampled target values are **rank-matched** to CS size (out-side;
    largest target → largest CS, floored at `|CS|`) and to inverse-CS size (in-side). Both sides are
    then repaired by `repair_degree_sum` to the **same** budget, `content_E`.
+
+   The entities that draw a **zero** degree are the non-subjects (out-side) / non-objects (in-side).
+   The sorted samples put those zeros on the lowest-CS-size entities, and their forward (resp.
+   inverse) **CS is then blanked** — a zero-out-degree entity emits nothing, so it must not sit in
+   any relation's subject pool, or `fit_stubs` would floor it back to ≥1. This is what keeps `Σ|CS|`
+   within the edge budget; without it Stage 2 gave every entity a CS, and on swdf (only 30% subjects)
+   that asked for 606 500 CS relations against a 242 256-edge budget, forcing the ≥1-per-CS floor to
+   be dropped and collapsing the realised CS size 6 → 1. The zeros keep floor 0 and are held out of
+   the repair, so neither the floor nor a top-up revives them.
 
    `Σ tgt_out == Σ tgt_in == content_E` is asserted, not merely intended. These two vectors are the
    **row margins** of the IPF allocation in §6, and a transportation problem whose margins disagree

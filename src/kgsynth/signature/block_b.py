@@ -71,6 +71,11 @@ class BlockB(SignatureBlock):
         self._out_degree_p90 = _NOT_CALCULATED
         self._in_degree_max = _NOT_CALCULATED
         self._in_degree_p90 = _NOT_CALCULATED
+        # share of entities with a nonzero content degree on each side. Not every entity
+        # is a subject (or object) — the degree fit's alpha is over nonzero degrees only,
+        # so this fraction is the piece needed to place the zeros. See sample_degree_sequence.
+        self._subject_frac = _NOT_CALCULATED
+        self._object_frac = _NOT_CALCULATED
         # unsummarised data kept for visualization
         self._obj_alphas = _NOT_CALCULATED
         self._subj_alphas = _NOT_CALCULATED
@@ -143,6 +148,14 @@ class BlockB(SignatureBlock):
     def in_degree_p90(self) -> float:
         return self._require("in_degree_p90", self._in_degree_p90)
 
+    @property
+    def subject_frac(self) -> float:
+        return self._require("subject_frac", self._subject_frac)
+
+    @property
+    def object_frac(self) -> float:
+        return self._require("object_frac", self._object_frac)
+
     # ── core ──────────────────────────────────────────────────────────────────
 
     def calculate(self, g: igraph.Graph) -> "BlockB":
@@ -188,6 +201,11 @@ class BlockB(SignatureBlock):
         self._out_degree_p90 = float(np.percentile(out_degrees, 90)) if out_degrees.size else 0.0
         self._in_degree_max = int(in_degrees.max()) if in_degrees.size else 0
         self._in_degree_p90 = float(np.percentile(in_degrees, 90)) if in_degrees.size else 0.0
+        # Share of entities that are subjects / objects of ≥1 content edge. Measured over
+        # the same entity set as the degrees (non-literal, non-class), so it is exactly the
+        # nonzero fraction the degree fit's positive-only alpha silently drops.
+        self._subject_frac = float((out_degrees > 0).mean()) if out_degrees.size else 0.0
+        self._object_frac = float((in_degrees > 0).mean()) if in_degrees.size else 0.0
 
         is_literal: list[bool] = g.vs["is_literal"] if g.vcount() else []
 
@@ -353,14 +371,15 @@ class BlockB(SignatureBlock):
         return self
 
     def as_vector(self) -> list[float]:
-        """Flatten to a fixed-length 40-vector for cross-KG comparison.
+        """Flatten to a fixed-length 42-vector for cross-KG comparison.
 
         Layout: out-degree (alpha, xmin); in-degree (alpha, xmin); relation
         log-share quantile function (7 levels); object-α quantile function (7 levels);
         subject-α quantile function (7 levels); object/subject multiplicity maxima (2 —
         the upper bounds of the two α laws); offsets a_obj, a_subj; out/in degree
-        max/p90 (4); per-relation reciprocity — P(symmetric) per edge-frequency bin
-        (6 levels) + the symmetric-mode reciprocity magnitude (1 scalar).
+        max/p90 (4); subject_frac, object_frac (the nonzero-degree shares); per-relation
+        reciprocity — P(symmetric) per edge-frequency bin (6 levels) + the symmetric-mode
+        reciprocity magnitude (1 scalar).
 
         Attributes absent from stale serialized data are emitted as NaN.
         """
@@ -382,6 +401,8 @@ class BlockB(SignatureBlock):
             self._safe_scalar(lambda: self.out_degree_p90),
             self._safe_scalar(lambda: self.in_degree_max),
             self._safe_scalar(lambda: self.in_degree_p90),
+            self._safe_scalar(lambda: self.subject_frac),
+            self._safe_scalar(lambda: self.object_frac),
             *self._safe_iter(lambda: self.recip_symmetric_frac, n_bins),
             self._safe_scalar(lambda: self.recip_symmetric_value),
         ]
@@ -399,6 +420,7 @@ class BlockB(SignatureBlock):
         names += ["obj_mult_max", "subj_mult_max"]
         names += ["a_obj", "a_subj"]
         names += ["out_degree_max", "out_degree_p90", "in_degree_max", "in_degree_p90"]
+        names += ["subject_frac", "object_frac"]
         names += [f"recip_symmetric_frac_bin{i}" for i in range(len(QUANTILE_LEVELS) - 1)]
         names += ["recip_symmetric_value"]
         return names
@@ -407,7 +429,7 @@ class BlockB(SignatureBlock):
     def get_na_vec(cls) -> list[float]:
         """Return a NaN vector the same length as as_vector()."""
         n_q = len(QUANTILE_LEVELS)
-        return [float("nan")] * (4 + 3 * n_q + 2 + 2 + 4 + (n_q - 1) + 1)
+        return [float("nan")] * (4 + 3 * n_q + 2 + 2 + 4 + 2 + (n_q - 1) + 1)
 
     @classmethod
     def _state_from_features(cls, feats: dict[str, float]) -> dict:
@@ -442,6 +464,8 @@ class BlockB(SignatureBlock):
             "_out_degree_p90": feats["out_degree_p90"],
             "_in_degree_max": cls._int(feats, "in_degree_max"),
             "_in_degree_p90": feats["in_degree_p90"],
+            "_subject_frac": feats["subject_frac"],
+            "_object_frac": feats["object_frac"],
             "_recip_symmetric_frac": np.array(
                 [feats[f"recip_symmetric_frac_bin{i}"] for i in range(n_bins)], dtype=float
             ),

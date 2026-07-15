@@ -84,6 +84,7 @@ INTEGER_FEATURES: frozenset[str] = frozenset({
 UNIT_INTERVAL: frozenset[str] = frozenset({
     "subj_cooc_density", "obj_cooc_density",
     "largest_component_fraction", "clustering_coefficient",
+    "subject_frac", "object_frac",
 })
 
 SIGNED_UNIT_FEATURES: frozenset[str] = frozenset({"degree_assortativity"})

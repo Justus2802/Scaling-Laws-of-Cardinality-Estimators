@@ -463,40 +463,29 @@ def instantiate(
 
     def _sample_target_degrees(
         samples: np.ndarray, rank_scores: np.ndarray, *, floor: np.ndarray | None = None,
-    ) -> np.ndarray:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Rank-match sampled degree targets to per-entity scores (descending), apply an
         optional per-entity floor, then repair the sum to ``quota_budget`` **exactly**.
 
-        Exactly is not a nicety here. These are the row margins of the IPF allocation in
-        §4, and a transportation problem is solvable only when its two margins agree: if
-        ``Σ tgt_out ≠ Σ tgt_in`` the wiring inflates or starves by the difference (an early
-        version of this overshot wn18rr_v4's edge count by 9%). So the repair escalates
-        rather than returning a residual:
+        Returns ``(tgt, inactive)`` where ``inactive`` marks the entities that draw a
+        **zero** degree — the non-subjects (or non-objects). Not every entity emits (or
+        receives) an edge: Stage 1 samples ``(1 − subject_frac)·V`` zeros, and the sorted
+        samples put them on the lowest-``rank_scores`` entities here. Those entities keep
+        exactly zero: their floor is forced to 0 and they are excluded from the repair, so
+        neither the ≥1-per-CS floor nor a top-up can revive them. The caller then blanks
+        their characteristic set, which is what keeps ``Σ|CS|`` within the edge budget
+        (without it, swdf assigns 606 500 CS relations against a budget of 242 256, the
+        floor is dropped, and the realised CS size collapses from 6 to 1).
 
-        1. trim the body only, preserving the hub tail that carries p90/max;
-        2. if the budget is still unreachable that way, **drop the CS-size floor** and fall
-           back to the unfloored degree law, which already sums to the budget by
-           construction (Stage 1 built it that way).
-
-        The hub tail is never bent. The two obvious alternatives to step 2 were both tried
-        against the corpus and both are worse:
-
-        * *Let the trim touch the hubs, keeping the floor.* Costs the max-degree target
-          exactly where it is hardest to hit — wn18rr_v4's realised max out-degree halved
-          (28 → 14) and fb237_v4's slipped off target (195 → 192).
-        * *Re-repair the floored sequence with ``floor=1``.* Far worse: the trim is weighted
-          by headroom above the floor, so the hubs — which have by far the most — absorb
-          nearly all of it, and swdf's max out-degree *target* collapsed 623 → 18.
-
-        So the ordering is deliberate: the degree law outranks the CS floor. An entity
-        emitting no edge for one relation in its CS costs a little Block-D fidelity; a
-        flattened degree sequence costs the whole of Block B. And the floor is not lost
-        outright — ``fit_stubs`` still honours it per relation wherever that relation's
-        budget can afford it.
-
-        Step 2 fires whenever the floor plus the frozen hub tail exceeds the budget, which
-        includes but is not limited to the floor being outright impossible
-        (``Σ|CS(v)| > content_E`` — swdf asks for 606 500 edges against a budget of 242 256).
+        Exactly is not a nicety: these are the row margins of the IPF allocation in §4, and
+        a transportation problem is solvable only when its two margins agree (an early
+        version overshot wn18rr_v4's edge count by 9%). The repair escalates rather than
+        returning a residual: trim the body only, preserving the hub tail that carries
+        p90/max; and if the budget is still unreachable, drop the CS-size floor (never bend
+        the hub tail — measured, both alternatives are worse: letting the trim touch the
+        hubs halved wn18rr_v4's max out-degree, and re-repairing towards the floor collapsed
+        swdf's max out-degree *target* 623 → 18). The floor is not lost outright — fit_stubs
+        still applies it per relation where affordable.
         """
         vals = np.sort(np.asarray(samples, dtype=np.int64))[::-1]
         if vals.size < actual_V:
@@ -506,24 +495,28 @@ def instantiate(
         unfloored = np.empty(actual_V, dtype=np.int64)
         unfloored[order] = vals
 
-        def _hub_mask(seq: np.ndarray) -> np.ndarray:
-            keep = np.ones(actual_V, dtype=bool)
-            keep[np.argsort(-seq, kind="stable")[:n_hub]] = False
+        # The zero-degree entities are the non-subjects/non-objects. They keep 0: their
+        # floor is dropped and they are held out of every repair below.
+        inactive = unfloored == 0
+        eff_floor = None if floor is None else np.where(inactive, 0, floor)
+
+        def _adj(seq: np.ndarray) -> np.ndarray:
+            keep = ~inactive.copy()
+            keep[np.argsort(-seq, kind="stable")[:n_hub]] = False   # hubs carry p90/max
             return keep
 
-        tgt = np.maximum(unfloored, floor) if floor is not None else unfloored.copy()
-        tgt = repair_degree_sum(tgt, quota_budget, rng, floor=floor,
-                                adjustable=_hub_mask(tgt))
+        tgt = np.maximum(unfloored, eff_floor) if eff_floor is not None else unfloored.copy()
+        tgt = repair_degree_sum(tgt, quota_budget, rng, floor=eff_floor, adjustable=_adj(tgt))
         if int(tgt.sum()) != quota_budget:
             log.info(
                 "Stage 2: the ≥1-edge-per-CS-relation floor (Σ|CS|=%d) does not fit the "
                 "edge budget (content_E=%d) alongside the degree tail — dropping it; "
                 "fit_stubs still applies it per relation where affordable",
-                int(np.sum(floor)) if floor is not None else 0, quota_budget,
+                int(np.sum(eff_floor)) if eff_floor is not None else 0, quota_budget,
             )
-            tgt = repair_degree_sum(unfloored, quota_budget, rng,
-                                    adjustable=_hub_mask(unfloored))
-        return tgt
+            base = np.where(inactive, 0, unfloored)
+            tgt = repair_degree_sum(base, quota_budget, rng, adjustable=_adj(base))
+        return tgt, inactive
 
     cs_sizes_all = np.array(
         [len(entity_cs[v]) if entity_cs[v] is not None else 0 for v in range(actual_V)],
@@ -533,14 +526,24 @@ def instantiate(
     # (type edges and class nodes excluded), and Stage 1 sampled against the content mean.
     # floor=cs_sizes_all keeps the ≥1-edge-per-CS-relation floor feasible on the out-side.
     samples_out = np.asarray(schema.target_out_degrees, dtype=np.int64)
-    tgt_out = _sample_target_degrees(samples_out, cs_sizes_all.astype(float), floor=cs_sizes_all)
+    tgt_out, inactive_out = _sample_target_degrees(
+        samples_out, cs_sizes_all.astype(float), floor=cs_sizes_all)
+    # Blank the non-subjects' forward CS: a zero-out-degree entity emits nothing, so it must
+    # not sit in any relation's subject pool (fit_stubs would otherwise floor it to ≥1).
+    for v in np.where(inactive_out)[0]:
+        entity_cs[v] = np.array([], dtype=int)
+    cs_sizes_all[inactive_out] = 0
 
     in_scores = np.array(
         [len(entity_inv_cs[v]) if entity_inv_cs[v] is not None else 0 for v in range(actual_V)],
         dtype=float,
     )
     in_scores = in_scores + rng.random(actual_V)  # random tiebreak within equal inverse-CS sizes
-    tgt_in = _sample_target_degrees(np.asarray(schema.target_in_degrees, dtype=np.int64), in_scores)
+    tgt_in, inactive_in = _sample_target_degrees(
+        np.asarray(schema.target_in_degrees, dtype=np.int64), in_scores)
+    # Blank the non-objects' inverse CS, symmetric to the out-side above.
+    for v in np.where(inactive_in)[0]:
+        entity_inv_cs[v] = np.array([], dtype=int)
 
     # The IPF allocation reads these as its two row margins, and a transportation problem
     # with disagreeing margins has no solution — the wiring would silently inflate or

@@ -87,11 +87,11 @@ class TestFeatureDict(unittest.TestCase):
     def setUpClass(cls):
         cls.sig = _load()
 
-    def test_has_all_132_features(self):
+    def test_has_all_134_features(self):
         feats = self.sig.as_features()
         expected = sum(len(c.feature_names()) for c in _BLOCK_CLASSES.values())
         self.assertEqual(len(feats), expected)
-        self.assertEqual(len(feats), 132)
+        self.assertEqual(len(feats), 134)
 
     def test_keys_match_block_feature_names(self):
         feats = self.sig.as_features()

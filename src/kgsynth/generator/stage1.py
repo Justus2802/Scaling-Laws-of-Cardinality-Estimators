@@ -49,6 +49,21 @@ COOC_NUM_GROUPS = 10
 # ---------------------------------------------------------------------------
 
 
+def _safe_frac(getter) -> float:
+    """Read a signature fraction, defaulting to 1.0 when it is absent or unusable.
+
+    A pre-``subject_frac`` signature (measured before this feature existed) has no such
+    field; 1.0 reproduces the old "every entity is a subject/object" behaviour, so old
+    corpora still generate rather than crash. A NaN or out-of-range value is treated the
+    same way.
+    """
+    try:
+        v = float(getter())
+    except (KeyError, AttributeError, TypeError, ValueError, RuntimeError):
+        return 1.0            # RuntimeError: a block that never had this field measured
+    return v if np.isfinite(v) and 0.0 < v <= 1.0 else 1.0
+
+
 def _zipf_weights(n: int, exponent: float, rng: np.random.Generator) -> np.ndarray:
     """Sample n normalized frequency weights from a Zipf distribution.
 
@@ -342,13 +357,21 @@ def sample_schema(
     # in-side (where entities never receive a type edge at all) it has no counterpart
     # correction downstream.  Both sides now sum to exactly content_E, which is what
     # a directed wiring needs (Σ out = Σ in = E).
+    # subject_frac / object_frac: the share of entities that emit / receive a content edge.
+    # Not every entity is a subject (swdf: 30%), and spreading the budget over all of them
+    # flattens the degree distribution and inflates Σ|CS| past the edge budget (see
+    # sample_degree_sequence). Stale signatures without the fields → 1.0 (legacy, no zeros).
     n_ent = a.num_entities
     content_E = num_triples * (1.0 - float(a.type_edge_frac))
     mean_deg = content_E / n_ent if n_ent > 0 else float("nan")
+    subject_frac = _safe_frac(lambda: b.subject_frac)
+    object_frac = _safe_frac(lambda: b.object_frac)
     target_out_degrees = sample_degree_sequence(
-        b.out_degree_fit.alpha, b.out_degree_p90, b.out_degree_max, mean_deg, n_ent, rng)
+        b.out_degree_fit.alpha, b.out_degree_p90, b.out_degree_max, mean_deg, n_ent, rng,
+        active_frac=subject_frac)
     target_in_degrees = sample_degree_sequence(
-        b.in_degree_fit.alpha, b.in_degree_p90, b.in_degree_max, mean_deg, n_ent, rng)
+        b.in_degree_fit.alpha, b.in_degree_p90, b.in_degree_max, mean_deg, n_ent, rng,
+        active_frac=object_frac)
 
     # --- Per-relation multiplicity shape (G2) + CS-size offset (G2b) + CS-size shape ---
     # Stored as plain quantile tuples; Stage 2 samples a per-relation α from obj_alpha_q

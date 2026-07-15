@@ -140,40 +140,44 @@ def repair_degree_sum(
 
 
 def sample_degree_sequence(alpha: float, p90: float, d_max: float, mean_deg: float,
-                           n: int, rng: np.random.Generator):
+                           n: int, rng: np.random.Generator, active_frac: float = 1.0):
     """Sample an ``n``-node target degree sequence from signature-vector components.
 
     Uses only quantities that are part of the comparison vector — the degree
-    power-law exponent ``alpha``, the ``p90`` / ``max`` degree scalars and the
-    graph mean degree — never the raw measured degree arrays (which Stage 2
-    must not depend on). Construction:
+    power-law exponent ``alpha``, the ``p90`` / ``max`` degree scalars, the graph
+    mean degree and the ``active_frac`` (share of entities with a nonzero degree on
+    this side) — never the raw measured degree arrays (which Stage 2 must not depend
+    on). Construction:
 
-    * the top 10% of nodes draw from a power law truncated to ``[p90, max]``
-      whose exponent is **extreme-value matched**: ``α_tail = 1 +
-      ln(n_tail)/ln(max/p90)``, so the expected maximum of ``n_tail`` draws
-      above p90 lands on the target max. The global fit ``alpha`` is too
-      shallow for this range (the empirical tail has a finite-size cutoff) and
-      would overshoot mid-tail mass (p99, star counts);
-    * the remaining 90% draw from the same power law truncated to ``[1, p90]``
-      (the fit's own body range), and are then repaired — up *or* down — so the
-      sequence sums to exactly ``n · mean_deg`` (edge conservation). The repair is
-      confined to the body: the tail is what carries p90/max, so it is never touched.
+    * ``(1 − active_frac)·n`` nodes get degree **0**. Not every entity is a subject
+      (or an object): on swdf only 30% of entities emit an edge. Spreading the whole
+      out-budget over all ``n`` entities instead flattens the distribution *and* — via
+      the ≥1-edge-per-CS-relation floor in Stage 2 — asks for ``Σ|CS|`` far above the
+      edge budget (swdf: 606 500 vs 242 256), which forces that floor to be dropped and
+      collapses the realised CS size from 6 to 1. The zeros fix both.
+    * of the ``active_frac·n`` nonzero nodes, the top ``10%`` of *all* ``n`` draw from a
+      power law truncated to ``[p90, max]`` whose exponent is **extreme-value matched**
+      (``α_tail = 1 + ln(n_tail)/ln(max/p90)``) so the expected maximum of ``n_tail``
+      draws above p90 lands on the target max. The tail fraction is ``0.1·n`` (of *all*
+      entities), because p90/max are measured over all entities including the zeros;
+    * the remaining active nodes draw from the same power law truncated to ``[1, p90]``
+      and are repaired — up *or* down — so the whole sequence sums to exactly
+      ``n · mean_deg`` (edge conservation). The repair is confined to that body: the
+      tail carries p90/max and the zeros carry ``active_frac``, so neither is touched.
 
-    The sum is exact on return, which is what lets Stage 2 drop its old one-sided
-    "top up until Σ ≥ content_E" multinomial. That top-up could only ever *add*, so a
-    sequence that overshot the budget stayed overshot (aids' in-side sat at ~3× the
-    edge budget, leaving its in-degree quota unable to bind at all).
-
-    Returns ``None`` when ``p90``/``max`` are unavailable (NaN or < 1) — Stage 2
-    then wires without degree steering.
+    Returns ``None`` when ``p90``/``max`` are unavailable (NaN or < 1) — Stage 2 then
+    wires without degree steering.
 
     :param alpha: degree power-law exponent (falls back to 2.5 when unusable).
-    :param p90: 90th-percentile degree from the signature.
+    :param p90: 90th-percentile degree from the signature (over all entities).
     :param d_max: maximum degree from the signature.
-    :param mean_deg: target mean degree — the *content* mean (rdf:type edges are
-        wired outside this budget and are excluded from Block B's degree fits).
+    :param mean_deg: target mean degree — the *content* mean over all entities
+        (rdf:type edges are wired outside this budget and are excluded from Block B's
+        degree fits).
     :param n: number of target values to draw.
     :param rng: RNG for the sampling.
+    :param active_frac: fraction of entities with a nonzero degree on this side
+        (Block B ``subject_frac`` / ``object_frac``); ``1.0`` → no zeros (legacy).
     :returns: int64 array of length ``n`` summing to ``round(n · mean_deg)``, or ``None``.
     """
     if n <= 0 or not np.isfinite([p90, d_max]).all() or d_max < 1:
@@ -183,8 +187,13 @@ def sample_degree_sequence(alpha: float, p90: float, d_max: float, mean_deg: flo
     lo = max(float(p90), 1.0)
     hi = max(float(d_max), lo)
 
-    n_tail = max(1, int(round(n * _DEGSEQ_TAIL_FRACTION)))
-    n_body = n - n_tail
+    af = 1.0 if not np.isfinite(active_frac) else min(1.0, max(0.0, float(active_frac)))
+    n_active = max(1, int(round(af * n)))
+    n_zero = n - n_active
+    # The tail is the top 10% of *all* entities (p90/max are measured over all of them).
+    # It is always drawn from the active pool, since active_frac ≥ 0.1 on any real graph.
+    n_tail = max(1, min(n_active, int(round(n * _DEGSEQ_TAIL_FRACTION))))
+    n_body = n_active - n_tail
 
     def _degrees(lo_t: float, hi_t: float, size: int, exp_t: float) -> np.ndarray:
         """Integer degrees from a power law(exp_t) truncated to [lo_t, hi_t]."""
@@ -197,17 +206,29 @@ def sample_degree_sequence(alpha: float, p90: float, d_max: float, mean_deg: flo
     if hi > lo:
         tail[np.argmax(tail)] = int(round(hi))   # ensure the sampled max hits the target max
 
-    # Body: same power law on its own [1, p90] range.
-    body = _degrees(1.0, lo, n_body, alpha)
-    seq = np.concatenate([body, tail]) if n_body > 0 else tail
+    # Body: same power law on its own [1, p90] range. Zeros: the non-subjects/non-objects.
+    body = _degrees(1.0, lo, n_body, alpha) if n_body > 0 else np.array([], dtype=np.int64)
+    zeros = np.zeros(n_zero, dtype=np.int64)
+    seq = np.concatenate([zeros, body, tail])
 
-    # Repair the sum to the edge budget, body-only (the tail carries p90/max).
-    if n_body > 0 and np.isfinite(mean_deg):
+    if np.isfinite(mean_deg):
+        target = int(round(n * float(mean_deg)))
         is_body = np.zeros(seq.size, dtype=bool)
-        is_body[:n_body] = True
-        seq = repair_degree_sum(
-            seq, int(round(n * float(mean_deg))), rng, adjustable=is_body,
-        )
+        is_body[n_zero:n_zero + n_body] = True
+        # The active nodes must keep degree ≥1 — that is what makes ``active_frac`` mean
+        # what it says. A heavy in-hub (swdf: an in-degree of 9148 over 7671 tail nodes)
+        # otherwise makes the tail so heavy that repairing the sum down zeroes out much of
+        # the body, producing 35% zeros where the signature says 0.2%. So repair the body
+        # with a floor of 1, and only if the tail is *still* too heavy to fit the budget
+        # let the trim reach the tail (bending max/p90 — the last thing to give, but ahead
+        # of silently inventing non-objects).
+        floor1 = is_body.astype(np.int64)
+        seq = repair_degree_sum(seq, target, rng, floor=floor1, adjustable=is_body)
+        if int(seq.sum()) != target:
+            active = is_body.copy()
+            active[n_zero + n_body:] = True                     # body + tail, never the zeros
+            seq = repair_degree_sum(seq, target, rng, floor=active.astype(np.int64),
+                                    adjustable=active)
     return rng.permutation(seq)
 
 

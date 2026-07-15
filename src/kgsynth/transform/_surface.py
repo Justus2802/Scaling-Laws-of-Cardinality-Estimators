@@ -61,6 +61,7 @@ _SURFACE_A = ("num_entities", "num_relations", "mean_degree", "type_edge_frac")
 _SURFACE_B = (
     "out_degree_alpha", "in_degree_alpha",
     "out_degree_max", "out_degree_p90", "in_degree_max", "in_degree_p90",
+    "subject_frac", "object_frac",
     "obj_mult_max", "subj_mult_max",
     "a_obj", "a_subj", "recip_symmetric_value",
     *_q_group("obj_mult_alpha"), *_q_group("subj_mult_alpha"),

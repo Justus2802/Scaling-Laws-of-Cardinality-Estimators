@@ -459,5 +459,41 @@ class TestDegreeBudget(unittest.TestCase):
         self.assertEqual(int(s.target_out_degrees.sum()), self._content_E(s))
 
 
+class TestSubjectFraction(unittest.TestCase):
+    """subject_frac / object_frac place the zero-degree entities (non-subjects/objects).
+
+    Not every entity emits (or receives) an edge — swdf is only 30% subjects. Giving all
+    of them a nonzero degree flattens the distribution and, via Stage 2's ≥1-per-CS floor,
+    inflates Σ|CS| past the edge budget. These fractions are the piece that places the zeros.
+    """
+
+    def _schema(self, subject_frac, object_frac):
+        a = _make_block_a(num_entities=1000, num_triples=4000)
+        b = _make_block_b()
+        b._subject_frac = subject_frac
+        b._object_frac = object_frac
+        return sample_schema(a, _make_block_c(), d=_make_block_d(), b=b,
+                             f=_make_block_f(), seed=0)
+
+    def test_zero_fraction_matches_active_frac(self):
+        s = self._schema(subject_frac=0.30, object_frac=0.90)
+        out, inn = np.asarray(s.target_out_degrees), np.asarray(s.target_in_degrees)
+        # ~70% of out-degrees and ~10% of in-degrees are zero, ±1% for rounding/repair.
+        self.assertAlmostEqual((out == 0).mean(), 0.70, delta=0.02)
+        self.assertAlmostEqual((inn == 0).mean(), 0.10, delta=0.02)
+        # active nodes keep degree ≥1 — the budget is not silently zeroed onto them.
+        self.assertTrue((out[out > 0] >= 1).all())
+
+    def test_budget_preserved_with_zeros(self):
+        s = self._schema(subject_frac=0.30, object_frac=0.90)
+        # The whole edge budget still lands — it is just concentrated on the active nodes.
+        self.assertEqual(int(s.target_out_degrees.sum()), int(s.target_in_degrees.sum()))
+
+    def test_full_fraction_is_legacy_no_zeros(self):
+        s = self._schema(subject_frac=1.0, object_frac=1.0)
+        # Every entity active → the old all-nonzero behaviour (the degree fit floors at 1).
+        self.assertEqual(int((np.asarray(s.target_out_degrees) == 0).sum()), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
