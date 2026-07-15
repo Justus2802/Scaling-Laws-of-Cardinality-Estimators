@@ -17,6 +17,8 @@ Usage
     python scripts/cc_variance_viz.py experiments/cc_variance_sweeps/wn18rr_v4_sweep.csv
     python scripts/cc_variance_viz.py <csv> --out fig.png
     python scripts/cc_variance_viz.py <csv> --meta path/to/meta.json
+    python scripts/cc_variance_viz.py <csv> --features four_cycle_count
+    python scripts/cc_variance_viz.py <csv> --features four_cycle_count --n-samples 10000 100000
 """
 
 import argparse
@@ -69,6 +71,12 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=None,
                         help="Save figure here instead of showing interactively "
                              "(default: <csv>.png)")
+    parser.add_argument("--features", nargs="+", default=None,
+                        help="Only plot these features (default: all of _PLOT_FEATURES "
+                             "present in the CSV). E.g. --features four_cycle_count")
+    parser.add_argument("--n-samples", type=int, nargs="+", default=None,
+                        help="Only plot these n_samples columns, e.g. --n-samples 10000 "
+                             "100000 to drop the 1000 column (default: all in the meta file).")
     args = parser.parse_args()
 
     if not args.csv.exists():
@@ -86,12 +94,25 @@ def main() -> None:
     graph_name: str = meta.get("graph", "?")
     exact_runtime: dict[str, float | None] = meta.get("exact_runtime", {})
 
+    if args.n_samples is not None:
+        missing = [ns for ns in args.n_samples if ns not in n_samples_list]
+        if missing:
+            sys.exit(f"--n-samples {missing} not in the sweep's n_samples_list {n_samples_list}")
+        n_samples_list = [ns for ns in n_samples_list if ns in args.n_samples]
+
+    features = _PLOT_FEATURES
+    if args.features is not None:
+        unknown = [f for f in args.features if f not in _PLOT_FEATURES]
+        if unknown:
+            sys.exit(f"--features {unknown} not in _PLOT_FEATURES: {_PLOT_FEATURES}")
+        features = tuple(args.features)
+
     rows = _load_rows(args.csv)
     if not rows:
         sys.exit("CSV is empty.")
 
     png_path = args.out or args.csv.with_suffix(".png")
-    _plot(rows, truth, png_path, n_colorings_list, n_samples_list, graph_name)
+    _plot(rows, truth, png_path, n_colorings_list, n_samples_list, graph_name, features)
 
     # Runtime figure — only when the CSV carries the per-family timing columns.
     if any(c in rows[0] for c, _, _ in _RUNTIME_FAMILIES):
@@ -102,7 +123,7 @@ def main() -> None:
 
 def _plot(rows: list[dict], truth: dict[str, int | None], png_path: Path,
           n_colorings_list: list[int], n_samples_list: list[int],
-          graph_name: str) -> None:
+          graph_name: str, features: tuple[str, ...] = _PLOT_FEATURES) -> None:
     import matplotlib.pyplot as plt
 
     # Print the coefficient-of-variation table (the core variance data) to console,
@@ -111,7 +132,7 @@ def _plot(rows: list[dict], truth: dict[str, int | None], png_path: Path,
         print(f"\nCoefficient of variation (std/mean) vs n_colorings  (n_samples={ns:,}):")
         header = "  " + "feature".ljust(24) + "".join(f"nc={nc:<8}" for nc in n_colorings_list)
         print(header)
-        for feat in _PLOT_FEATURES:
+        for feat in features:
             cells = ""
             for nc in n_colorings_list:
                 vals = [r[feat] for r in rows
@@ -123,14 +144,13 @@ def _plot(rows: list[dict], truth: dict[str, int | None], png_path: Path,
 
     # Grid: rows = features, columns = n_samples. Within each subplot, one boxplot
     # per n_colorings value so both sweep axes are visible at once.
-    nrows, ncols = len(_PLOT_FEATURES), len(n_samples_list)
+    nrows, ncols = len(features), len(n_samples_list)
     fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 3 * nrows),
                              squeeze=False)
-    fig.suptitle(f"CC estimator variance vs. n_samples × n_colorings — {graph_name}",
-                 fontsize=12)
+    fig.suptitle("Motif count estimate spread by number of colorings", fontsize=12)
 
     positions = list(range(len(n_colorings_list)))
-    for i, feat in enumerate(_PLOT_FEATURES):
+    for i, feat in enumerate(features):
         exact_val = truth.get(feat)
         for j, ns in enumerate(n_samples_list):
             ax = axes[i][j]
@@ -150,9 +170,6 @@ def _plot(rows: list[dict], truth: dict[str, int | None], png_path: Path,
                 ax.set_title(f"n_samples={ns:,}", fontsize=10)
             if j == 0:
                 ax.set_ylabel(f"{feat}\nestimated count", fontsize=8)
-            if i == nrows - 1:
-                ax.set_xlabel("n_colorings  (more → less variance)", fontsize=8)
-
     fig.tight_layout()
     png_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(png_path, dpi=150, bbox_inches="tight")

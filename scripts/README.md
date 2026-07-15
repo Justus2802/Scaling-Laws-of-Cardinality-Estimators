@@ -181,6 +181,36 @@ python scripts/signature_error_boxplot.py wn18rr_v4 --synth-dir signature_synth_
 python scripts/signature_error_boxplot.py wn18rr_v4 --out data/graph_population/error_boxplot.png
 ```
 
+### `dataset_error_boxplot.py`
+Population companion to `signature_error_boxplot.py`: pools the per-feature errors already
+computed by `kgsynth dataset --measure` (each replica's `distance.json`) across every
+`graph_*/` in a dataset output directory, grouped by signature block, instead of comparing a
+single target/synthetic pair. Same block colours/labels and W1-vs-scalar split as
+`signature_error_boxplot.py`. Linear y-axis with `showfliers=False`: a heavy-tailed block
+(e.g. `b:out_degree` W1, a denominator-normalisation artifact on narrow reconstructed IQRs —
+15-232 across all 10 wn18rr_v4 replicas vs. <1 for every other feature) would otherwise
+flatten every other block's box; boxes/whiskers reflect the full data (matplotlib's 1.5x-IQR
+rule only hides the flier points, not the whisker range).
+
+```
+python scripts/dataset_error_boxplot.py generated/wn18rr_v4
+python scripts/dataset_error_boxplot.py generated/wn18rr_v4 --out fig.png
+python scripts/dataset_error_boxplot.py generated/wn18rr_v4 --exclude   # disable exclusion
+```
+
+### `sweep_error_boxplot.py`
+Same per-block boxplot as `dataset_error_boxplot.py`, but for a `sweep_collect.py` JSONL file
+instead of a `kgsynth dataset --measure` directory: reconstructs each record's full serialized
+signature (all blocks) and the sweep's `<graph>_target.json`, then pools per-feature W1 (for
+distributional features) / relative error (for scalars) across every record, grouped by block.
+Same colours/labels/default exclusions as the other two per-block boxplot scripts.
+
+```
+python scripts/sweep_error_boxplot.py experiments/sweeps/wn18rr_v4.jsonl
+python scripts/sweep_error_boxplot.py experiments/sweeps/wn18rr_v4.jsonl --out fig.png
+python scripts/sweep_error_boxplot.py experiments/sweeps/wn18rr_v4.jsonl --exclude
+```
+
 ### `plot_out_degree_standalone.py`
 Renders a standalone out-degree distribution panel from a measured `block_b.json`, reusing `BlockB._plot_degree_hist` as a single-axes figure with poster-matched colours. Useful for pulling one publication-ready degree plot out of the full block_b diagnostic grid.
 
@@ -246,12 +276,13 @@ python scripts/signature_pca_trajectory.py wn18rr_v4 --num-checkpoints 5 --rewir
 ```
 
 ### `roundtrip_pca.py`
-Takes a path to **any** `.ttl`/`.nt` graph and runs the full pipeline end to end — measure the target signature once, then generate `--num-graphs` synthetic KGs from it (one per seed, mirroring the repeated generation loop's population output), re-measuring each — then projects the target and every synthetic graph into the corpus-fit PCA space (grey dots = real graphs) as a target star with a cloud of synthetic triangles around it, faint arrows from target to each, and reports the mean/std PC drift across the population. Unlike `plot_signature_pca.py` (which needs a corpus *name* and a pre-existing `signature_synth/` sibling), this works from a raw graph path and produces every synthetic graph itself. `--size-agnostic` drops size-dependent features; `--sample-budget` lowers Block E's walk budget on every measurement to trade accuracy for speed (full-fidelity measurement runs `1 + num_graphs` times and dominates the runtime).
+Takes the **name** of a corpus graph with a cached signature and generates `--num-graphs` independent synthetic replicas of it via `kgsynth.dataset`'s parallel worker pool (`ProcessPoolExecutor`, one process per graph — the same machinery `kgsynth dataset` uses, with an `Identity` transform: no perturbation, only the seed differs). It then projects the target and every synthetic graph into the corpus-fit PCA space (grey dots = real graphs) as a target star with a cloud of synthetic triangles around it, faint arrows from target to each, and reports the mean/std PC drift across the population. The target must already be measured (`kgsynth measure <file>` first, if `data/graphs/<name>/signature/block_e.json` doesn't exist yet) — like `kgsynth dataset`, this never measures Block E inside a worker process, since a seeded colour-coding estimate is not reproducible across processes when `load_kg`'s vertex numbering is hash-ordered. `--workers` sets the pool size (default: CPU count); `--size-agnostic` drops size-dependent features; `--keep-graphs DIR` saves the generated `.ttl` files + metadata instead of discarding them after the plot.
 
 ```
-python scripts/roundtrip_pca.py data/graphs/swdf/swdf.nt
-python scripts/roundtrip_pca.py mygraph.ttl --num-graphs 20 --rewire-budget 50000
-python scripts/roundtrip_pca.py mygraph.ttl --sample-budget 5000 --out fig.png
+kgsynth measure data/graphs/swdf/swdf.nt      # once, if not already cached
+python scripts/roundtrip_pca.py swdf
+python scripts/roundtrip_pca.py wn18rr_v4 --num-graphs 20 --workers 8
+python scripts/roundtrip_pca.py wn18rr_v4 --rewire-budget 20000 --out fig.png
 ```
 
 ### `multi_dataset_pca.py`
