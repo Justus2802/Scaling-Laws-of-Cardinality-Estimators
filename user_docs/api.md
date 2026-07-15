@@ -113,8 +113,8 @@ written = write_signature_outputs(sig, "data/graphs/mygraph/signature", source="
 ### Individual blocks
 
 Every block (`BlockA`..`BlockF`, all importable from `kgsynth`) shares one
-lifecycle ([block-refactoring-guide.md](../developer_docs/block-refactoring-guide.md) has the full
-rationale):
+lifecycle (the class-pattern guide with the full rationale has since been pruned from this tree;
+git history has it):
 
 ```python
 from kgsynth import BlockB

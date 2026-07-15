@@ -15,9 +15,9 @@ digging into why it works the way it does.
 
 ## Contributing
 
-- **[block-refactoring-guide.md](block-refactoring-guide.md)** — the `SignatureBlock` class
-  pattern shared by every block (lifecycle methods, the `_NOT_CALCULATED` sentinel,
-  property guards, `visualize` split, logging conventions, selective block computation).
+The `SignatureBlock` class-pattern guide (lifecycle methods, the `_NOT_CALCULATED` sentinel,
+property guards, `visualize` split, logging conventions, selective block computation) has since
+been pruned from this tree; git history has it.
 
 ## Notes — investigations
 
@@ -106,7 +106,5 @@ not the section heading here.
 
 The academic-submission scaffold this package was built for. Not user documentation and not
 guaranteed to reflect the current implementation. The academic proposal PDF, the report outline,
-and the scratch TODO list have since been pruned from this tree ahead of making the repo public;
-git history has them.
-
-- **[NotesForReport.md](NotesForReport.md)** — raw draft notes for the report. Scratch, not prose.
+the scratch TODO list, and the raw report draft notes have since been pruned from this tree ahead
+of making the repo public; git history has them.
