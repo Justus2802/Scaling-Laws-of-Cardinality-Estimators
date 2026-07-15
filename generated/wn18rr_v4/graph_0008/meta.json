@@ -1,0 +1,23 @@
+{
+  "index": 8,
+  "label": "replica",
+  "base": "wn18rr_v4",
+  "transform": {
+    "design": "baseline"
+  },
+  "perturb_seed": 877132087,
+  "generate_seed": 38534326,
+  "generator_opts": {
+    "rewire_budget": 50000
+  },
+  "clamp_report": {
+    "clamped": {},
+    "absorbed": {},
+    "saturated": []
+  },
+  "num_entities": 3861,
+  "num_edges": 9842,
+  "elapsed_s": 2770.91,
+  "kgsynth_version": "0.1.0",
+  "corpus_regenerated": false
+}
