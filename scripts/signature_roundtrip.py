@@ -15,7 +15,8 @@ Usage
     python scripts/signature_roundtrip.py wn18rr_v4          # from data/test_graphs
     python scripts/signature_roundtrip.py aids --seed 7 --rewire-budget 5000
     python scripts/signature_roundtrip.py --kg-file path/to/graph.ttl
-    python scripts/signature_roundtrip.py wn18rr_v4 --convergence-log --adaptive-weights
+    python scripts/signature_roundtrip.py wn18rr_v4 --convergence-log
+    python scripts/signature_roundtrip.py wn18rr_v4 --no-adaptive-weights  # fixed-weight baseline
 """
 
 import argparse
@@ -205,7 +206,8 @@ def main():
     parser.add_argument("--skip-c6", action="store_true",
                         help="Disable 6-cycle steering in Stage 3 (sets use_c6=False), "
                              "dropping its per-swap delta and loss term.")
-    parser.add_argument("--adaptive-weights", action="store_true",
+    parser.add_argument("--adaptive-weights", action=argparse.BooleanOptionalAction,
+                        default=True,
                         help="Scale each Stage 3 loss term's weight linearly by its own "
                              "current error, with a high fixed multiplier (weight = "
                              "base_weight * ADAPTIVE_WEIGHT_SCALE * error) instead of a "
@@ -213,7 +215,8 @@ def main():
                              "harder. Adds weight_* columns to --convergence-log and "
                              "appends '_adaptive' to the auto-named log filename so it "
                              "sits alongside a fixed-weight run of the same graph/seed/"
-                             "budget.")
+                             "budget. On by default; pass --no-adaptive-weights for the "
+                             "fixed-weight baseline.")
     args = parser.parse_args()
 
     # Single per-run timestamp stamped into every auto-named output (graph,

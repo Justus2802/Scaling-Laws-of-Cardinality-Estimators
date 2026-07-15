@@ -262,7 +262,7 @@ def refine(
     seed: int = 0,
     skip_c5: bool = False,
     skip_c6: bool = False,
-    adaptive_weights: bool = False,
+    adaptive_weights: bool = True,
     convergence_log: "Path | str | None" = None,
     swap_log: "Path | str | None" = None,
     checkpoint_steps: "list[int] | None" = None,

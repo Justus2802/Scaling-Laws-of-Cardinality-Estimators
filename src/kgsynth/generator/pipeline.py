@@ -225,7 +225,7 @@ class Generator:
         cooling_rate: float = 0.99993,
         skip_c5: bool = False,
         skip_c6: bool = False,
-        adaptive_weights: bool = False,
+        adaptive_weights: bool = True,
         convergence_log: "Path | str | None" = None,
         swap_log: "Path | str | None" = None,
         checkpoint_steps: "list[int] | None" = None,
