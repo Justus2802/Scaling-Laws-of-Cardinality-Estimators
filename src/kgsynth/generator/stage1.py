@@ -40,7 +40,8 @@ DEFAULT_ZIPF_EXPONENT = 2.0        # fallback for relation- / CS-frequency Zipf 
 # entropy: spectral entropy conflates group *count* with weight *uniformity* — a KG
 # with 5 groups where one dominates gives k_eff ≈ 1.4 instead of 5.  The exp-decay
 # weights already encode skewness; k just needs to be "large enough not to miss
-# structure", which the measurement cap satisfies.  See user_docs/generator.md §"Co-occurrence groups".
+# structure", which the measurement cap satisfies.  See user_docs/generator.md
+# §"Co-occurrence groups".
 COOC_NUM_GROUPS = 10
 
 

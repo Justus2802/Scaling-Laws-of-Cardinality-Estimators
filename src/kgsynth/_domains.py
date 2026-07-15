@@ -1,4 +1,4 @@
-"""Per-feature domains and size-scaling classification for the 134-key signature.
+"""Per-feature domains and size-scaling classification for the 135-key signature.
 
 One source of truth for "what values may this feature legally take", shared by:
 
@@ -105,7 +105,7 @@ MIN_ONE: frozenset[str] = frozenset({
 # single import site; the perturber does not use it (it perturbs a *measured*
 # signature, whose type params are real).
 TYPE_PARAM_FEATURES: frozenset[str] = frozenset({
-    "class_size_alpha", "class_size_xmin",
+    "class_size_alpha", "class_size_xmin", "class_size_max",
     "type_rel_spectrum_rate", "type_rel_spectrum_scale",
     "per_type_entropy_rate", "per_type_entropy_scale",
 })

@@ -33,6 +33,7 @@ from ._utils import RDF_TYPE, PowerLawStats, _fit_powerlaw, _nan_power_law_stats
 from ._fits import (
     ExpDecayFit,
     QuantileFit,
+    TruncPowerLawFit,
     QUANTILE_LEVELS,
     QUANTILE_SUFFIXES,
     fit_exp_decay_rank,
@@ -62,6 +63,7 @@ class BlockC(SignatureBlock):
 
     def __init__(self) -> None:
         self._class_size_fit = _NOT_CALCULATED
+        self._class_size_max = _NOT_CALCULATED
         self._num_classes = _NOT_CALCULATED
         self._subj_cooc_exp = _NOT_CALCULATED
         self._subj_cooc_density = _NOT_CALCULATED
@@ -91,6 +93,10 @@ class BlockC(SignatureBlock):
     @property
     def class_size_fit(self) -> PowerLawStats:
         return self._require("class_size_fit", self._class_size_fit)
+
+    @property
+    def class_size_max(self) -> float:
+        return self._require("class_size_max", self._class_size_max)
 
     @property
     def num_classes(self) -> int:
@@ -220,6 +226,12 @@ class BlockC(SignatureBlock):
         self._class_size_fit = (
             _fit_powerlaw(self._class_sizes) if self._class_sizes.size else _nan_power_law_stats()
         )
+        # Stored so the roundtrip W1 reconstruction can be bounded to [1, max] (see
+        # distribution_fits()) instead of sampling the unbounded power-law family,
+        # which diverges for the shallow alpha real class-size data tends to fit.
+        self._class_size_max = (
+            float(self._class_sizes.max()) if self._class_sizes.size else float("nan")
+        )
 
         # --- P(r|t) spectrum + per-type relation entropy ---
         svs, spectrum_exp, per_type_exp, per_type_entropies = self._type_relation_stats(
@@ -242,9 +254,9 @@ class BlockC(SignatureBlock):
         return self
 
     def as_vector(self) -> list[float]:
-        """Flatten to a fixed-length 29-vector for cross-KG comparison.
+        """Flatten to a fixed-length 30-vector for cross-KG comparison.
 
-        Layout: class power-law (alpha, xmin); num_classes; subj co-occurrence
+        Layout: class power-law (alpha, xmin, max); num_classes; subj co-occurrence
         (rate, scale, density); obj co-occurrence (rate, scale, density);
         edge_multiplicity; bidirectional_ratio; subj row-entropy quantile function
         (7); obj row-entropy quantile function (7); P(r|t) spectrum (rate, scale);
@@ -256,6 +268,7 @@ class BlockC(SignatureBlock):
         return [
             self._safe_scalar(lambda: self.class_size_fit.alpha),
             self._safe_scalar(lambda: self.class_size_fit.xmin),
+            self._safe_scalar(lambda: self.class_size_max),
             self._safe_scalar(lambda: self.num_classes),
             self._safe_scalar(lambda: self.subj_cooc_exp.rate),
             self._safe_scalar(lambda: self.subj_cooc_exp.scale),
@@ -277,7 +290,7 @@ class BlockC(SignatureBlock):
     def feature_names(cls) -> list[str]:
         """Return feature names in the same order as :meth:`as_vector`."""
         names = [
-            "class_size_alpha", "class_size_xmin",
+            "class_size_alpha", "class_size_xmin", "class_size_max",
             "num_classes",
             "subj_cooc_rate", "subj_cooc_scale", "subj_cooc_density",
             "obj_cooc_rate", "obj_cooc_scale", "obj_cooc_density",
@@ -294,7 +307,7 @@ class BlockC(SignatureBlock):
     @classmethod
     def get_na_vec(cls) -> list[float]:
         """Return a NaN vector the same length as as_vector()."""
-        return [float("nan")] * (11 + 2 * len(QUANTILE_LEVELS) + 4)
+        return [float("nan")] * (12 + 2 * len(QUANTILE_LEVELS) + 4)
 
     @classmethod
     def _state_from_features(cls, feats: dict[str, float]) -> dict:
@@ -309,6 +322,7 @@ class BlockC(SignatureBlock):
             "_class_size_fit": PowerLawStats(
                 feats["class_size_alpha"], feats["class_size_xmin"], nan, nan, nan, nan
             ),
+            "_class_size_max": feats["class_size_max"],
             "_num_classes": cls._int(feats, "num_classes"),
             "_subj_cooc_exp": ExpDecayFit(feats["subj_cooc_rate"], feats["subj_cooc_scale"]),
             "_subj_cooc_density": feats["subj_cooc_density"],
@@ -337,14 +351,7 @@ class BlockC(SignatureBlock):
         distribution between this block and a re-measured one.
         """
         return [
-            # NOTE: class_size uses the UNBOUNDED POWERLAW reconstruction, which
-            # diverges for α near 1 (aids' class_size α≈1.25 → W1 ~1e9 if ever
-            # reconstructed). It is dormant today — synthetic output is untyped, so
-            # the synth fit is NaN and the roundtrip skips this distance — but the
-            # honest fix is to serialise ``class_size_max`` and switch to
-            # TRUNC_POWERLAW (as the degree fits now do). Deferred: it is a feature-
-            # vector change requiring a corpus re-measure. See developer_docs/plan/cs_freq_concentration.md.
-            ("class_size", self.class_size_fit, _distance.POWERLAW),
+            ("class_size", self._class_size_trunc_fit(), _distance.TRUNC_POWERLAW),
             ("subj_cooc_spectrum", self.subj_cooc_exp, _distance.EXP_DECAY),
             ("obj_cooc_spectrum", self.obj_cooc_exp, _distance.EXP_DECAY),
             ("subj_row_entropy", self.subj_row_entropy_q, _distance.QUANTILE),
@@ -352,6 +359,20 @@ class BlockC(SignatureBlock):
             ("type_rel_spectrum", self.type_rel_spectrum_exp, _distance.EXP_DECAY),
             ("per_type_entropy", self.per_type_entropy_exp, _distance.EXP_DECAY),
         ]
+
+    def _class_size_trunc_fit(self) -> TruncPowerLawFit:
+        """Adapt ``class_size_fit`` to a truncated fit bounded at ``class_size_max``.
+
+        Mirrors ``BlockB._degree_trunc_fit``: the class-size power-law is fit over
+        ``[xmin, max]``, so reconstructing it *without* the upper bound (plain
+        ``POWERLAW``) lets a shallow alpha (aids measures class_size alpha≈1.25)
+        diverge in the unbounded Pareto reconstruction, giving a W1 on the order of
+        1e9 for what should be a modest distance. Carrying ``class_size_max`` as
+        ``v_max`` reconstructs the same bounded distribution the fit actually
+        describes.
+        """
+        fit = self.class_size_fit
+        return TruncPowerLawFit(fit.alpha, fit.xmin, self.class_size_max)
 
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
         """Display or save diagnostics for reduced Block C.

@@ -28,7 +28,7 @@ digging into why it works the way it does.
   the reasoning behind each measurement choice (literal handling, CS/co-occurrence
   definitions, sampling, …).
 - **[notes/signature_size_dependence.md](notes/signature_size_dependence.md)** — which of the
-  134 features are **extensive** (scale with graph size) and which are **intensive** (size-free).
+  135 features are **extensive** (scale with graph size) and which are **intensive** (size-free).
   The split the Stage-1 conditional-on-size model needs.
 - **[notes/counter_benchmark.md](notes/counter_benchmark.md)** — the exact-vs-colour-coding
   motif-counter comparison per motif size, and the CC counter's adaptive sample-size feature.

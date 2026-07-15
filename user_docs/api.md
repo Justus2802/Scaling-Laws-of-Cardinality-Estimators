@@ -68,7 +68,7 @@ sig = Signature.from_graph(g)                  # measure from an already-loaded 
 sig = Signature.from_config("target.yaml")     # load a hand-edited/round-tripped YAML target
 sig.to_config("target.yaml")                   # write it back out
 
-feats = sig.as_features()                      # flat {name: value} dict (134 keys)
+feats = sig.as_features()                      # flat {name: value} dict (135 keys)
 sig2 = Signature.from_features(feats)           # rebuild a generator-usable Signature from it
 ```
 

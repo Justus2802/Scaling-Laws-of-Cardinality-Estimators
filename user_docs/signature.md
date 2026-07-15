@@ -36,12 +36,12 @@ block's plot shows all of its distribution fits:
 |---|---|---|
 | **A** — G0 | 4 | `num_entities`, `num_relations`, **mean degree** `E/V`, `type_edge_frac` (rdf:type share of E — splits the budget into type vs content edges, so `content_E = E·(1−type_edge_frac)` is the mean Block B's degree fits actually describe) |
 | **B** — G1/G2/G2b | 42 | out/in-degree power-law of the **entity content degrees** (rdf:type edges and the class nodes they point at are excluded — a class node is not an entity, and counting it put a class's instance count in the in-degree tail: aids measured an in-degree max of 184493, i.e. \|class0\|, which the generator then imposed on entities); relation-usage **log-share quantile function** (7 levels, over `log(E_r/ΣE_r)` — supersedes the originally-proposed Zipf exponent, see below); obj/subj multiplicity-α **quantile function** (7 levels, cutoffs [1.4,3.0]) + the two laws' upper bounds `obj_mult_max`, `subj_mult_max`; CS-size offsets `a_obj`, `a_subj`; high-end degree targets `out/in_degree_max`, `out/in_degree_p90` (explicit hub-steering targets for Stage 2); `subject_frac`/`object_frac` (share of entities with nonzero out-/in-degree); per-relation **reciprocity** (`recip_symmetric_frac_bin0..5` over 6 frequency bins + `recip_symmetric_value`) |
-| **C** — G3 | 29 | class-size **power-law**; subj/obj co-occurrence **exp-decay** + density; `edge_multiplicity` + `bidirectional_ratio` (pair-overlap / two-way scalars); row entropy **quantile function** (7 levels); `P(r\|t)` spectrum **exp-decay**; per-type entropy **exp-decay** |
+| **C** — G3 | 30 | class-size **power-law** + its upper bound `class_size_max` (truncates the roundtrip W1 reconstruction, mirroring `out/in_degree_max`); subj/obj co-occurrence **exp-decay** + density; `edge_multiplicity` + `bidirectional_ratio` (pair-overlap / two-way scalars); row entropy **quantile function** (7 levels); `P(r\|t)` spectrum **exp-decay**; per-type entropy **exp-decay** |
 | **D** — G3 | 25 | `num_distinct_cs`; CS-freq **truncated power-law** (α, v_min, v_max); CS-size **quantile function** (7 levels); symmetric inverse side (`inv_num_distinct_cs`, inverse-CS-freq **truncated power-law**, inverse-CS-size **quantile function**); two-step path-count **truncated power-law** |
 | **E** — G5 | 27 | raw motif counts (triangle, 4-/5-/6-cycle, diamond, k4, tailed triangle); path-template **Zipf** + entropy (k=2..10); tree-template Zipf + entropy. Induced star counts are not measured or vectorised — the characteristic-set distribution (Block D) pins per-subject fan-out; the `count_stars` helper is retained (unused) for tests / `scripts/cc_variance.py` |
 | **F** — G4 | 7 | components, LCC fraction, avg-local clustering, assortativity; shortest-path **max/mean/var** summary (`shortest_path_max` = diameter, `shortest_path_mean`, `shortest_path_var`) |
 
-Total **134** features (A4 + B42 + C29 + D25 + E27 + F7).
+Total **135** features (A4 + B42 + C30 + D25 + E27 + F7).
 The fits are stored as NamedTuples that restore as plain tuples through the JSON
 round-trip, so each block property re-wraps them to preserve attribute access.
 
@@ -141,14 +141,20 @@ reconstruction keeps the roundtrip W1 distance finite even when α ≤ 2.
   across the corpus the degree exponents fall from ≈2.2–2.9 to ≈1.0–1.8. Reported α values
   are therefore **not comparable to signature files measured before this change**.
 
-  The roundtrip **W1 reconstruction** of the degree fits is bounded at the stored
-  `{out,in}_degree_max` to match: `BlockB.distribution_fits()` emits them as
-  *truncated* power-laws (`_distance.TRUNC_POWERLAW`), not the plain unbounded
-  `POWERLAW`. Without the bound, a degree α near 1.5 makes the reconstructed tail
-  diverge — on wn18rr_v4 the p99.9 cap landed at ~248 000 against a real max of 26,
-  so a 0.06 difference in α blew `out_degree`'s W1 up to 468. Bounded at the max, the
-  same two fits give W1 ≈ 1.2. (The degree *fit* was already pinned to `[1, max]`; only
-  the reconstruction was throwing the bound away.)
+  The roundtrip **W1 reconstruction** of the degree fits, and of `class_size`, is
+  bounded at a stored max to match: `BlockB.distribution_fits()` and
+  `BlockC.distribution_fits()` emit them as *truncated* power-laws
+  (`_distance.TRUNC_POWERLAW`), not the plain unbounded `POWERLAW`. Without the
+  bound, a shallow α makes the reconstructed tail diverge — on wn18rr_v4 the
+  p99.9 cap landed at ~248 000 against a real degree max of 26, so a 0.06
+  difference in α blew `out_degree`'s W1 up to 468 (bounded at the max, the same
+  two fits give W1 ≈ 1.2); aids' `class_size` α≈1.25 would reconstruct to a W1 on
+  the order of 1e9 unbounded. `class_size_max` is stored for exactly this reason —
+  `class_size_fit` (α, x_min) alone cannot recover it, since a fit's support is
+  the data's *own* range and the roundtrip needs the same bound the fit was taken
+  over. (For degrees the fit was already pinned to `[1, max]` at fit time; only
+  the reconstruction was throwing the bound away. `class_size` needed the max
+  serialised in the first place.)
 - **quantile function (7 quantiles at levels 0, .1, .25, .5, .75, .9, 1)** — the
   non-parametric empirical inverse CDF: the stored values are the sample quantiles, so
   q@0/q@1 are the min/max (hard truncation cutoffs, e.g. per-relation α confined to

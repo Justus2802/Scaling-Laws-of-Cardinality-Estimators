@@ -34,7 +34,7 @@ the package.
   variance).
 - **[transform.md](transform.md)** — signature transforms (`src/kgsynth/transform/`): seeded maps over
   the flat feature dict that perturb a measured signature before generating from it. Covers the
-  **perturbation surface** (only 87 of the 134 features are read by the generator; the rest are
+  **perturbation surface** (only 87 of the 135 features are read by the generator; the rest are
   no-ops), the features that are read but *inert* or *pinned constants*, the coupled quantile groups
   that must move together, and why clamped perturbations are reported rather than swallowed.
 

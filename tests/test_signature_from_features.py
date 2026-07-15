@@ -1,6 +1,6 @@
 """Round-trip tests for ``Signature.as_features()`` / ``.from_features()``.
 
-The contract these pin: a ``Signature`` rebuilt from nothing but the flat 134-key
+The contract these pin: a ``Signature`` rebuilt from nothing but the flat 135-key
 feature dict reproduces **every value the generator reads**, and therefore
 generates the identical graph. That is what lets the perturbation pipeline work on
 the public feature dict instead of reaching into private block state.
@@ -87,11 +87,11 @@ class TestFeatureDict(unittest.TestCase):
     def setUpClass(cls):
         cls.sig = _load()
 
-    def test_has_all_134_features(self):
+    def test_has_all_135_features(self):
         feats = self.sig.as_features()
         expected = sum(len(c.feature_names()) for c in _BLOCK_CLASSES.values())
         self.assertEqual(len(feats), expected)
-        self.assertEqual(len(feats), 134)
+        self.assertEqual(len(feats), 135)
 
     def test_keys_match_block_feature_names(self):
         feats = self.sig.as_features()

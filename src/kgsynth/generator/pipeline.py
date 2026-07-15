@@ -111,7 +111,7 @@ class Signature:
         Path(path).write_text(yaml.safe_dump(data, sort_keys=False))
 
     def as_features(self) -> dict[str, float]:
-        """Flatten to the public 134-key feature dict.
+        """Flatten to the public 135-key feature dict.
 
         The same ``{name: value}`` mapping stored under ``"features"`` in a
         measured ``signature.json``. Requires every block to be present —
@@ -153,7 +153,7 @@ class Signature:
         and the three ``D_*`` comparison distances) are filled with NaN — they
         describe a fit that was performed elsewhere, and no consumer reads them.
 
-        :param feats: Feature name → value; must hold all 134 keys.
+        :param feats: Feature name → value; must hold all 135 keys.
         :returns: A ``Signature`` whose blocks reproduce every generator-consumed
             value of the signature *feats* came from.
         :raises KeyError: If a feature key is missing.

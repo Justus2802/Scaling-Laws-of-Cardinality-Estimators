@@ -43,11 +43,11 @@ independent of any single measured graph.
 
 ### The flat feature dict: `as_features()` / `from_features()`
 
-A third route in and out of a `Signature` — the **flat 134-key feature dict**, the same
+A third route in and out of a `Signature` — the **flat 135-key feature dict**, the same
 `{name: value}` mapping stored under `"features"` in a measured `signature.json`:
 
 ```python
-feats = sig.as_features()          # 134 public feature names -> float
+feats = sig.as_features()          # 135 public feature names -> float
 feats["mean_degree"] *= 1.2
 Generator(Signature.from_features(feats)).sample(seed=1)
 ```
