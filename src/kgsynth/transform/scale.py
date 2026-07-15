@@ -7,7 +7,7 @@ The shape of the problem, and why it is not a perturbation
 and asks what the rest of the signature becomes.
 
 That is not a matter of scaling one feature. The signature's features split in two
-(``docs/notes/signature_size_dependence.md``, encoded as
+(``developer_docs/notes/signature_size_dependence.md``, encoded as
 :data:`kgsynth._domains.EXTENSIVE` / :data:`~kgsynth._domains.WEAKLY_EXTENSIVE`):
 
 - **Intensive** — exponents, ratios, shapes, ``mean_degree``. Size-free by design;
@@ -32,9 +32,9 @@ be *measured*, not assumed.
 
 The data to fit it does not exist yet: it needs the same KG measured at several
 sizes (nested subsets), which is the conditional-on-size model sketched in
-``docs/plan/stage1_population_sampler.md`` and blocked on data acquisition.
+``developer_docs/plan/stage1_population_sampler.md`` and blocked on data acquisition.
 
-This is also the deviation ``docs/signature.md`` records against the proposal's
+This is also the deviation ``user_docs/signature.md`` records against the proposal's
 ``Generator.sample(num_triples=…)``: size is currently pinned by Block A, and
 honouring an arbitrary size needs precisely this law.
 

@@ -259,7 +259,8 @@ def instantiate(
                 floors[order[i]] += 1
         return floors.tolist()
 
-    def _build_distinct(probs: np.ndarray, nonzero: int, size_q, n_target: int) -> list[np.ndarray]:
+    def _build_distinct(probs: np.ndarray, nonzero: int, size_q, n_target: int,
+                        seen: "set[frozenset] | None" = None) -> list[np.ndarray]:
         """Rejection-sample up to ``n_target`` DISTINCT relation-sets from ``probs``.
 
         Sizes come from ``size_q``; deduping by relation-set steers the distinct-CS
@@ -267,10 +268,23 @@ def instantiate(
         once small combos saturate — bounded by the ``nonzero`` support and an attempt
         cap. Used for both forward CS (subject co-occurrence group prototypes) and
         inverse CS (object co-occurrence group prototypes).
+
+        ``seen`` is shared **across the co-occurrence groups of one family** (all forward
+        pools share one set, all inverse pools another). num_distinct_cs is a *global*
+        (union-over-groups) property, but the group prototype rows are near-identical, so
+        independent per-group ``seen`` sets made every group redraw the same handful of
+        high-probability sets: Σquotas templates but only ~half as many *distinct* ones
+        (wn18rr_v4: 44 quota → 23 distinct). A shared ``seen`` forces later groups past the
+        sets earlier groups already took, so the union approaches Σquotas == cs_num_templates.
+        When a group is starved (every set it would draw is already claimed and the attempt
+        cap is hit), the pool is floored to one unconstrained draw so every group still
+        contributes ≥1 realised template — the invariant ``_allocate_quotas``'s floor-of-1
+        exists to guarantee; the duplicate simply reuses an existing distinct CS.
         """
         if num_relations == 0 or n_target <= 0 or nonzero == 0:
             return [np.array([], dtype=int)]
-        seen: set[frozenset] = set()
+        if seen is None:
+            seen = set()
         pool: list[np.ndarray] = []
         attempts = consec_fail = 0
         min_k = 1
@@ -289,6 +303,10 @@ def instantiate(
             seen.add(key)
             pool.append(cs)
             consec_fail = 0
+        if not pool:
+            # Shared-seen exhaustion: allow one duplicate so the group is never empty.
+            k = min(nonzero, max(min_k, _draw_size(size_q)))
+            pool.append(rng.choice(num_relations, size=k, replace=False, p=probs))
         return pool
 
     def _assign_templates(entities: list[int], pool: list[np.ndarray], reuse_zipf: float,
@@ -319,7 +337,7 @@ def instantiate(
     # the exp-decay spectrum weights, then build a pool of schema.cs_num_templates
     # reusable CS templates per group and assign entities to templates via Zipf
     # weights. subj_group_probs and cs_num_templates are always populated by
-    # sample_schema's _validate_target guard (see docs/generator.md), so this is
+    # sample_schema's _validate_target guard (see user_docs/generator.md), so this is
     # the only forward-CS path — no per-entity or per-type fallback.
     entity_cs: list = [None] * actual_V
     n_sg = schema.subj_group_probs.shape[0]
@@ -330,11 +348,12 @@ def instantiate(
     # max(1,round(...)) per-group pattern would inflate the total).
     _fwd_quotas = _allocate_quotas(schema.subj_group_weights, schema.cs_num_templates)
     group_fwd_pools: list[list[np.ndarray]] = []
+    fwd_seen: set[frozenset] = set()   # shared across forward groups → distinct union ≈ Σquotas
     for g in range(n_sg):
         probs_g = schema.subj_group_probs[g].copy()
         nz_g = int((probs_g > 0).sum())
         group_fwd_pools.append(
-            _build_distinct(probs_g, nz_g, schema.cs_size_q, _fwd_quotas[g])
+            _build_distinct(probs_g, nz_g, schema.cs_size_q, _fwd_quotas[g], seen=fwd_seen)
         )
     buckets_sg: dict[int, list[int]] = {}
     for v in range(actual_V):
@@ -383,11 +402,12 @@ def instantiate(
     entity_inv_cs: list = [None] * actual_V
     _inv_quotas = _allocate_quotas(schema.obj_group_weights, schema.inv_cs_num_templates)
     group_inv_pools: list[list[np.ndarray]] = []
+    inv_seen: set[frozenset] = set()   # shared across inverse groups (symmetric to fwd_seen)
     for g in range(n_og):
         probs_g = schema.obj_group_probs[g].copy()
         nz_g = int((probs_g > 0).sum())
         group_inv_pools.append(
-            _build_distinct(probs_g, nz_g, schema.inv_cs_size_q, _inv_quotas[g])
+            _build_distinct(probs_g, nz_g, schema.inv_cs_size_q, _inv_quotas[g], seen=inv_seen)
         )
     buckets_og: dict[int, list[int]] = {}
     for v in range(actual_V):

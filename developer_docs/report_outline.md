@@ -5,7 +5,7 @@ rewiring mechanics — the pipeline architecture, the signature concept, how the
 is calculated, and the evaluation/validation methodology. Stage 1/2/3 algorithmic detail
 (schema sampling formulas, CS-first wiring, Maslov–Sneppen SA loss terms) is deliberately
 out of scope here and belongs in a separate "generator algorithm" section/report, backed
-by `docs/generator.md`.
+by `user_docs/generator.md`.
 
 ---
 
@@ -24,15 +24,15 @@ by `docs/generator.md`.
 ## 2. The Signature Concept
 
 - What a "signature" is in this project's domain language: a compact, **non-redundant**
-  numerical fingerprint of a KG (124 features) — not a full copy of the graph, not a
+  numerical fingerprint of a KG (134 features) — not a full copy of the graph, not a
   naive dump of every possible statistic.
 - Why not "just record every statistic": KG statistics are highly inter-dependent (e.g.
   degree = sum of per-relation multiplicities), so a naive feature set is
   **over-determined**. Explain the two kinds of redundancy the project explicitly
-  designs against (`docs/signature.md` §Goal):
+  designs against (`user_docs/signature.md` §Goal):
   1. Algebraic redundancy (`density = E/V²`, etc.)
   2. Cross-statistic redundancy (e.g. `functionality` = head of the multiplicity law)
-- The **derivability criterion** used to decide what to keep vs. drop (`docs/signature.md`
+- The **derivability criterion** used to decide what to keep vs. drop (`user_docs/signature.md`
   §"Derivability criterion"): a quantity may be dropped only if it's an *exact* function
   of already-stored values with no unstored joint/correlation entering — "derivable under
   an independence assumption" is explicitly *not* sufficient. Worth a figure/example:
@@ -40,9 +40,9 @@ by `docs/generator.md`.
 - Consequence: some quantities that *look* derivable (aggregate degree, inverse-CS size,
   row entropy) are **kept as free targets** because they cross into unstored joint
   structure — this is the conceptual core that justifies the whole Block A–F design.
-- Representation conventions (`docs/signature.md` §"Convention"): the signature does not
+- Representation conventions (`user_docs/signature.md` §"Convention"): the signature does not
   store raw moments (mean/std/median) but the **parameters of a distribution family**
-  chosen per-quantity from empirical observation (`docs/notes/signature_observations.md`):
+  chosen per-quantity from empirical observation (`developer_docs/notes/signature_observations.md`):
   quantile functions, power-laws, Zipf, exponential-decay rank curves, truncated
   power-laws, and a few plain summary scalars (Block F shortest-path max/mean/var).
   Explain *why* (regenerates the shape; moments don't) and give
@@ -55,9 +55,9 @@ by `docs/generator.md`.
   lifecycle (`calculate` → `as_vector`/`as_dict` → `visualize`), the `_NOT_CALCULATED`
   sentinel guarding uncomputed access, and a serialization round-trip
   (`to_serializable`/`from_serializable`) preserving numpy arrays and fit tuples through
-  JSON. Reference: `docs/block-refactoring-guide.md`.
-- Table of blocks, what each measures, and vector length (124 total) — pull directly from
-  `docs/signature.md`'s block table:
+  JSON. Reference: `developer_docs/block-refactoring-guide.md`.
+- Table of blocks, what each measures, and vector length (134 total) — pull directly from
+  `user_docs/signature.md`'s block table:
   - **A** (G0, 3 features) — size & vocabulary root parameters: `num_entities`,
     `num_relations`, mean degree `E/V`.
   - **B** (G1/G2/G2b, 33 features) — relation-usage Zipf skew; per-relation
@@ -100,8 +100,8 @@ by `docs/generator.md`.
   since every motif feature the signature and the evaluation depend on is only as
   trustworthy as this counting layer.
 - Design rationale deep-dives worth citing/summarizing (not full detail, but the headline
-  findings): `docs/notes/assumptions.md` (per-block measurement choices, e.g. literal
-  exclusion), `docs/notes/signature_size_dependence.md` (which of the 124 features scale
+  findings): `developer_docs/notes/assumptions.md` (per-block measurement choices, e.g. literal
+  exclusion), `developer_docs/notes/signature_size_dependence.md` (which of the 134 features scale
   with graph size vs. are size-free — relevant to any cross-graph comparison).
 
 ## 4. The Generation Pipeline (architecture only, not algorithm internals)
@@ -110,19 +110,19 @@ by `docs/generator.md`.
   `Signature` (target-loading wrapper around Blocks A–F) + `Generator.sample()`. One
   seeded call (`Generator(Signature.from_file(...)).sample(seed=42, rewire_budget=...)`)
   derives sub-seeds for each stage (`seed`, `seed+1`, `seed+2`) so the whole pipeline is
-  reproducible from one integer (`docs/generator.md` intro).
-- Module map (table form, from `docs/generator.md`):
+  reproducible from one integer (`user_docs/generator.md` intro).
+- Module map (table form, from `user_docs/generator.md`):
   - `schema.py` — `Schema` dataclass, the Stage-1→Stage-2 handoff object.
   - `stage1.py` / `stage2.py` / `stage3.py` — the three stages (mention *what* each stage
     is responsible for at the architecture level only: abstract schema → concrete wiring
     → motif/connectivity refinement; do not detail the sampling formulas or SA loss terms
-    here — reference `docs/generator.md` for that).
+    here — reference `user_docs/generator.md` for that).
   - `_adapters.py` — reduced-signature reconstruction helpers (turning stored distribution
     *parameters* back into samples/means the stages need), since the signature stores
     fitted parameters, not raw arrays.
   - `_logging.py` — package-wide progress logging.
 - Which signature block feeds which stage — the input-routing table
-  (`docs/generator.md` §"Inputs — which signature fields drive generation") is the key
+  (`user_docs/generator.md` §"Inputs — which signature fields drive generation") is the key
   diagram for this section: it shows the pipeline is *driven end-to-end by the signature*,
   not by hand-picked heuristics. Also list the **validation-only** fields (measured but
   deliberately not used constructively: co-occurrence density/row-entropy,
@@ -177,7 +177,7 @@ by `docs/generator.md`.
 
 ### 5.4 Population-level / PCA comparison
 
-- The problem PCA analysis addresses: a single signature vector (124 numbers) has no
+- The problem PCA analysis addresses: a single signature vector (134 numbers) has no
   meaningful "shape" in isolation — comparing target vs. synthetic only makes sense
   relative to the spread of real KGs (`scripts/plot_signature_pca.py` docstring).
 - `scripts/plot_signature_pca.py`: fits a 2D PCA basis on the **corpus** of real measured
@@ -205,19 +205,19 @@ producing its own survey script + note — good material for a "known limitation
 work" subsection:
 
 - **Edge multiplicity / pair overlap** — `scripts/edge_multiplicity.py`, note
-  `docs/notes/motif_reachability_and_edge_multiplicity.md`: measures the directed→simple
+  `developer_docs/notes/motif_reachability_and_edge_multiplicity.md`: measures the directed→simple
   edge-multiplicity gap between originals and Stage-2 synthetics across the corpus; traces
   motif-error root cause to near-zero pair overlap in the generator's output.
 - **Relation reciprocity / bidirectionality** — `scripts/relation_reciprocity.py`, note
-  `docs/notes/relation_reciprocity_and_bidirectionality.md`: surveys per-relation
+  `developer_docs/notes/relation_reciprocity_and_bidirectionality.md`: surveys per-relation
   reciprocity and forward/inverse-CS symmetry across the corpus; documents the
   bimodal reciprocity finding and the measured ~45–50% attainment ceiling.
 - **Motif-counter accuracy/runtime** — `scripts/cc_variance.py`,
-  `scripts/estimator_variance.py`, note `docs/notes/counter_benchmark.md`: exact vs.
+  `scripts/estimator_variance.py`, note `developer_docs/notes/counter_benchmark.md`: exact vs.
   color-coding (CC) motif counter comparison (accuracy + wall-clock) across motif sizes,
   and the CC estimator's variance as a function of endpoint degree — establishes *how
   much to trust* the motif features the signature and evaluation depend on.
-- **Stage-3 steering limits** — note `docs/notes/stage3_steering_analysis.md` +
+- **Stage-3 steering limits** — note `developer_docs/notes/stage3_steering_analysis.md` +
   `scripts/profile_stage3_deltas.py`: profiling of why per-swap steering barely moves the
   loss on hub-heavy graphs (delta-cost blowup, degree guards, SA schedule retuning).
   Useful as an evaluation-methodology example (per-swap delta logging + profiling as a
@@ -255,13 +255,14 @@ work" subsection:
 
 Note: `CHANGELOG.md` only covers the last ~2 weeks (2026-06-28 → 2026-07-06) of a project
 whose `git log` goes back much further (138 commits) — for full coverage, draw on
-**all three** of `CHANGELOG.md`, `git log`, and `docs/generator.md` §"Evolution & fixes" /
-`docs/notes/*.md`, not the changelog alone.
+**all three** of `CHANGELOG.md`, `git log`, and `user_docs/generator.md` §"Evolution & fixes" /
+`developer_docs/notes/*.md`, not the changelog alone.
 
 - The reduced/non-over-determined signature itself was a redesign of an earlier
-  over-determined ("full") signature — `docs/signature.md`, `docs/archive/signature_measurement_plan.md`
-  document the before/after and why the change was made (coexisting module, not an
-  in-place replace); git history shows an intermediate `signature_reduced` package that
+  over-determined ("full") signature — `user_docs/signature.md` documents the before/after
+  and why the change was made (coexisting module, not an in-place replace; the original
+  build plan for the pre-redesign signature has since been pruned from this tree); git
+  history shows an intermediate `signature_reduced` package that
   was later merged into the single current `signature` package.
 - Motif-counting evolution (visible only in git log, not the changelog): independent
   rewrites of 4-node motif counting, adoption of color-coding sampling for large graphs,
@@ -287,7 +288,7 @@ whose `git log` goes back much further (138 commits) — for full coverage, draw
 
 ## 8. Known Limitations / Open Items
 
-Pull directly from `docs/generator.md` §"Known limitations / open items" and the notes in
+Pull directly from `user_docs/generator.md` §"Known limitations / open items" and the notes in
 §5.5 — a concise bullet list is enough here since the detail lives in the notes:
 
 - Co-occurrence density / row-entropy not analytically pinned (no independent control
@@ -303,7 +304,7 @@ Pull directly from `docs/generator.md` §"Known limitations / open items" and th
 
 ## 9. Suggested Figures/Tables to Include
 
-- Block table (§3) reproduced from `docs/signature.md` — good as a report table.
+- Block table (§3) reproduced from `user_docs/signature.md` — good as a report table.
 - The measure→generate→compare diagram from `README.md` (recreate as a figure).
 - One PCA scatter plot (`signature_pca.png` or the sweep variant) as the headline
   "does the generator work" visual.
@@ -312,4 +313,4 @@ Pull directly from `docs/generator.md` §"Known limitations / open items" and th
 - Signature-error boxplot (`signature_error_boxplot_*.png`) as the headline per-feature
   accuracy figure.
 - A condensed version of the "which signature field drives which stage" input-routing
-  table from `docs/generator.md` (trimmed to illustrate the point, not full detail).
+  table from `user_docs/generator.md` (trimmed to illustrate the point, not full detail).

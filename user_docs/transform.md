@@ -26,7 +26,7 @@ attribute names.
 
 ---
 
-## The perturbation surface — 79 of 127 features
+## The perturbation surface — 87 of 134 features
 
 Only **87** of the signature's 134 features are read by the generator. Perturbing any of the other 47
 is a silent no-op: the graph comes out identical. `kgsynth.transform.validate()` therefore **raises**
@@ -36,7 +36,7 @@ nothing is the worst outcome for a sensitivity study.
 | Block | Reached / total | Not reached |
 |---|---|---|
 | A | 4 / 4 | — |
-| B | 32 / 35 | the three `*_xmin` — only `.alpha` / `.exponent` is read off those fits |
+| B | 40 / 42 | the two `*_xmin` (`out_degree_xmin`, `in_degree_xmin`) — only `.alpha` is read off those fits |
 | C | 10 / 29 | `class_size_xmin`; both `cooc_density`; the 14 `row_entropy_q*`; `per_type_entropy_rate/scale` |
 | D | 22 / 25 | `two_step_alpha/vmin/vmax` |
 | E | 7 / 27 | the 20 `path_template_*` / `tree_template_*` — their Stage-3 steering is gated off |

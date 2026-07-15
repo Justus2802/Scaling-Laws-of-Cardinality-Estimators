@@ -131,12 +131,12 @@ re-measured — rewriting `data/graphs/<kg>/signature/block_*.json` and the flat
 
 ## Change 5 — Documentation
 
-- **[../generator.md](../generator.md)**: document the **truncated-everywhere power-law contract** —
+- **[../../user_docs/generator.md](../../user_docs/generator.md)**: document the **truncated-everywhere power-law contract** —
   a short table of which quantity is drawn from which bounded law and where its bounds come from
   (`cs_freq_fit.v_min/v_max`, `[1, p90]` + extreme-value-matched tail for degrees, `[1, mult_max]`
   for multiplicity). Remove any prose implying unbounded draws or post-hoc clamping, and update the
   Inputs table with the two new Block B parameters.
-- **[../signature.md](../signature.md)**: the two new Block B features, the 126-length vector, and the
+- **[../../user_docs/signature.md](../../user_docs/signature.md)**: the two new Block B features, the 126-length vector, and the
   change of `_fit_powerlaw` to a truncated MLE (what it means for the reported α, and that old
   signature files are not comparable to new ones).
 - **`CHANGELOG.md`**: append under `## Unreleased` with `Added` / `Changed` / `Fixed`.

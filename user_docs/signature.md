@@ -3,11 +3,11 @@
 The `signature` package (Blocks A, B, C, D, E, F). This document is the design **and the
 reasoning** behind that signature. For the concrete module/feature reference jump to
 [Implemented module](#implemented-module); for the per-block measurement assumptions see
-[notes/assumptions.md](notes/assumptions.md). Empirical
-basis: [notes/signature_observations.md](notes/signature_observations.md) (referred to
+[notes/assumptions.md](../developer_docs/notes/assumptions.md). Empirical
+basis: [notes/signature_observations.md](../developer_docs/notes/signature_observations.md) (referred to
 below as "the notes"). For which features scale with graph size vs. which are size-free
 (the Stage-1 conditioning split), see
-[notes/signature_size_dependence.md](notes/signature_size_dependence.md). For where this
+[notes/signature_size_dependence.md](../developer_docs/notes/signature_size_dependence.md). For where this
 implementation intentionally departs from the proposal, see
 [Deviations from the proposal](#deviations-from-the-proposal).
 
@@ -27,7 +27,7 @@ on the object for `visualize`. The overlay helpers cover every fitted distributi
 `overlay_quantiles`, `overlay_exp_decay_rank`, `overlay_truncated_powerlaw`,
 `overlay_powerlaw` (open-tailed `PowerLawStats`) and `overlay_zipf` (`ZipfFit`). Each
 block's plot shows all of its distribution fits:
-- **B** (2×3): out/in-degree power-laws, relation-usage **Zipf**, obj/subj multiplicity-α quantiles.
+- **B** (2×3): out/in-degree power-laws, relation-usage **log-share quantile function**, obj/subj multiplicity-α quantiles.
 - **C** (3×3): three co-occurrence/`P(r|t)` spectra (exp-decay), subj/obj row-entropy quantiles, per-type entropy, class-size **power-law**.
 - **D** (2×3): forward/inverse CS **size** (quantiles), two-step path counts (trunc. power-law), forward/inverse CS **frequency** (trunc. power-law).
 - **E** (2×2): motif counts, path-template stats by k, tree-template scalars (the star-count panel is disabled).
@@ -35,13 +35,13 @@ block's plot shows all of its distribution fits:
 | Block | Vec | Stored representation (rationale in the sections below) |
 |---|---|---|
 | **A** — G0 | 4 | `num_entities`, `num_relations`, **mean degree** `E/V`, `type_edge_frac` (rdf:type share of E — splits the budget into type vs content edges, so `content_E = E·(1−type_edge_frac)` is the mean Block B's degree fits actually describe) |
-| **B** — G1/G2/G2b | 35 | out/in-degree power-law of the **entity content degrees** (rdf:type edges and the class nodes they point at are excluded — a class node is not an entity, and counting it put a class's instance count in the in-degree tail: aids measured an in-degree max of 184493, i.e. \|class0\|, which the generator then imposed on entities); relation-usage **Zipf**; obj/subj multiplicity-α **quantile function** (7 levels, cutoffs [1.4,3.0]) + the two laws' upper bounds `obj_mult_max`, `subj_mult_max`; CS-size offsets `a_obj`, `a_subj`; high-end degree targets `out/in_degree_max`, `out/in_degree_p90` (explicit hub-steering targets for Stage 2); per-relation **reciprocity** (`recip_symmetric_frac_bin0..5` over 6 frequency bins + `recip_symmetric_value`) |
+| **B** — G1/G2/G2b | 42 | out/in-degree power-law of the **entity content degrees** (rdf:type edges and the class nodes they point at are excluded — a class node is not an entity, and counting it put a class's instance count in the in-degree tail: aids measured an in-degree max of 184493, i.e. \|class0\|, which the generator then imposed on entities); relation-usage **log-share quantile function** (7 levels, over `log(E_r/ΣE_r)` — supersedes the originally-proposed Zipf exponent, see below); obj/subj multiplicity-α **quantile function** (7 levels, cutoffs [1.4,3.0]) + the two laws' upper bounds `obj_mult_max`, `subj_mult_max`; CS-size offsets `a_obj`, `a_subj`; high-end degree targets `out/in_degree_max`, `out/in_degree_p90` (explicit hub-steering targets for Stage 2); `subject_frac`/`object_frac` (share of entities with nonzero out-/in-degree); per-relation **reciprocity** (`recip_symmetric_frac_bin0..5` over 6 frequency bins + `recip_symmetric_value`) |
 | **C** — G3 | 29 | class-size **power-law**; subj/obj co-occurrence **exp-decay** + density; `edge_multiplicity` + `bidirectional_ratio` (pair-overlap / two-way scalars); row entropy **quantile function** (7 levels); `P(r\|t)` spectrum **exp-decay**; per-type entropy **exp-decay** |
 | **D** — G3 | 25 | `num_distinct_cs`; CS-freq **truncated power-law** (α, v_min, v_max); CS-size **quantile function** (7 levels); symmetric inverse side (`inv_num_distinct_cs`, inverse-CS-freq **truncated power-law**, inverse-CS-size **quantile function**); two-step path-count **truncated power-law** |
 | **E** — G5 | 27 | raw motif counts (triangle, 4-/5-/6-cycle, diamond, k4, tailed triangle); path-template **Zipf** + entropy (k=2..10); tree-template Zipf + entropy. Induced star counts are not measured or vectorised — the characteristic-set distribution (Block D) pins per-subject fan-out; the `count_stars` helper is retained (unused) for tests / `scripts/cc_variance.py` |
 | **F** — G4 | 7 | components, LCC fraction, avg-local clustering, assortativity; shortest-path **max/mean/var** summary (`shortest_path_max` = diameter, `shortest_path_mean`, `shortest_path_var`) |
 
-Total **126** features (A3 + B35 + C29 + D25 + E27 + F7).
+Total **134** features (A4 + B42 + C29 + D25 + E27 + F7).
 The fits are stored as NamedTuples that restore as plain tuples through the JSON
 round-trip, so each block property re-wraps them to preserve attribute access.
 
@@ -95,7 +95,9 @@ Each retained value carries a **why** (what it controls in generation) and a **n
   - **aggregate out/in-degree are kept as targets** — the multiplicity *marginals* do
     not pin the compound sum (see Investigation / derivability criterion); only the
     multiplicity *scale* is derived.
-- **Relation frequency** → Zipf / power-law.
+- **Relation frequency** → originally proposed as Zipf / power-law; implemented as a
+  measured log-share quantile function instead (see
+  [§ G1](#g1--relation-usage-skew)).
 - **Emergent targets** → stored as **raw counts** (not size-normalised).
 - **Literals / datatype properties** → **out of scope** (flagged completeness gap).
 
@@ -114,7 +116,7 @@ Each retained value carries a **why** (what it controls in generation) and a **n
 | Co-occurrence row entropy | **quantile function** | 7 quantiles (q@0 … q@1) |
 | Two-step pair frequencies (value set) | **truncated power-law** (free α) | α, v_min, v_max |
 | Shortest-path length | **max/mean/var summary** (was skew-normal in the notes) | max (diameter), mean, var |
-| Relation-usage frequency | **Zipf / power-law** (decision) | exponent (+ scale) |
+| Relation-usage frequency | **quantile function** (superseded the original Zipf-exponent decision — see below) | 7 quantiles (q@0 … q@1) over `log(E_r / Σ E_r)` |
 
 **CS-frequency** is not covered by the notes, but **confirmed power-law** (consistent
 with class size and the existing `cs_freq_stats` fit). It is stored as a **truncated
@@ -128,8 +130,7 @@ reconstruction keeps the roundtrip W1 distance finite even when α ≤ 2.
 - **power-law `(α, x_min)`** — `P(x) ∝ x^(−α)` for `x ≥ x_min`. `α` is the **tail
   exponent**: larger α ⇒ lighter tail (few hubs, counts stay small); smaller α ⇒
   heavier tail (strong hubs). `x_min` is where power-law behaviour begins; below it the
-  body is not power-law. Used for strictly-heavy-tailed counts (class size, relation
-  frequency as a Zipf rank-law).
+  body is not power-law. Used for strictly-heavy-tailed counts (class size).
 
   Every such fit (`_fit_powerlaw`) is **truncated**: the support is pinned to `[1, max]`
   — the data's own range — not left unbounded. The quantities fitted this way (degrees,
@@ -139,6 +140,15 @@ reconstruction keeps the roundtrip W1 distance finite even when α ≤ 2.
   upward; released from that constraint, the truncated α is markedly **shallower** —
   across the corpus the degree exponents fall from ≈2.2–2.9 to ≈1.0–1.8. Reported α values
   are therefore **not comparable to signature files measured before this change**.
+
+  The roundtrip **W1 reconstruction** of the degree fits is bounded at the stored
+  `{out,in}_degree_max` to match: `BlockB.distribution_fits()` emits them as
+  *truncated* power-laws (`_distance.TRUNC_POWERLAW`), not the plain unbounded
+  `POWERLAW`. Without the bound, a degree α near 1.5 makes the reconstructed tail
+  diverge — on wn18rr_v4 the p99.9 cap landed at ~248 000 against a real max of 26,
+  so a 0.06 difference in α blew `out_degree`'s W1 up to 468. Bounded at the max, the
+  same two fits give W1 ≈ 1.2. (The degree *fit* was already pinned to `[1, max]`; only
+  the reconstruction was throwing the bound away.)
 - **quantile function (7 quantiles at levels 0, .1, .25, .5, .75, .9, 1)** — the
   non-parametric empirical inverse CDF: the stored values are the sample quantiles, so
   q@0/q@1 are the min/max (hard truncation cutoffs, e.g. per-relation α confined to
@@ -164,7 +174,10 @@ reconstruction keeps the roundtrip W1 distance finite even when α ≤ 2.
   **forward/inverse CS-frequency** recurrence counts (bounded by the entity count).
 - **Zipf / power-law over frequencies `(exponent)`** — rank-ordered frequency
   `f(rank) ∝ rank^(−exponent)`. Larger exponent ⇒ usage dominated by the top few
-  relations; near 0 ⇒ near-uniform usage.
+  ranks; near 0 ⇒ near-uniform usage. Used for **path-template** and
+  **tree-template** usage (Block E). Relation-usage frequency used this
+  representation too, originally — see [§ Relation frequency is now a measured
+  quantile function, not a fitted Zipf exponent](#relation-frequency-is-now-a-measured-quantile-function-not-a-fitted-zipf-exponent).
 - **scalars** — `clustering_coefficient ∈ [0,1]` (fraction of closed triads),
   `degree_assortativity ∈ [−1,1]` (degree correlation across edges),
   `largest_component_fraction ∈ (0,1]` (share of nodes in the giant component).
@@ -396,9 +409,22 @@ Excluded **D**: `num_triples` (= `mean_deg·V`), `density` (= `mean_deg/V`),
 
 ### G1 — Relation-usage skew
 
+<a id="relation-frequency-is-now-a-measured-quantile-function-not-a-fitted-zipf-exponent"></a>
+
 | Value | Repr. | Nature | Why included |
 |---|---|---|---|
-| relation-frequency distribution | Zipf/power-law **exponent** (+ scale) over per-relation usage counts | C | How unevenly relations are used. With E, fixes `\|edges_r\|` per relation. **Not currently measured** — generator.py hard-codes Zipf = 2.0. |
+| relation-frequency distribution (`rel_freq_logq`) | **quantile function** (7 levels) over `log(E_r / Σ E_r)` — the log relation-edge-share | C | How unevenly relations are used. With E, fixes `\|edges_r\|` per relation. |
+
+**Superseded design note.** This block originally proposed a fitted Zipf/power-law
+**exponent**, and an early implementation had no measurement for it at all
+(`generator.py` hard-coded `Zipf = 2.0`). Both are now stale: relation frequency is
+measured directly as the 7-level quantile function above and Stage 1 reconstructs the
+per-relation weights from it (evaluating the stored rank curve at `R` points), because
+with `R` small the rank curve *is* the signal and a single fitted exponent lost against
+it on every corpus graph. `relation_zipf_exponent` survives only as
+`Generator.sample()`'s fallback for a graph with no relations at all. See
+[generator.md § Relation frequency](generator.md#relation-frequency) for the
+current mechanism.
 
 ### G2 — Per-relation multiplicity (core free block)
 
@@ -406,8 +432,8 @@ Excluded **D**: `num_triples` (= `mean_deg·V`), `density` (= `mean_deg/V`),
 |---|---|---|---|
 | object-multiplicity α spread | **quantile function** (7 levels) + cutoffs ≈[1.4, 3.0] over the per-relation tail exponents | C | Stores the **shape** of each relation's fan-out (the scale is derived by edge conservation). Sample an α per relation, then per-(subject,relation) counts. |
 | subject-multiplicity α spread | **quantile function** (7 levels) + cutoffs | C | Mirror: shape of each relation's fan-in. Jointly realised with object-multiplicity per relation (bipartite constraint). |
-| object / subject multiplicity **maximum** | 2 scalars `obj_mult_max`, `subj_mult_max` (max over all `(subject, relation)` / `(object, relation)` counts) | C | The **support** of the two α laws above. Multiplicity is inherently bounded and its α is a truncated MLE over `[1, max]`, so the generator needs the bound to draw from the same law it fitted — without it the draw is unbounded and overshoots the observed maximum. See the truncated power-law contract in `docs/generator.md`. |
-| per-relation reciprocity | `P(symmetric)` per **edge-frequency bin** (6 fixed bins, cumulative-edge-mass thresholds) + one scalar `symmetric_recip_value` (magnitude of the symmetric mode) | C | Whether a relation's edges are bidirectionally reciprocated (`a→b,r` ⇒ `b→a,r`) is near-**bimodal** across the corpus and strongly tied to the relation's own **frequency rank** — a plain marginal quantile over relations (independent of frequency) was found to put reciprocity on the wrong relations at generation time (e.g. the single biggest relation drawing ρ≈0 despite being symmetric in the original). Binning by frequency and reconstructing via a frequency-rank lookup preserves that pairing; the bimodality is what collapses the general `P(reciprocity｜frequency)` joint to a 1-D mixing weight instead of a full 2-D quantile grid. See `docs/notes/relation_reciprocity_and_bidirectionality.md`. |
+| object / subject multiplicity **maximum** | 2 scalars `obj_mult_max`, `subj_mult_max` (max over all `(subject, relation)` / `(object, relation)` counts) | C | The **support** of the two α laws above. Multiplicity is inherently bounded and its α is a truncated MLE over `[1, max]`, so the generator needs the bound to draw from the same law it fitted — without it the draw is unbounded and overshoots the observed maximum. See the truncated power-law contract in `user_docs/generator.md`. |
+| per-relation reciprocity | `P(symmetric)` per **edge-frequency bin** (6 fixed bins, cumulative-edge-mass thresholds) + one scalar `symmetric_recip_value` (magnitude of the symmetric mode) | C | Whether a relation's edges are bidirectionally reciprocated (`a→b,r` ⇒ `b→a,r`) is near-**bimodal** across the corpus and strongly tied to the relation's own **frequency rank** — a plain marginal quantile over relations (independent of frequency) was found to put reciprocity on the wrong relations at generation time (e.g. the single biggest relation drawing ρ≈0 despite being symmetric in the original). Binning by frequency and reconstructing via a frequency-rank lookup preserves that pairing; the bimodality is what collapses the general `P(reciprocity｜frequency)` joint to a 1-D mixing weight instead of a full 2-D quantile grid. See `developer_docs/notes/relation_reciprocity_and_bidirectionality.md`. |
 
 Derived from G2 (not stored): `functionality`, `inverse_functionality` (distribution
 heads), and the multiplicity **scale/x_min** (edge conservation). **Aggregate
@@ -506,7 +532,7 @@ derivability criterion):
 | per-type relation entropy | **exp-decay rank curve** (rate, scale) | per-row spread of `P(r\|t)`; complementary to its spectrum (like `M` carries both SVs and row entropy). Rank order kept — the top = most diffuse/generalist types. |
 | two-step pair frequencies | **truncated power-law** (α, v_min, v_max) over the **path-count** values `path_count(q,p)=Σ_x deg_in(x,q)·deg_out(x,p)` | multiplicity-weighted 2-hop path count → predicts path-2 selectivity (not a bridge-node count) |
 | inverse-CS size | **quantile function** (7 levels) over #distinct in-predicates per object | object-side wiring aggregation; mirror of forward CS-size, **not** given by subject-multiplicity |
-| edge multiplicity (parallel) | scalar ≥1: directed content edges / distinct directed `(s,o)` pairs | how much two-or-more relations pack onto the *same* directed pair — the entity/CS marginals never pin this (they only fix which relations an entity uses, not whether two relations coincide on one pair). Zero pair-overlap collapses the synthetic simple graph toward a plain configuration model, inflating its edge count relative to the original and steering it off the original's degree sequence. See `docs/notes/motif_reachability_and_edge_multiplicity.md`. |
+| edge multiplicity (parallel) | scalar ≥1: directed content edges / distinct directed `(s,o)` pairs | how much two-or-more relations pack onto the *same* directed pair — the entity/CS marginals never pin this (they only fix which relations an entity uses, not whether two relations coincide on one pair). Zero pair-overlap collapses the synthetic simple graph toward a plain configuration model, inflating its edge count relative to the original and steering it off the original's degree sequence. See `developer_docs/notes/motif_reachability_and_edge_multiplicity.md`. |
 | bidirectional ratio | scalar ∈[1,2]: distinct directed pairs / distinct undirected pairs | how often a pair is connected **both** directions; the aggregate companion to per-relation reciprocity (G2) — also catches *cross-relational* reciprocation (`a→b,r1` / `b→a,r2`) that a same-relation reciprocity feature cannot see. |
 
 Genuinely derived/dropped: nothing extra here beyond the global drop list.
@@ -571,9 +597,10 @@ corresponding block/function repeats the short version.
 | Block A stores `density`, `triples_per_entity`, `relation_reuse` | **Dropped.** Block A keeps only `num_entities`, `num_relations`, and **mean degree** `E/V` (= the old `triples_per_entity`). | All three are exact algebraic functions of `V`, mean degree, and `R` (`density = E/V²`, `relation_reuse = E/R`) — tier-1 derivable, so storing them would over-determine the signature. See [Derivability criterion](#derivability-criterion--what-may-actually-be-dropped). |
 | Block E induced **star counts** (`star_count_k2..k10`) | **Dropped** — not measured or vectorised (the `count_stars` helper is retained, unused, for tests / `scripts/cc_variance.py`). | The characteristic-set distribution (Block D) already pins per-subject fan-out, so induced stars are redundant with it. |
 | Per-feature **standard errors** on every signature value (§3.3 step 2) | **Not stored** on the signature. | Estimator variance is characterised once, offline, in `scripts/cc_variance.py` / `scripts/estimator_variance.py` (the sampled Block E motif estimators) and reported in the writeup, rather than carried per-feature on every measurement. |
-| `Generator.sample(num_triples=…)` — instantiate at an arbitrary target size (§3.4) | **Not implemented.** Size is pinned by Block A: `num_triples = round(V × mean_degree)` ([stage1.py](../src/kgsynth/generator/stage1.py)). | Honouring an arbitrary `num_triples` needs a rescaling law for the *extensive* features (raw motif counts, `\|R\|`, `\|T\|`, `num_distinct_cs`, `num_components` — see [notes/signature_size_dependence.md](notes/signature_size_dependence.md)); that is the conditional-on-size model in [plan/stage1_population_sampler.md](plan/stage1_population_sampler.md), blocked on data and needed only by Phase 2. |
+| `Generator.sample(num_triples=…)` — instantiate at an arbitrary target size (§3.4) | **Not implemented.** Size is pinned by Block A: `num_triples = round(V × mean_degree)` ([stage1.py](../src/kgsynth/generator/stage1.py)). | Honouring an arbitrary `num_triples` needs a rescaling law for the *extensive* features (raw motif counts, `\|R\|`, `\|T\|`, `num_distinct_cs`, `num_components` — see [notes/signature_size_dependence.md](../developer_docs/notes/signature_size_dependence.md)); that is the conditional-on-size model in [plan/stage1_population_sampler.md](../developer_docs/plan/stage1_population_sampler.md), blocked on data and needed only by Phase 2. |
 | Phase 2 — the scaling-law study (query generation, QLever labelling, FICE grid, `Qerror(N)` fitting) | **Out of scope.** | This submission is Phase 1 (the `kgsynth` package). Phase 2 is documented as future work. |
-| Block F path-length steering | **Not steered** — `shortest_path_max`/`_mean`/`_var` are measured but no target drives them. | The only cheap lever (hub-shortcut injection) is one-sided — it can shorten paths but not lengthen them, and the synthetic graph undershoots; see [generator.md § Path-length steering](generator.md#path-length-steering) and [archive/path_length_steering.md](archive/path_length_steering.md). |
+| Block F path-length steering | **Not steered** — `shortest_path_max`/`_mean`/`_var` are measured but no target drives them. | The only cheap lever (hub-shortcut injection) is one-sided — it can shorten paths but not lengthen them, and the synthetic graph undershoots; see [generator.md § Path-length steering](generator.md#path-length-steering) (the archived root-cause analysis has since been pruned from this tree; git history has it). |
+| Block B relation frequency: Zipf/power-law **exponent** (G1, §3.1) | **Replaced** with a measured 7-level **quantile function** (`rel_freq_logq`) over `log(E_r / Σ E_r)`; Stage 1 evaluates the stored rank curve directly rather than sampling from a fitted exponent. | With `R` (relation count) small, the rank curve *is* the signal — a single fitted exponent lost against it on every corpus graph. `relation_zipf_exponent` survives only as the Stage-1 fallback for a graph with zero relations. See [§ G1](#g1--relation-usage-skew) and [generator.md § Relation frequency](generator.md#relation-frequency). |
 
 ## Feature finiteness — which values are guaranteed on any real graph
 
@@ -602,7 +629,7 @@ for the consumer-side contract (`_validate_target`). From the measurement side:
 | `path_template_*_k*` | no path of that length exists | real outcome |
 
 This table is the KEEP side of the fallback-removal plan
-(`docs/plan/remove_unnecessary_fallbacks.md`) — everything else that was ever NaN-guarded on the
+(`developer_docs/plan/remove_unnecessary_fallbacks.md`) — everything else that was ever NaN-guarded on the
 generator side and is *not* in this table turned out to be unreachable on real data, and that
 guard has been deleted.
 
@@ -630,4 +657,4 @@ Resolved against the project spec (the document):
 
 Still open / not addressed by the doc: **generator rewrite scope** (full refactor vs
 compatibility shim) — implementation choice, default incremental. See *Future work* in
-[notes/generation_algorithm_fit.md](notes/generation_algorithm_fit.md) for the best-effort gaps.
+[notes/generation_algorithm_fit.md](../developer_docs/notes/generation_algorithm_fit.md) for the best-effort gaps.

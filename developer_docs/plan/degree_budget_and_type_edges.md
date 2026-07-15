@@ -193,9 +193,9 @@ New coverage:
 
 ## Docs & changelog (per CLAUDE.md)
 
-- `docs/generator.md` §5c (the "multinomial top-up" paragraph, lines ~245-252) and the §213 budget
+- `user_docs/generator.md` §5c (the "multinomial top-up" paragraph, lines ~245-252) and the §213 budget
   split line (`content_E = E − n_type_edges`, "one rdf:type edge per entity").
-- `docs/signature.md` — Block A row (new `type_edge_frac`) and Block B row (degrees are entity content
+- `user_docs/signature.md` — Block A row (new `type_edge_frac`) and Block B row (degrees are entity content
   degrees).
 - `CHANGELOG.md` under `## Unreleased`, dated 2026-07-12, `Fixed` + `Changed`. Note that this changes
   seeded output and requires the deferred corpus regen.

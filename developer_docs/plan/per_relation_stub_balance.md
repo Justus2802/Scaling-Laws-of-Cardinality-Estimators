@@ -2,9 +2,9 @@
 
 **Status: IMPLEMENTED.** §2.1 (the relation-frequency quantile fit) and §2.2–2.6 (the IPF stub
 allocation) have both landed. The as-built design, the results and the numerical traps found on the
-way are documented in `docs/generator.md` — [§ The IPF stub
-allocation](../generator.md#the-ipf-stub-allocation) and [§ Relation
-frequency](../generator.md#relation-frequency). This file is kept as the diagnosis that motivated the
+way are documented in `user_docs/generator.md` — [§ The IPF stub
+allocation](../../user_docs/generator.md#the-ipf-stub-allocation) and [§ Relation
+frequency](../../user_docs/generator.md#relation-frequency). This file is kept as the diagnosis that motivated the
 change; where it disagrees with `generator.md`, `generator.md` is what was built.
 
 Deviations from the plan as written, all forced by measurement:

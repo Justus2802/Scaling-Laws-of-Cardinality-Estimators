@@ -2,9 +2,8 @@
 
 The generator turns a measured **reduced signature** into a synthetic KG whose re-measured
 signature lands near the target. It implements the project brief's three-stage procedure
-([notes/generation_algorithm_fit.md](notes/generation_algorithm_fit.md),
-[archive/generation_implementation_plan.md](archive/generation_implementation_plan.md)) against the
-reduced blocks ([signature.md](signature.md)).
+([notes/generation_algorithm_fit.md](../developer_docs/notes/generation_algorithm_fit.md)) against
+the reduced blocks ([signature.md](signature.md)).
 
 Code lives in the **`src/kgsynth/generator/`** package:
 
@@ -44,11 +43,11 @@ independent of any single measured graph.
 
 ### The flat feature dict: `as_features()` / `from_features()`
 
-A third route in and out of a `Signature` — the **flat 127-key feature dict**, the same
+A third route in and out of a `Signature` — the **flat 134-key feature dict**, the same
 `{name: value}` mapping stored under `"features"` in a measured `signature.json`:
 
 ```python
-feats = sig.as_features()          # 127 public feature names -> float
+feats = sig.as_features()          # 134 public feature names -> float
 feats["mean_degree"] *= 1.2
 Generator(Signature.from_features(feats)).sample(seed=1)
 ```
@@ -253,6 +252,15 @@ where most of the structural fidelity is established.
      method: distributes `cs_num_templates` slots exactly, with floor 1 per group — a naive
      `max(1, round(w_g · total))` would inflate the total when many groups have small weights).
      Applied to both forward (`_fwd_quotas`) and inverse (`_inv_quotas`) pools.
+   - `_build_distinct` dedups against a `seen` set **shared across all groups of one family**
+     (one for forward pools, one for inverse). `num_distinct_cs` is a *union-over-groups*
+     property, but the group prototype rows are near-identical, so independent per-group
+     `seen` sets made every group redraw the same high-probability sets — Σquotas templates but
+     only ~half as many *distinct* ones (wn18rr_v4: 44 quota → 23 distinct → realised ~20).
+     A shared `seen` forces later groups past the sets earlier groups already took, so the
+     union approaches Σquotas (wn18rr_v4 realised ~20 → ~30, codex_l/swdf pool-union exact).
+     A starved group (attempt cap hit with every drawable set already claimed) is floored to
+     one duplicate draw so it still contributes ≥1 realised template.
    - Assign entities within each group to templates via `_assign_templates`.
    - (Inverse side mirrors this using `obj_group_probs`.)
 
@@ -308,8 +316,8 @@ where most of the structural fidelity is established.
    fraction of `r`'s emitters' inverse CS (swapping out one existing entry so inverse-CS *size* —
    and the `inv_cs_size_q` / degree-rank-matching above — is unaffected; only *which* relations an
    entity receives changes), enlarging `S_r ∩ O_r` before the wiring loop below needs it. See
-   `docs/notes/motif_reachability_and_edge_multiplicity.md` and
-   `docs/notes/relation_reciprocity_and_bidirectionality.md` for the diagnosis.
+   `developer_docs/notes/motif_reachability_and_edge_multiplicity.md` and
+   `developer_docs/notes/relation_reciprocity_and_bidirectionality.md` for the diagnosis.
 6. **Joint stub allocation (IPF), then per-relation pairing within `S_r × O_r`.** `S_r` = subjects
    whose forward CS contains `r`; `O_r` = objects whose inverse CS contains `r`. Every entity's
    out- and in-stub count **per relation** is decided for all relations at once, by iterative
@@ -653,7 +661,7 @@ Measured per-relation stub imbalance under the old scheme: fb237_v4 **1 843**, w
 aids **184 992** — and that imbalance *was* the deficit. On aids it meant a third of the content edges
 were placed with no multiplicity law, no preferential attachment and no degree law, at a cost of
 ~185k `rng.choice` calls over 70–200k-element pools. The diagnosis is in
-`docs/plan/per_relation_stub_balance.md`.
+`developer_docs/plan/per_relation_stub_balance.md`.
 
 ### What IPF does
 
@@ -905,7 +913,8 @@ Path lengths are not targeted because the only cheap post-hoc lever, injecting h
 *one-sided*: shortcuts can shorten paths but never lengthen them, and the synthetic graph almost
 always undershoots (its paths are already too short), so the lever has nothing to do. The
 structural-undershoot analysis and a sketch for moving path steering into Stage 3's annealing loop
-(if it is ever wanted) are in [archive/path_length_steering.md](archive/path_length_steering.md).
+(if it is ever wanted) were recorded in an earlier investigation that has since been pruned from
+this tree; git history has it if this is revisited.
 
 ---
 

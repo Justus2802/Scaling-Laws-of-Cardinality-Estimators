@@ -37,21 +37,39 @@ def _powerlaw_sample(alpha: float, x_min: float, u: np.ndarray,
                      x_max: float | None = None) -> np.ndarray:
     """Inverse-CDF sample of a (possibly truncated) continuous power-law.
 
-    For ``p(x) ∝ x^(−alpha)`` on ``x ≥ x_min`` the inverse CDF is
-    ``x = x_min·(1 − u)^(−1/(alpha − 1))`` evaluated at the shared uniform draws
-    ``u``; when ``x_max`` is given the draw is clipped to the bounded range.
-    Returns an empty array when the parameters are unusable (NaN, ``alpha ≤ 1``,
-    or ``x_min ≤ 0``).
+    Two regimes, keyed on whether an upper bound is supplied:
+
+    * **Bounded** (``x_max`` finite) — sample the *truncated* power-law on
+      ``[x_min, x_max]`` by its own inverse CDF
+      ``x = [x_min^(1−α) + u·(x_max^(1−α) − x_min^(1−α))]^(1/(1−α))`` (log-uniform
+      ``x_min·(x_max/x_min)^u`` in the ``α → 1`` limit). This is **not** the same
+      as sampling the unbounded law and clipping at ``x_max``: clipping piles all
+      the tail mass that would exceed ``x_max`` into a point mass *at* ``x_max``,
+      so an ``α`` near 1 collapses to a spike at the bound (that clipping bug once
+      inflated ``cs_freq``'s W1 ~9×). Because the bounded law is normalisable for
+      any finite α, the ``α ≤ 1`` rejection below applies only to the unbounded
+      regime.
+    * **Unbounded** (``x_max`` ``None``/non-finite) — the Pareto inverse CDF
+      ``x = x_min·(1 − u)^(−1/(α − 1))``, which needs ``α > 1`` to be normalisable;
+      non-finite / extreme draws are capped at the finite 99.9th percentile so the
+      reconstructed sample — and hence W1 — stays finite.
+
+    Returns an empty array when the parameters are unusable (NaN, ``x_min ≤ 0``,
+    or ``α ≤ 1`` in the unbounded regime).
     """
-    if not np.isfinite([alpha, x_min]).all() or alpha <= 1.0 or x_min <= 0:
+    if not np.isfinite([alpha, x_min]).all() or x_min <= 0:
+        return np.array([], dtype=float)
+    if x_max is not None and np.isfinite(x_max):
+        if x_max <= x_min:
+            return np.full_like(u, float(x_min))
+        if abs(alpha - 1.0) < 1e-6:
+            return x_min * (x_max / x_min) ** u          # log-uniform (α → 1)
+        lo, hi = x_min ** (1.0 - alpha), x_max ** (1.0 - alpha)
+        return (lo + u * (hi - lo)) ** (1.0 / (1.0 - alpha))
+    if alpha <= 1.0:
         return np.array([], dtype=float)
     with np.errstate(over="ignore"):
         vals = x_min * (1.0 - u) ** (-1.0 / (alpha - 1.0))
-    if x_max is not None and np.isfinite(x_max):
-        return np.minimum(vals, x_max)
-    # Unbounded heavy tail (α near 1): cap non-finite / extreme draws at the
-    # finite 99.9th percentile so the reconstructed sample — and hence W1 — stays
-    # finite and comparable across distributions.
     finite = vals[np.isfinite(vals)]
     if finite.size == 0:
         return np.array([], dtype=float)

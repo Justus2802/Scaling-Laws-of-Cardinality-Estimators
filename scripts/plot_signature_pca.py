@@ -21,7 +21,7 @@ keeps only already-normalized, scale-free descriptors (power-law exponents,
 entropies over a fixed vocabulary, densities, ratios, assortativity, ...). Size
 so dominates the corpus's variance that an unfiltered PCA mostly separates
 graphs by "how big" rather than "what shape" — see
-``docs/notes/signature_size_dependence.md`` for the per-feature analysis this
+``developer_docs/notes/signature_size_dependence.md`` for the per-feature analysis this
 list is based on. Without the flag, all features are used (raw mode).
 
 Usage
@@ -49,7 +49,7 @@ _PAIR_COLOURS = ["#C44E52", "#4C72B0", "#55A868", "#8172B3", "#DD8452", "#937860
 
 # Features whose raw value scales with graph size (entity/edge/vocabulary
 # count), excluded in --size-agnostic mode. Classification per
-# docs/notes/signature_size_dependence.md: strictly-size-dependent counts plus
+# developer_docs/notes/signature_size_dependence.md: strictly-size-dependent counts plus
 # the "weakly size-dependent" threshold/extremum family (xmin, vmax, max/p90
 # degree, shortest-path max/mean), since those still drift with log-scale
 # growth rather than being fixed-range ratios or exponents.

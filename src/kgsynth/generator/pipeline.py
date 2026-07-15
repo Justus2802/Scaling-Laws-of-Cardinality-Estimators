@@ -28,7 +28,7 @@ class Signature:
 
     Blocks A, B, C, D and F are mandatory — a real graph always measures them,
     and Stage 1/2 have no degraded-mode path for their absence (see
-    docs/generator.md §"Target signature must be complete"). Block E stays
+    user_docs/generator.md §"Target signature must be complete"). Block E stays
     nullable: :func:`kgsynth.corpus.load_target_from_corpus` legitimately skips
     it (``with_block_e=False``) for callers that only drive Stages 1-2, since
     it is the expensive block to measure and neither stage reads it.
@@ -82,7 +82,7 @@ class Signature:
         :meth:`to_config` writes — so a config can be hand-edited or produced
         by re-saving a measured/cached signature. All six blocks are required:
         a hand-edited config describes a complete target signature, matching
-        what any real graph measures (see docs/generator.md §"Target signature
+        what any real graph measures (see user_docs/generator.md §"Target signature
         must be complete").
 
         :param path: Path to the YAML config file.
@@ -111,7 +111,7 @@ class Signature:
         Path(path).write_text(yaml.safe_dump(data, sort_keys=False))
 
     def as_features(self) -> dict[str, float]:
-        """Flatten to the public 126-key feature dict.
+        """Flatten to the public 134-key feature dict.
 
         The same ``{name: value}`` mapping stored under ``"features"`` in a
         measured ``signature.json``. Requires every block to be present —
@@ -153,7 +153,7 @@ class Signature:
         and the three ``D_*`` comparison distances) are filled with NaN — they
         describe a fit that was performed elsewhere, and no consumer reads them.
 
-        :param feats: Feature name → value; must hold all 126 keys.
+        :param feats: Feature name → value; must hold all 134 keys.
         :returns: A ``Signature`` whose blocks reproduce every generator-consumed
             value of the signature *feats* came from.
         :raises KeyError: If a feature key is missing.

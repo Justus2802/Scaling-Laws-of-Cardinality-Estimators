@@ -1,7 +1,7 @@
 """The perturbation surface: which signature features a transform may move.
 
-Only **79 of the 127** signature features are read by the generator. Perturbing
-any of the other 48 is a silent no-op — the graph comes out identical — so a
+Only **87 of the 134** signature features are read by the generator. Perturbing
+any of the other 47 is a silent no-op — the graph comes out identical — so a
 config naming one is a user error, not a lenient default: :func:`validate` raises.
 
 Two further categories are accepted but warned about, because "perturbing" them
@@ -14,7 +14,7 @@ cannot mean what the caller expects:
 And :data:`COUPLED` records the feature groups that must move together to stay
 valid (a quantile function must remain non-decreasing to be invertible).
 
-See ``docs/dataset.md`` for the derivations behind each set.
+See ``user_docs/dataset.md`` for the derivations behind each set.
 """
 
 from .._domains import MOTIF_COUNTS

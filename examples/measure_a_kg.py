@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Example 1 — measure a real knowledge graph's statistical signature.
 
-Reduces a KG file to its 124-feature *reduced signature* (Blocks A–F) and prints
+Reduces a KG file to its 134-feature *reduced signature* (Blocks A–F) and prints
 a per-block summary. This is the "measure" step of the measure → generate →
 compare loop; the resulting :class:`~kgsynth.Signature` is exactly what
 ``examples/generate_and_compare.py`` feeds to the generator.

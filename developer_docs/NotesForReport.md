@@ -21,19 +21,7 @@ Th
 
 ### Stage 1
 
-- explain why not only stage block a and b used sampled in stage 1
-- Rekonstruieren von Matrizen
-- Blowing up the signature
-
-
-T
-
-
-
-!!! how is a relation represented in those graphs!!! ID?
-
-The same happens for each type to determine type  frequency. 
-!!! how is a type represented !!!
+shorten the coocurrence / matrix thing
 
 For each CS 
 

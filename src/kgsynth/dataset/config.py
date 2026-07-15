@@ -2,7 +2,7 @@
 
 All validation happens **here**, before a single graph is generated: a run of tens
 of graphs takes minutes each, so a typo in a feature name must not surface on
-graph 40. See ``docs/dataset.md`` for the config reference.
+graph 40. See ``user_docs/dataset.md`` for the config reference.
 """
 
 from dataclasses import dataclass, field

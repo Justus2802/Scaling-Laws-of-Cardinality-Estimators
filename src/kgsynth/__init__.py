@@ -12,7 +12,7 @@ Subpackages
 ``kgsynth.generator``      Stage 1/2/3 synthetic-graph generation (the "generate" step).
 ``kgsynth.motif_counter``  Exact / colour-coding / hybrid subgraph-counting backends.
 
-See ``docs/signature.md`` for the signature design and ``docs/generator.md`` for the
+See ``user_docs/signature.md`` for the signature design and ``user_docs/generator.md`` for the
 generator algorithm.
 """
 

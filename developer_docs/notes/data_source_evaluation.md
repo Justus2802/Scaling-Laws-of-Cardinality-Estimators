@@ -1,8 +1,9 @@
 # Note: evaluation of the named §3b real-KG sources
 
-Status: **research note, no code**. Companion to
-[lod_laundromat_acquisition.md](lod_laundromat_acquisition.md) (which covers the
-"diversity at scale" bullet). This note evaluates the *named* candidate sources in
+Status: **research note, no code**. Companion to the LOD Laundromat / LOD-a-lot evaluation (which
+covered the "diversity at scale" bullet; since pruned from this tree — see
+[`plan/stage1_population_sampler.md`](../plan/stage1_population_sampler.md) §"Diversity at scale"
+for the summary). This note evaluates the *named* candidate sources in
 [plan/stage1_population_sampler.md](../plan/stage1_population_sampler.md) §3b — the
 encyclopedic, biomedical, and other-domain KGs — as draws for the doc-Stage-1 population
 fit.
@@ -20,7 +21,7 @@ conflated:
   characteristic sets, components, clustering, paths ≈ **58 of 69 features**). These are
   measured on **any real KG, typed or not**. p ≫ n bites here too (still only ~4 usable
   points), so **untyped sources are first-class draws for (N)**; their type features simply
-  stay NaN — the documented G6 / honest-gap stance in [signature.md](../signature.md), not a
+  stay NaN — the documented G6 / honest-gap stance in [signature.md](../../user_docs/signature.md), not a
   disqualification.
 
 So "Typed?" is **not** a gate on a source's usefulness — only on *which blocks* it fills. A
@@ -132,7 +133,7 @@ a specific large-V gap.
 - **Format conversion is real work.** Native RDF: DBpedia, YAGO, GeoNames, DBLP, MusicBrainz,
   LinkedGeoData, Freebase, Wikidata. Needs an adapter to `.nt`: Bio2RDF (n-quads→triples),
   OGB (int-ID triples), PrimeKG/PharmKG (CSV/tabular). The adapter must honour the **G6**
-  literal-exclusion and blank-node conventions of [signature.md](../signature.md) so rows are
+  literal-exclusion and blank-node conventions of [signature.md](../../user_docs/signature.md) so rows are
   comparable to the existing corpus.
 - **Benchmark-extract bias.** OGB (and the already-present codex/fb237/aids) are ML
   splits/extracts of larger KGs, not as-published — flag such rows; do not treat them as

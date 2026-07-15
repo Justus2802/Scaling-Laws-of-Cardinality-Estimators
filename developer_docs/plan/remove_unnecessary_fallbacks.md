@@ -144,7 +144,7 @@ The KEEP list from Step 3 stays explicitly permitted to be NaN.
 
 ## Step 5 — Documentation
 
-- **[../generator.md](../generator.md) — the main doc casualty.** It currently documents behaviour
+- **[../../user_docs/generator.md](../../user_docs/generator.md) — the main doc casualty.** It currently documents behaviour
   that will no longer exist. Remove:
   - the per-entity / legacy CS-mode descriptions in the Stage-2 section;
   - the "optional" language for Blocks B/D/F throughout (Inputs table, Stage-1 §, Stage-2 §, Design
@@ -156,7 +156,7 @@ The KEEP list from Step 3 stays explicitly permitted to be NaN.
   Add: a "target signature must be complete" precondition section documenting the `_validate_target`
   contract and the short list of features that are *legitimately* allowed to be NaN (with the reason
   — small R / untyped KG / no symmetric relation).
-- **[../signature.md](../signature.md)**: note which features are guaranteed finite on any real graph
+- **[../../user_docs/signature.md](../../user_docs/signature.md)**: note which features are guaranteed finite on any real graph
   versus which may legitimately be NaN, mirroring the evidence table above.
 - **`CHANGELOG.md`**: append under `## Unreleased` with `Changed` / `Removed` subheadings.
 

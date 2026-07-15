@@ -3,7 +3,7 @@
 #   kgsynth dataset examples/perturb_dataset.yaml --dry-run    # review the plan
 #   kgsynth dataset examples/perturb_dataset.yaml --workers 4
 #
-# See docs/dataset.md for the full reference, and docs/transform.md for which
+# See user_docs/dataset.md for the full reference, and user_docs/transform.md for which
 # features may be perturbed (only the 74 the generator actually reads).
 
 base: fb237_v4              # corpus graph whose signature is the baseline
@@ -45,7 +45,7 @@ features:
 
   # Block C — the *only* handle on the type-relation conditional P(r|t): the decay
   # rate of its singular spectrum. (Its companion `type_rel_spectrum_scale` cancels
-  # under normalisation — see docs/transform.md.)
+  # under normalisation — see user_docs/transform.md.)
   type_rel_spectrum_rate:
     dist: lognormal
     sigma: 0.15

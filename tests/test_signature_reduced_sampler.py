@@ -99,7 +99,7 @@ class TestUniformRangeSampler(unittest.TestCase):
 
     def test_integer_features_are_whole(self):
         out = self.sampler.sample(seed=1)
-        # _INTEGER_FEATURES spans the whole 126-feature signature; the sampler
+        # _INTEGER_FEATURES spans the whole 134-feature signature; the sampler
         # covers only A/B/C/D/F (Block E motifs are out of its scope), so intersect.
         for feat in set(_INTEGER_FEATURES) & set(FEATURE_ORDER):
             if math.isnan(out[feat]):

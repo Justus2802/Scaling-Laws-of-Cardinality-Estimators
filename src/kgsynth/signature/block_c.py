@@ -13,7 +13,7 @@ divided by the entity count, i.e. ``M/V``) so its ``scale`` is size-free; the
 normalised entries are the empirical joint ``P(i,j)`` = fraction of entities
 using both relations. This mirrors — but is distinct from — the *row*-normalised
 ``P(r|t)`` spectrum (whose scale is already bounded); see
-``docs/notes/signature_size_dependence.md``.
+``developer_docs/notes/signature_size_dependence.md``.
 
 The unsummarised spectra, entropy samples and class sizes are kept on the object
 so ``visualize`` can overlay each fit on the data it was computed from.
@@ -190,7 +190,7 @@ class BlockC(SignatureBlock):
         # entities using both relations i and j). Only `scale` shifts; the decay
         # `rate` (log-rank slope) is invariant to this rescale. Density and row
         # entropy come from the unnormalised M and are already size-free, so they
-        # are left as-is. See docs/notes/signature_size_dependence.md.
+        # are left as-is. See developer_docs/notes/signature_size_dependence.md.
         num_entities = len(g.vs.select(is_literal_eq=False))
         norm = float(num_entities) if num_entities > 0 else 1.0
         self._subj_singular_values = subj_svs / norm
@@ -337,6 +337,13 @@ class BlockC(SignatureBlock):
         distribution between this block and a re-measured one.
         """
         return [
+            # NOTE: class_size uses the UNBOUNDED POWERLAW reconstruction, which
+            # diverges for α near 1 (aids' class_size α≈1.25 → W1 ~1e9 if ever
+            # reconstructed). It is dormant today — synthetic output is untyped, so
+            # the synth fit is NaN and the roundtrip skips this distance — but the
+            # honest fix is to serialise ``class_size_max`` and switch to
+            # TRUNC_POWERLAW (as the degree fits now do). Deferred: it is a feature-
+            # vector change requiring a corpus re-measure. See developer_docs/plan/cs_freq_concentration.md.
             ("class_size", self.class_size_fit, _distance.POWERLAW),
             ("subj_cooc_spectrum", self.subj_cooc_exp, _distance.EXP_DECAY),
             ("obj_cooc_spectrum", self.obj_cooc_exp, _distance.EXP_DECAY),

@@ -7,7 +7,7 @@ and draws one novel 88-feature signature with the v0 ``UniformRangeSampler``
 ``{"source", "features"}`` JSON to a file or stdout — the same shape as a measured
 ``signature.json``, so it is drop-in compatible with the existing readers.
 
-See ``docs/plan/stage1_population_sampler.md`` for the design.
+See ``developer_docs/plan/stage1_population_sampler.md`` for the design.
 """
 
 import argparse

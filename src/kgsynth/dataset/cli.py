@@ -1,6 +1,6 @@
 """``kgsynth dataset`` — generate a dataset of perturbed synthetic KGs.
 
-Wired into the top-level CLI by :func:`add_parser`; see ``docs/dataset.md``.
+Wired into the top-level CLI by :func:`add_parser`; see ``user_docs/dataset.md``.
 """
 
 import argparse
@@ -36,7 +36,7 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
         "dataset",
         help="Generate many synthetic KGs by perturbing one measured signature",
         description="Perturb a measured signature and generate one synthetic KG per "
-                    "perturbation, in parallel. See docs/dataset.md.",
+                    "perturbation, in parallel. See user_docs/dataset.md.",
     )
     d.add_argument("config", help="YAML dataset config (see examples/perturb_dataset.yaml)")
     d.add_argument("--workers", type=int, default=None,

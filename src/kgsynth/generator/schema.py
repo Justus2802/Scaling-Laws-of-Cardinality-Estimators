@@ -56,7 +56,7 @@ class Schema:
     # reproduce the legacy near-simple graph (no shared pairs). Stage 2 biases the
     # stub pairing toward already-used pairs (parallel) / reversed pairs (bidir) to
     # hit these — degree-neutral, since it only correlates which pending stub a
-    # subject pairs with. See docs/notes/motif_reachability_and_edge_multiplicity.md.
+    # subject pairs with. See developer_docs/notes/motif_reachability_and_edge_multiplicity.md.
     edge_multiplicity: float = 1.0       # directed content edges / distinct directed pairs (≥1)
     bidirectional_ratio: float = 1.0     # distinct directed pairs / distinct undirected pairs
     # (in [1,2])
@@ -67,7 +67,7 @@ class Schema:
     # reciprocity ρ_r builds mutual (a↔b) pairs for a ρ_r
     # fraction of its edges. None → all-asymmetric (legacy behaviour).
     relation_reciprocity: "np.ndarray | None" = None
-    # Block D-derived CS structure. Blocks B/D/F are mandatory (see docs/generator.md
+    # Block D-derived CS structure. Blocks B/D/F are mandatory (see user_docs/generator.md
     # §"Target signature must be complete"), so these are always populated from real
     # measurements — no "0/None → degraded mode" sentinels.
     cs_num_templates: int = 0       # number of reusable CS templates (Block D num_distinct_cs)
@@ -84,7 +84,7 @@ class Schema:
     # Per-relation multiplicity shape + G2b offset (Block B); CS-size shape (Block D).
     # Defaults are NEUTRAL (no tail shape / no offset), not the old wiring — Stage 2
     # falls back to uniform per-subject weights when these are NaN (small-R fallback,
-    # not a Block-absence fallback — see docs/generator.md).
+    # not a Block-absence fallback — see user_docs/generator.md).
     obj_alpha_q: tuple = field(default_factory=lambda: _NAN_Q)   # per-relation obj-mult α quantiles
     a_obj: float = 0.0                   # G2b cs_size^a out-degree offset (0 → no effect)
     # per-relation subj-mult α quantiles
@@ -106,7 +106,7 @@ class Schema:
     target_lcc: float = 1.0           # target largest-component fraction of entity nodes
     # Co-occurrence group prototypes (Block C subj_cooc_exp / obj_cooc_exp). Stage 2
     # uses these to generate entity CSes (instead of type_relation_probs) and assigns
-    # types post-hoc via log P(CS|t) argmax. See docs/generator.md §"Co-occurrence groups".
+    # types post-hoc via log P(CS|t) argmax. See user_docs/generator.md §"Co-occurrence groups".
     # (COOC_NUM_GROUPS, |R|) forward group prototypes
     subj_group_probs: np.ndarray | None = None
     # (COOC_NUM_GROUPS,) Zipf weights from subj spectrum

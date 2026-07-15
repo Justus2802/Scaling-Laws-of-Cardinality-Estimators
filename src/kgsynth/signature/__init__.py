@@ -4,8 +4,8 @@ Measures a KG's statistical signature and stores a **compact distribution
 summary** for each quantity — a quantile function for sample distributions,
 or the parameters of a parametric family (exponential-decay, truncated
 power-law, …) — instead of redundant moments, dropping every value guaranteed
-by the stored summary. See ``docs/signature.md`` for the design and
-``docs/archive/signature_measurement_plan.md`` for the mapping onto blocks.
+by the stored summary. See ``user_docs/signature.md`` for the design and the
+per-block feature mapping.
 
 Scope: Blocks A, B, C, D, E, F (G0–G5).
 """

@@ -69,7 +69,7 @@ def _fit_powerlaw(data: np.ndarray) -> PowerLawStats:
             # body; xmax makes it a *truncated* MLE, matching the bounded law the
             # generator draws from (degrees, class sizes and per-relation
             # multiplicity are all inherently bounded). Mirrors
-            # fit_truncated_powerlaw's pinning for Block D. See docs/signature.md
+            # fit_truncated_powerlaw's pinning for Block D. See user_docs/signature.md
             # (deviations) / plan 2.13.
             fit = powerlaw.Fit(positive, discrete=True, xmin=1,
                                xmax=int(positive.max()), verbose=False)

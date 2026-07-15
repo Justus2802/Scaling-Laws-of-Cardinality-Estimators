@@ -2,7 +2,7 @@
 
 Draw a *novel* reduced signature from the distribution of real KGs, so the
 generator (doc-Stage-2) has something to instantiate. See
-``docs/plan/stage1_population_sampler.md`` for the design and the data-reality
+``developer_docs/plan/stage1_population_sampler.md`` for the design and the data-reality
 analysis behind it.
 
 This module provides the sampler **class hierarchy**:
@@ -15,7 +15,7 @@ This module provides the sampler **class hierarchy**:
   independently from a uniform distribution over its observed corpus range,
   widened by ±10 % of that range.
 
-Output is the **97-value feature dict** (the A/B/C/D/F subset of a measured
+Output is the **107-value feature dict** (the A/B/C/D/F subset of a measured
 ``signature.json``'s ``"features"`` block — Block E motifs are excluded, see the
 scope note below), so sampled signatures are drop-in compatible with the existing
 readers for those blocks. To drive the generator from one, add the missing Block E
@@ -55,7 +55,7 @@ from .signature import BlockA, BlockB, BlockC, BlockD, BlockF
 # not exist — after the move to `src/kgsynth/`.
 _DEFAULT_CORPUS = REPO_ROOT / "data" / "graphs"
 
-# Canonical 97-key order (A/B/C/D/F; Block E excluded), in the same order as
+# Canonical 107-key order (A/B/C/D/F; Block E excluded), in the same order as
 # ``ReducedGraphSignature.as_dict()``.
 # Derived from the block classes so it never drifts from the measured schema.
 _BLOCKS = [BlockA, BlockB, BlockC, BlockD, BlockF]
@@ -122,7 +122,7 @@ class SignatureSampler(ABC):
         """Draw a raw value for *feature* (before shared post-processing)."""
 
     def sample(self, seed: int | None = None) -> dict[str, float]:
-        """Sample a full reduced signature as a 97-key feature dict.
+        """Sample a full reduced signature as a 107-key feature dict.
 
         Parameters
         ----------

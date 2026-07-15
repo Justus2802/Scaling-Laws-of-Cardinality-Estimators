@@ -1,12 +1,12 @@
 {
-  "_num_components": 1,
-  "_largest_component_fraction": 1.0,
-  "_clustering_coefficient": 0.09545844927629753,
-  "_degree_assortativity": -0.07911869248475038,
-  "_shortest_path_max": 12.0,
-  "_shortest_path_mean": 7.14,
-  "_shortest_path_var": 2.9484,
-  "_pair_dists_finite": {
+  "num_components": 1,
+  "largest_component_fraction": 1.0,
+  "clustering_coefficient": 0.09545844927629753,
+  "degree_assortativity": -0.07911869248475038,
+  "shortest_path_max": 12.0,
+  "shortest_path_mean": 7.14,
+  "shortest_path_var": 2.9484,
+  "pair_dists_finite": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": [

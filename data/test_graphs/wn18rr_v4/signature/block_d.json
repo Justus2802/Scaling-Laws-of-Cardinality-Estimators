@@ -1,6 +1,6 @@
 {
-  "_num_distinct_cs": 43,
-  "_cs_freq_fit": {
+  "num_distinct_cs": 43,
+  "cs_freq_fit": {
     "__sig_type__": "tuple",
     "data": [
       1.2922961210485813,
@@ -8,7 +8,7 @@
       1746.0
     ]
   },
-  "_cs_size_q": {
+  "cs_size_q": {
     "__sig_type__": "tuple",
     "data": [
       1.0,
@@ -20,8 +20,8 @@
       5.0
     ]
   },
-  "_inv_num_distinct_cs": 32,
-  "_inv_cs_freq_fit": {
+  "inv_num_distinct_cs": 32,
+  "inv_cs_freq_fit": {
     "__sig_type__": "tuple",
     "data": [
       1.1681953554524513,
@@ -29,7 +29,7 @@
       1802.0
     ]
   },
-  "_inv_cs_size_q": {
+  "inv_cs_size_q": {
     "__sig_type__": "tuple",
     "data": [
       1.0,
@@ -41,7 +41,7 @@
       3.0
     ]
   },
-  "_two_step_fit": {
+  "two_step_fit": {
     "__sig_type__": "tuple",
     "data": [
       1.0728175989184412,
@@ -49,7 +49,7 @@
       17770.0
     ]
   },
-  "_cs_sizes": {
+  "cs_sizes": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": [
@@ -3697,7 +3697,7 @@
       1.0
     ]
   },
-  "_inv_cs_sizes": {
+  "inv_cs_sizes": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": [
@@ -7561,7 +7561,7 @@
       1.0
     ]
   },
-  "_cs_freq_counts": {
+  "cs_freq_counts": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": [
@@ -7610,7 +7610,7 @@
       1.0
     ]
   },
-  "_inv_cs_freq_counts": {
+  "inv_cs_freq_counts": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": [
@@ -7648,7 +7648,7 @@
       1.0
     ]
   },
-  "_pair_counts": {
+  "pair_counts": {
     "__sig_type__": "ndarray",
     "dtype": "float64",
     "data": [
@@ -7705,7 +7705,7 @@
       1.0
     ]
   },
-  "_top_pairs": [
+  "top_pairs": [
     {
       "__sig_type__": "tuple",
       "data": [

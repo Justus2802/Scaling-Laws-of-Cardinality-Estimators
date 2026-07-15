@@ -181,7 +181,7 @@ def main():
                              "no-hub graphs (wn18rr); hub-heavy graphs have a much "
                              "smaller per-swap |Δloss| and need a far lower value "
                              "(fb237 ≈ 0.002) or the walk never cools "
-                             "(docs/notes/stage3_steering_analysis.md §2).")
+                             "(developer_docs/notes/stage3_steering_analysis.md §2).")
     parser.add_argument("--cooling-rate", type=float, default=0.99993,
                         help="Stage 3 geometric cooling per accepted swap "
                              "(default 0.99993, tuned for a ~100k budget).")

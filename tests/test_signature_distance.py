@@ -63,6 +63,31 @@ class TestWasserstein1(unittest.TestCase):
         nan_fit = fit_quantiles([1.0])  # too few samples → all NaN
         self.assertTrue(math.isnan(_distance.wasserstein1(a, nan_fit, _distance.QUANTILE)))
 
+    def test_truncated_powerlaw_samples_the_law_not_clips(self):
+        # A truncated power-law with α → 1 is ~log-uniform on [v_min, v_max]; the
+        # reconstruction must SAMPLE it (mass spread across the range), not sample the
+        # unbounded Pareto and clip at v_max (which would pile up a point mass at the
+        # bound). Regression for the clip bug that inflated cs_freq's W1 ~9×.
+        u = np.random.default_rng(_distance._SEED).random(_distance._N_SAMPLE)
+        s = _distance._powerlaw_sample(1.0000105, 1.0, u, x_max=1020.0)
+        self.assertGreaterEqual(s.min(), 1.0)
+        self.assertLessEqual(s.max(), 1020.0)
+        # Not collapsed to the v_max spike a clip would produce (clip gave mean≈1020).
+        self.assertLess(float(s.mean()), 400.0)
+        # At exactly α = 1 the closed form is the log-uniform inverse-CDF a·(b/a)^u.
+        s1 = _distance._powerlaw_sample(1.0, 1.0, u, x_max=1020.0)
+        expected = 1.0 * (1020.0 / 1.0) ** u
+        self.assertAlmostEqual(float(np.abs(s1 - expected).max()), 0.0, places=6)
+
+    def test_truncated_powerlaw_w1_stays_bounded_for_shallow_alpha(self):
+        # Two bounded fits differing only in a shallow α give an O(range) W1, not the
+        # near-divergence the unbounded reconstruction would produce.
+        a = TruncPowerLawFit(1.29, 1.0, 1746.0)
+        b = TruncPowerLawFit(1.0001, 1.0, 1020.0)
+        w1 = _distance.wasserstein1(a, b, _distance.TRUNC_POWERLAW)
+        self.assertTrue(math.isfinite(w1))
+        self.assertLess(w1, 1746.0)
+
 
 if __name__ == "__main__":
     unittest.main()

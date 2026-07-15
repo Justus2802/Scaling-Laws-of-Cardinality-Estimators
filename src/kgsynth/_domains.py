@@ -1,4 +1,4 @@
-"""Per-feature domains and size-scaling classification for the 126-key signature.
+"""Per-feature domains and size-scaling classification for the 134-key signature.
 
 One source of truth for "what values may this feature legally take", shared by:
 
@@ -8,7 +8,7 @@ One source of truth for "what values may this feature legally take", shared by:
 - :mod:`kgsynth.transform` — clamps perturbed values back into range.
 
 The ``EXTENSIVE`` / ``INTENSIVE`` split is transcribed from
-``docs/notes/signature_size_dependence.md``: extensive features scale with the
+``developer_docs/notes/signature_size_dependence.md``: extensive features scale with the
 number of entities ``V`` or edges ``E``, intensive ones are shapes, exponents or
 ratios that do not. It is unused by the perturber (which holds ``V`` fixed) and
 exists for the size-rescaling transform that reads it — see
@@ -149,7 +149,7 @@ def feature_domain(name: str) -> Domain:
     return POSITIVE
 
 
-# ── size-scaling classification (docs/notes/signature_size_dependence.md) ───────
+# ── size-scaling classification (developer_docs/notes/signature_size_dependence.md) ───────
 
 # Scale with V or E. A transform that changes graph size must rescale these;
 # holding them fixed while moving V asks the generator for a target no real graph

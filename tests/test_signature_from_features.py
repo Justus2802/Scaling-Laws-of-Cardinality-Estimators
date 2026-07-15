@@ -1,6 +1,6 @@
 """Round-trip tests for ``Signature.as_features()`` / ``.from_features()``.
 
-The contract these pin: a ``Signature`` rebuilt from nothing but the flat 124-key
+The contract these pin: a ``Signature`` rebuilt from nothing but the flat 134-key
 feature dict reproduces **every value the generator reads**, and therefore
 generates the identical graph. That is what lets the perturbation pipeline work on
 the public feature dict instead of reaching into private block state.

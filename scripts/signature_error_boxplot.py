@@ -193,7 +193,7 @@ def _block_errors(letter: str, tblk: object, sblk: object) -> dict[str, float]:
 # Feature names subsumed by a distribution_fits() entry (scored via W1 above),
 # so the scalar pass doesn't double-count them under a per-parameter relative
 # error. Built from each block's known distribution_fits() -> feature_names()
-# layout (docs/signature.md's per-block vector layout).
+# layout (user_docs/signature.md's per-block vector layout).
 _DIST_PARAM_FEATURES: dict[str, set[str]] = {
     "b": {
         "out_degree_alpha", "out_degree_xmin",

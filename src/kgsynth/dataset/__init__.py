@@ -21,7 +21,7 @@ Two designs, selected by the config's ``design:`` key:
     Only one thing changes per graph, so any difference in the output is
     attributable to that feature — a sensitivity analysis over the signature.
 
-See ``docs/dataset.md``.
+See ``user_docs/dataset.md``.
 """
 
 from .config import DatasetConfig

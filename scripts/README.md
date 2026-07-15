@@ -39,7 +39,7 @@ python scripts/measure_all_raw.py --graphs aids fb237_v4        # only these gra
 ```
 
 ### `aggregate_signatures.py`
-Copies each graph's combined `signature.json` from the nested per-graph tree (`data/graphs/<name>/signature/`, `data/test_graphs/<name>/signature/`) into the flat public layout `data/signatures/<name>.json` (one `{"source", "features"}` file per graph, 127 features each). Pure copy/normalise — does **not** re-measure. Run it after a corpus re-measurement to refresh the flat copies.
+Copies each graph's combined `signature.json` from the nested per-graph tree (`data/graphs/<name>/signature/`, `data/test_graphs/<name>/signature/`) into the flat public layout `data/signatures/<name>.json` (one `{"source", "features"}` file per graph, 134 features each). Pure copy/normalise — does **not** re-measure. Run it after a corpus re-measurement to refresh the flat copies.
 
 ```
 python scripts/aggregate_signatures.py                 # all corpus graphs
@@ -132,7 +132,7 @@ python scripts/profile_stage3_deltas.py fb237_v4 --proposals 300 --timeout 5
 ```
 
 ### `estimator_variance.py`
-Characterises the **variance of the Horvitz–Thompson neighbour-subsampling estimator** for the induced 5-/6-cycle count (the "approximate hub delta" idea) as a function of endpoint node degree, for several sample counts `K`, and fits a power law `rel_std = a·deg^b` per `K`. For each hub swap it computes the exact cycle set through the four changed pairs and Monte-Carlo simulates the estimator over it (the estimator is unbiased, so relative std is what decides usability). `--metric count` (default) measures the count estimator; `--metric delta` the far noisier after−before delta. Writes per-(proposal, K) CSVs and a log-log rel-std-vs-degree scatter with fitted curves (one per `K`) to `experiments/estimator_variance/`, and prints the fit parameters. Conclusion from the fb237 run is recorded in `docs/notes/stage3_steering_analysis.md` §4 (variance grows steeply with degree — the estimator is unusable on the hubs where it would be needed).
+Characterises the **variance of the Horvitz–Thompson neighbour-subsampling estimator** for the induced 5-/6-cycle count (the "approximate hub delta" idea) as a function of endpoint node degree, for several sample counts `K`, and fits a power law `rel_std = a·deg^b` per `K`. For each hub swap it computes the exact cycle set through the four changed pairs and Monte-Carlo simulates the estimator over it (the estimator is unbiased, so relative std is what decides usability). `--metric count` (default) measures the count estimator; `--metric delta` the far noisier after−before delta. Writes per-(proposal, K) CSVs and a log-log rel-std-vs-degree scatter with fitted curves (one per `K`) to `experiments/estimator_variance/`, and prints the fit parameters. Conclusion from the fb237 run is recorded in `developer_docs/notes/stage3_steering_analysis.md` §4 (variance grows steeply with degree — the estimator is unusable on the hubs where it would be needed).
 
 ```
 python scripts/estimator_variance.py fb237_v4
@@ -141,7 +141,7 @@ python scripts/estimator_variance.py fb237_v4 --metric delta --bins 20 50 100 20
 ```
 
 ### `edge_multiplicity.py`
-Surveys the directed→simple **edge-multiplicity (pair-overlap)** gap between a graph's original and its Stage-2 synthetic output (built as `signature_roundtrip` with zero refinement), per graph or across the corpus. Reports ρ = directed/distinct-undirected, the parallel (multi-relational) and bidirectional factors, and the synthetic edge inflation. `--orig-only` skips the (slow) Stage-2 build for a fast survey of how much overlap the targets demand. Output to `experiments/edge_multiplicity/`. Diagnoses the root cause behind the fb237 motif overshoot (see `docs/notes/motif_reachability_and_edge_multiplicity.md`).
+Surveys the directed→simple **edge-multiplicity (pair-overlap)** gap between a graph's original and its Stage-2 synthetic output (built as `signature_roundtrip` with zero refinement), per graph or across the corpus. Reports ρ = directed/distinct-undirected, the parallel (multi-relational) and bidirectional factors, and the synthetic edge inflation. `--orig-only` skips the (slow) Stage-2 build for a fast survey of how much overlap the targets demand. Output to `experiments/edge_multiplicity/`. Diagnoses the root cause behind the fb237 motif overshoot (see `developer_docs/notes/motif_reachability_and_edge_multiplicity.md`).
 
 ```
 python scripts/edge_multiplicity.py                    # all corpus graphs
@@ -150,7 +150,7 @@ python scripts/edge_multiplicity.py --orig-only
 ```
 
 ### `relation_reciprocity.py`
-Surveys **per-relation reciprocity** and forward/inverse-CS symmetry — testing whether bidirectionality is carried by a per-relation "symmetric vs asymmetric" split (it is, nearly bimodally). Per relation reports the same-relation edge reciprocity and `|S_r∩O_r|/|S_r∪O_r|`; per graph the edge-weighted overall reciprocity, symmetric-edge fraction, mid-band fraction (bimodality) and CS↔inv-CS Jaccard. Writes per-relation CSVs + a summary to `experiments/relation_reciprocity/`. Findings in `docs/notes/relation_reciprocity_and_bidirectionality.md`.
+Surveys **per-relation reciprocity** and forward/inverse-CS symmetry — testing whether bidirectionality is carried by a per-relation "symmetric vs asymmetric" split (it is, nearly bimodally). Per relation reports the same-relation edge reciprocity and `|S_r∩O_r|/|S_r∪O_r|`; per graph the edge-weighted overall reciprocity, symmetric-edge fraction, mid-band fraction (bimodality) and CS↔inv-CS Jaccard. Writes per-relation CSVs + a summary to `experiments/relation_reciprocity/`. Findings in `developer_docs/notes/relation_reciprocity_and_bidirectionality.md`.
 
 ```
 python scripts/relation_reciprocity.py fb237_v4 wn18rr_v4

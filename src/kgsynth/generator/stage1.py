@@ -4,7 +4,7 @@ Builds the abstract schema (relations, types, type-relation probability table)
 from a measured reduced-signature target: BlockA + BlockC for size/schema shape,
 BlockB for edge multiplicity and degree shape, BlockD for characteristic-set reuse,
 and BlockF for connectivity. All five blocks are mandatory (see
-docs/generator.md §"Target signature must be complete") — a real graph always
+user_docs/generator.md §"Target signature must be complete") — a real graph always
 measures them, so there is no degraded-mode path here.
 
 Design decisions:
@@ -40,7 +40,7 @@ DEFAULT_ZIPF_EXPONENT = 2.0        # fallback for relation- / CS-frequency Zipf 
 # entropy: spectral entropy conflates group *count* with weight *uniformity* — a KG
 # with 5 groups where one dominates gives k_eff ≈ 1.4 instead of 5.  The exp-decay
 # weights already encode skewness; k just needs to be "large enough not to miss
-# structure", which the measurement cap satisfies.  See docs/generator.md §"Co-occurrence groups".
+# structure", which the measurement cap satisfies.  See user_docs/generator.md §"Co-occurrence groups".
 COOC_NUM_GROUPS = 10
 
 
@@ -171,7 +171,7 @@ def _sample_type_relation_probs(
 def _validate_target(a: BlockA, b: BlockB, c: BlockC, d: BlockD, f: BlockF) -> None:
     """Raise ``ValueError`` naming the first non-finite feature Stage 1/2 require.
 
-    These quantities are measurable on any real graph (see docs/generator.md
+    These quantities are measurable on any real graph (see user_docs/generator.md
     §"Target signature must be complete" for the evidence, gathered by
     enumerating every NaN across the 9-KG corpus). A NaN here means the target
     signature is incomplete or corrupted, not a legitimate small-KG edge case —
@@ -425,7 +425,7 @@ def sample_schema(
     # (which relation is symmetric matters, not just how many are): assigning
     # reciprocity independently of frequency was found to put it on the wrong
     # relations (e.g. the biggest relation getting ρ=0 despite being symmetric in the
-    # original) — see docs/notes/relation_reciprocity_and_bidirectionality.md.
+    # original) — see developer_docs/notes/relation_reciprocity_and_bidirectionality.md.
     # An empty bin (no relations landed there when Block B was measured — common
     # when R is small, e.g. only 5 relations over 6 fixed bins) is a data gap, not
     # evidence the bin is asymmetric: falling back to 0 there silently overrides

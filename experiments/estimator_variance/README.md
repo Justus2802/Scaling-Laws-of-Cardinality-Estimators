@@ -1,6 +1,6 @@
 # Approximate-hub-delta estimator experiments
 
-Results behind `docs/notes/stage3_steering_analysis.md` §4 — whether a
+Results behind `developer_docs/notes/stage3_steering_analysis.md` §4 — whether a
 Horvitz–Thompson neighbour-subsampling estimator for the induced 5-/6-cycle delta
 could replace dropping expensive hub swaps in Stage 3. Verdict: **no** (unbiased
 but far too high variance on the hubs where it would be needed).

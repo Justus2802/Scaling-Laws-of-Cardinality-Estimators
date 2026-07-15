@@ -48,7 +48,7 @@ def _make_block_c(num_classes=3, class_size_zipf=2.0) -> BlockC:
     c._num_classes = num_classes
     c._class_size_fit = _pls(class_size_zipf)
     c._type_rel_spectrum_exp = ExpDecayFit(rate=0.5, scale=100.0)
-    # A complete reduced Block C always carries these (see docs/generator.md
+    # A complete reduced Block C always carries these (see user_docs/generator.md
     # §"Target signature must be complete"); sample_schema's group-CS path reads
     # them directly, with no per-entity/per-type fallback.
     c._subj_cooc_exp = ExpDecayFit(rate=0.5, scale=100.0)

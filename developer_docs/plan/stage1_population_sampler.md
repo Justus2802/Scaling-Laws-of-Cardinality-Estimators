@@ -3,14 +3,15 @@
 Status: **planned / blocked on data**. This is the design and the reasoning; no code
 yet (decided). It plans **doc-Stage-1** — sampling a *novel* `ReducedGraphSignature`
 from the population of real-world knowledge graphs, conditioned on size — which is the
-input that feeds the generator
-([../archive/generation_implementation_plan.md](../archive/generation_implementation_plan.md)).
+input that feeds the generator (see [`user_docs/generator.md`](../../user_docs/generator.md) for
+what was actually built; the original implementation plan this cites has since been pruned from
+this tree).
 
 ## What this is — and what it is *not*
 
 Two different things are both called "Stage 1" in this project. Keep them apart:
 
-- **The generator's "Stage 1/2"** ([../archive/generation_implementation_plan.md](../archive/generation_implementation_plan.md))
+- **The generator's "Stage 1/2"** (see [`user_docs/generator.md`](../../user_docs/generator.md))
   takes **one given** signature and builds a graph (schema sampler → CS-first wiring).
 - **This document — doc-Stage-1** — samples a **new** signature vector from the
   distribution of real KGs, so the generator has something to instantiate. The
@@ -20,7 +21,7 @@ Two different things are both called "Stage 1" in this project. Keep them apart:
   manifold viz is its groundwork."
 
 So: **measure real KGs → fit a model over their 69-feature signatures → draw novel,
-size-conditioned signatures**. The 69 features are defined in [signature.md](../signature.md)
+size-conditioned signatures**. The 69 features are defined in [signature.md](../../user_docs/signature.md)
 (Blocks A, B, C, D, F).
 
 ## Decisions resolved
@@ -36,7 +37,7 @@ size-conditioned signatures**. The 69 features are defined in [signature.md](../
 The eight measured reduced signatures (the corpus lives in `data/graphs/`; `lubm` and the
 `59621618` duplicate are measured but excluded) are still thinner than their row count.
 `swdf` and `dbpedia100k` were added by measuring already-on-disk graphs (no download) — see
-[`graphs/GRAPH_SIZES.md`](../../graphs/GRAPH_SIZES.md):
+[`data/GRAPH_SIZES.md`](../../data/GRAPH_SIZES.md):
 
 | graph | V | R | mean-deg | T | #comp | LCC frac | usable? |
 |---|---:|---:|---:|---:|---:|---:|---|
@@ -104,7 +105,7 @@ The only lever that directly attacks p ≫ n. Candidate sources (RDF/`.nt`, real
 - **Other domains:** LinkedGeoData, GeoNames, MusicBrainz-RDF, DBLP-RDF.
 - **Diversity at scale:** LOD Laundromat / LOD-a-lot (thousands of crawled real KGs) — the
   apparent best single source of *spread* across the population. **But evaluated and largely
-  rejected** in [notes/lod_laundromat_acquisition.md](../notes/lod_laundromat_acquisition.md):
+  rejected** (the evaluation note has since been pruned from this tree; summary below):
   LOD-a-lot is one *merged* graph (a single point, not a population); LOD Laundromat's
   documents are crawl artifacts (document ≠ KG), structurally *laundered* (blank-node
   Skolemization), and skew to the dirty long tail of the web — wrong unit, wrong population.
@@ -152,7 +153,7 @@ A full joint over 69 features is unidentifiable; even a 3×3 empirical covarianc
 unreliable from 6 points. So the grouping must be **imposed**, then *confirmed/extended*
 as data grows:
 
-- **Use the signature's own consistency web** ([signature.md](../signature.md), "Consistency
+- **Use the signature's own consistency web** ([signature.md](../../user_docs/signature.md), "Consistency
   web ≠ redundancy"): edge conservation already couples
   `meanCS_size · mean_mult = E/V`, `|edges_r| = freq(r)·E`, `Σ CS-freq = V`. These are
   *known* joint constraints — encode them as **derived relations**, not free sampled
@@ -210,7 +211,7 @@ Per the "acquire typed KGs first" decision, before the type block can be modelle
   ≥5 typed graphs spanning a range of T before fitting `class_size_*`,
   `type_rel_spectrum_*`, `per_type_entropy_*`.
 - Until then the sampler emits **untyped** signatures only (T=0), type features left NaN —
-  consistent with the G6 literal-exclusion stance ([signature.md](../signature.md) §G6): a
+  consistent with the G6 literal-exclusion stance ([signature.md](../../user_docs/signature.md) §G6): a
   documented, honest gap, not a silent zero.
 
 ## Implemented — v0 uniform-range sampler
@@ -236,7 +237,7 @@ Per the "acquire typed KGs first" decision, before the type block can be modelle
 Carried-over v0 limitations (the successor samplers' job): independent marginals
 (no consistency web, can yield implausible continuous values when an outlier like
 hetionet's mean-degree widens a range), no size conditioning, untyped only, no motifs
-(Block E out of scope — see [signature.md](../signature.md)).
+(Block E out of scope — see [signature.md](../../user_docs/signature.md)).
 
 ## Open questions / next steps
 

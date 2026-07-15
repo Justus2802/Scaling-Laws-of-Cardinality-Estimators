@@ -19,7 +19,7 @@ Run it (from the repo root, after ``pip install -e .``)::
 
 A perfect match is not expected: Stage 3 steers motif/connectivity structure
 under a fixed degree sequence, so some blocks converge tightly and others
-(e.g. the path/tree templates) only approximately — see docs/generator.md.
+(e.g. the path/tree templates) only approximately — see user_docs/generator.md.
 
 **Runtime note.** This measures the target *and* re-measures the synthetic graph
 at full fidelity, so it invokes Block E's colour-coding sampler twice; on a

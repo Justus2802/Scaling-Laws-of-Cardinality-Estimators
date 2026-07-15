@@ -25,6 +25,7 @@ from ._block_base import SignatureBlock, _NOT_CALCULATED
 from ._utils import MIN_SAMPLES_FOR_FIT, RDF_TYPE, PowerLawStats, _fit_powerlaw
 from ._fits import (
     QuantileFit,
+    TruncPowerLawFit,
     QUANTILE_LEVELS,
     QUANTILE_SUFFIXES,
     fit_quantiles,
@@ -37,7 +38,7 @@ from . import _distance
 log = get_logger(__name__)
 
 # Per-relation multiplicity exponents are confined to this range for generation;
-# stored as the quantile-function cutoffs (q@0 / q@1; docs/signature.md §G2).
+# stored as the quantile-function cutoffs (q@0 / q@1; user_docs/signature.md §G2).
 _ALPHA_LO = 1.4
 _ALPHA_HI = 3.0
 
@@ -238,7 +239,7 @@ class BlockB(SignatureBlock):
 
         # --- G1: relation-usage frequency (quantile function of the log edge shares) ---
         # Stored as the empirical quantile function of log(E_r / Σ E_r), not as a Zipf
-        # exponent. Three reasons, all measured (docs/plan/per_relation_stub_balance.md):
+        # exponent. Three reasons, all measured (developer_docs/plan/per_relation_stub_balance.md):
         #   * these rank curves are frequently not Zipf-shaped at all — aids' shares are
         #     .337/.284/.230/.060/.003 (flat head, then a cliff), which no single exponent
         #     reproduces;
@@ -321,7 +322,7 @@ class BlockB(SignatureBlock):
         # --- Per-relation reciprocity: fraction of a relation's directed pairs whose
         # reverse also exists via the same relation (drives bidirectionality). Nearly
         # BIMODAL across the corpus (relations are symmetric ≈1 or asymmetric ≈0, with
-        # ~0% in between — see docs/notes/relation_reciprocity_and_bidirectionality.md),
+        # ~0% in between — see developer_docs/notes/relation_reciprocity_and_bidirectionality.md),
         # and STRONGLY tied to relation frequency (which relation is symmetric matters
         # for generation, not just how many are). A plain quantile function over
         # relations discards that frequency pairing, so instead we bin relations by
@@ -479,12 +480,27 @@ class BlockB(SignatureBlock):
         distribution between this block and a re-measured one.
         """
         return [
-            ("out_degree", self.out_degree_fit, _distance.POWERLAW),
-            ("in_degree", self.in_degree_fit, _distance.POWERLAW),
+            ("out_degree", self._degree_trunc_fit(self.out_degree_fit,
+                                                  self.out_degree_max), _distance.TRUNC_POWERLAW),
+            ("in_degree", self._degree_trunc_fit(self.in_degree_fit,
+                                                 self.in_degree_max), _distance.TRUNC_POWERLAW),
             ("relation_freq", self.rel_freq_logq, _distance.QUANTILE),
             ("obj_mult_alpha", self.obj_alpha_q, _distance.QUANTILE),
             ("subj_mult_alpha", self.subj_alpha_q, _distance.QUANTILE),
         ]
+
+    @staticmethod
+    def _degree_trunc_fit(fit: PowerLawStats, degree_max: float) -> TruncPowerLawFit:
+        """Adapt a degree ``PowerLawStats`` to a truncated fit bounded at its max.
+
+        The degree power-law is KS-pinned to ``[1, max]`` at fit time, so its α is
+        the truncated MLE over that bounded range. Reconstructing it *without* the
+        upper bound (plain ``POWERLAW``) lets α near 1.5 diverge — the p99.9 cap
+        then lands orders of magnitude above the real max and a tiny α difference
+        explodes W1. Carrying ``degree_max`` as ``v_max`` reconstructs the same
+        bounded distribution the fit actually describes.
+        """
+        return TruncPowerLawFit(fit.alpha, fit.xmin, float(degree_max))
 
     def visualize(self, mode: str = "plot", path: str | None = None) -> None:
         """Display or save diagnostics for reduced Block B.

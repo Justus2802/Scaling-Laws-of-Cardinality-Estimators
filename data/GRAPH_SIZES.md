@@ -3,9 +3,9 @@
 Base RDF graphs in [`graphs/data/`](data/), ranked by triple count (line count of the raw graph file). The `*_queries` / `*_ranking` subdirectories are query workloads, not graphs, and are excluded.
 
 Measurement status below refers to the **reduced signature** (`sig_out_reduced/`, Blocks
-A,B,C,D,F). See [docs/plan/stage1_population_sampler.md](../docs/plan/stage1_population_sampler.md)
+A,B,C,D,F). See [developer_docs/plan/stage1_population_sampler.md](../developer_docs/plan/stage1_population_sampler.md)
 §"Reality check" for why only ~4 of these are usable population draws, and
-[docs/notes/data_source_evaluation.md](../docs/notes/data_source_evaluation.md) for the
+[developer_docs/notes/data_source_evaluation.md](../developer_docs/notes/data_source_evaluation.md) for the
 acquisition plan.
 
 | Graph | Triples | File size | Raw file | Measured? | Status / why |
@@ -33,7 +33,7 @@ duplicate** of `fb237_v4`, so it is dropped.
 `hetionet`, `swdf`, `dbpedia100k`), with `aids` degenerate on the relation side. `swdf` +
 `dbpedia100k` were added from already-on-disk graphs (no download). Next cheapest lift is
 acquiring external sources — see
-[docs/notes/data_source_evaluation.md](../docs/notes/data_source_evaluation.md).
+[developer_docs/notes/data_source_evaluation.md](../developer_docs/notes/data_source_evaluation.md).
 
 - **Smallest:** `wn18rr_v4` — 9,842 triples (~976 KB)
 - **Largest:** `yago` — 58,276,870 triples (~5.0 GB)

@@ -12,7 +12,7 @@ pip install -e .
 ```
 
 ### `measure_a_kg.py` — the *measure* step
-Reduces a KG to its 124-feature signature and prints a per-block summary.
+Reduces a KG to its 134-feature signature and prints a per-block summary.
 
 ```bash
 python examples/measure_a_kg.py                       # bundled sample graph

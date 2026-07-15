@@ -1,9 +1,9 @@
 # Size dependence of the reduced signature features
 
-Which of the 124 reduced-signature features (`src/kgsynth/signature/`, blocks A/B/C/D/E/F)
+Which of the 134 reduced-signature features (`src/kgsynth/signature/`, blocks A/B/C/D/E/F)
 **scale with graph size** and which are **size-free**. This is the distinction the
 Stage-1 *conditional-on-size* model needs: extensive features must be conditioned on `V`;
-intensive ones form the size-free shape. See [signature.md](../signature.md) for the
+intensive ones form the size-free shape. See [signature.md](../../user_docs/signature.md) for the
 feature reference.
 
 ## Principle
@@ -34,7 +34,6 @@ Count thresholds and lengths that *drift upward* with size but do not scale line
 | Feature | Block | Behaviour |
 |---|---|---|
 | `out_degree_xmin`, `in_degree_xmin` | B | power-law onset — shifts up as hubs grow |
-| `relation_zipf_xmin` | B | threshold over per-relation edge counts (∝ E) |
 | `class_size_xmin` | C | threshold over entities-per-class (∝ V) |
 | `cs_freq_vmax`, `inv_cs_freq_vmax` | D | max CS recurrence count (∝ V); `v_min` sits at the observed minimum (usually 1) |
 | `shortest_path_mean`, `shortest_path_max` | F | grow ~`log V` (small-world); `shortest_path_var` stays roughly size-free |
@@ -44,10 +43,12 @@ Count thresholds and lengths that *drift upward* with size but do not scale line
 The remaining features (the large majority):
 
 - **`mean_degree`** (A) — `E/V`, the deliberately size-stable edge handle.
-- **All exponents** — `out_degree_alpha`, `in_degree_alpha`, `relation_zipf_exponent`,
+- **`type_edge_frac`** (A) — rdf:type share of E; a ratio ∈ (0,1].
+- **All exponents** — `out_degree_alpha`, `in_degree_alpha`,
   `class_size_alpha`, `cs_freq_alpha`, `inv_cs_freq_alpha`, `two_step_alpha`, and the Block E template Zipf
   exponents (`path_template_zipf_k2..k10`, `tree_template_zipf`) — label-sequence skew, a
-  shape independent of how many paths/trees exist.
+  shape independent of how many paths/trees exist. (Relation frequency no longer has an
+  exponent/`xmin` pair — see below.)
 - **All exp-decay rates** — `subj_cooc_rate`, `obj_cooc_rate`, `type_rel_spectrum_rate`,
   `per_type_entropy_rate`.
 - **`type_rel_spectrum_scale`, `per_type_entropy_scale`** — bounded because `P(r|t)` is
@@ -57,8 +58,14 @@ The remaining features (the large majority):
 - **`subj_cooc_density`, `obj_cooc_density`** — nnz fractions ∈ (0,1].
 - **All quantile-function levels `(q00 … q100)`** for: object/subject multiplicity-α
   (distributions over *exponents*; `q00`/`q100` are the fixed [1.4, 3.0] cutoffs), row
-  entropy (bounded by `ln R`), CS size and inverse-CS size (bounded by `R`).
+  entropy (bounded by `ln R`), CS size and inverse-CS size (bounded by `R`), and
+  **relation frequency** (`rel_freq_logq`, over `log(E_r/ΣE_r)` — this **replaced** the
+  originally-proposed `relation_zipf_exponent`/`relation_zipf_xmin` pair; a share is
+  size-free by construction, so the whole quantile function belongs here, not in the
+  extensive/`xmin` tables above).
 - **`a_obj`, `a_subj`** (B) — log-log OLS slopes.
+- **`subject_frac`, `object_frac`** (B) — share of entities with nonzero out-/in-degree;
+  ratios ∈ [0,1].
 - **Block E template entropies** — `path_template_entropy_k2..k10`, `tree_template_entropy`:
   Shannon entropy of the label-sequence distribution, bounded by `≈ k·ln R` (vocabulary),
   not by `V` — it saturates as templates fill in, like the row / per-type entropies.
@@ -72,7 +79,7 @@ The remaining features (the large majority):
 
 The 7 motif counts (`triangle_count`, `four_cycle_count`, `five_cycle_count`,
 `six_cycle_count`, `diamond_count`, `k4_count`, `tailed_triangle_count`) are stored as
-**raw counts** — a deliberate decision (G5 in [signature.md](../signature.md): *"raw counts
+**raw counts** — a deliberate decision (G5 in [signature.md](../../user_docs/signature.md): *"raw counts
 are strongly size-dependent → more work for the Stage-1 conditional-on-size model"*). They
 are the most size-dependent block: subgraph counts grow super-linearly with edges (e.g.
 triangles up to `C(V,3)`, bounded in sparse graphs nearer `O(E^{3/2})`; 4-cliques faster

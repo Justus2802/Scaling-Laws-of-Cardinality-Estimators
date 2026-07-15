@@ -2,7 +2,7 @@
 
 Bidirectionality (an undirected pair connected both ways) is what makes a synthetic
 graph's simple edge count match the original (see
-`docs/notes/motif_reachability_and_edge_multiplicity.md`). This script tests the
+`developer_docs/notes/motif_reachability_and_edge_multiplicity.md`). This script tests the
 hypothesis that bidirectionality is carried by a **per-relation reciprocity** — that
 relations split cleanly into *symmetric* (whenever a→b via r, also b→a via r; its
 subject and object entity sets coincide, so its forward CS = inverse CS) and

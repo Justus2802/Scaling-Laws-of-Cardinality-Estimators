@@ -64,7 +64,7 @@ def _make_block_c(
     ``class_size_zipf`` becomes the class-size power-law α; ``spectrum`` is the
     P(r|t) type-relation exp-decay spectrum the generator reconstructs singular
     values from. Pass ``nan_exp_decay()`` to model "too few classes to fit" —
-    the legitimate small-R/untyped-KG fallback (see ``docs/generator.md``).
+    the legitimate small-R/untyped-KG fallback (see ``user_docs/generator.md``).
     ``subj_cooc`` / ``obj_cooc`` set the co-occurrence spectra used for the
     forward/inverse CS group prototypes; a real graph always measures these
     (``_validate_target`` rejects NaN here — see ``TestValidateTarget``).
@@ -320,7 +320,7 @@ class TestSampleSchemaZipfEffect(unittest.TestCase):
 class TestSampleSchemaCoocGroups(unittest.TestCase):
     """Co-occurrence group prototypes built from subj_cooc_exp / obj_cooc_exp.
 
-    A real graph always measures these (never NaN — see docs/generator.md), so
+    A real graph always measures these (never NaN — see user_docs/generator.md), so
     group prototypes are always built; there is no "no groups" fallback path
     left to test here (see TestValidateTarget for the NaN-rejection behaviour).
     """

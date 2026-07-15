@@ -174,7 +174,7 @@ def main() -> None:
     p.add_argument(
         "--out-dir",
         type=Path,
-        default=Path("docs/notes/figures"),
+        default=Path("developer_docs/notes/figures"),
         help="output directory for the figures",
     )
     p.add_argument("--sigma", type=float, default=0.35,
