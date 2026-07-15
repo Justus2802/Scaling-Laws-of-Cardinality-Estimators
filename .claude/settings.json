@@ -1,5 +1,0 @@
-{
-  "env": {
-    "CLAUDE_CODE_TMPDIR": "/mnt/data/claude_tmp"
-  }
-}

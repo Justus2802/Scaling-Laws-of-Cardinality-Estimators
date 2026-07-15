@@ -82,5 +82,5 @@ logs/
 runs/
 wandb/
 
-# Claude Code agent worktrees
-.claude/worktrees/
+# Claude Code local config/state
+.claude/
