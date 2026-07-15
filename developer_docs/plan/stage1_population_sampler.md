@@ -15,10 +15,10 @@ Two different things are both called "Stage 1" in this project. Keep them apart:
   takes **one given** signature and builds a graph (schema sampler → CS-first wiring).
 - **This document — doc-Stage-1** — samples a **new** signature vector from the
   distribution of real KGs, so the generator has something to instantiate. The
-  [generation_algorithm_fit.md](../notes/generation_algorithm_fit.md) §"Scope clarification"
-  flags exactly this: "the actual doc-Stage-1 — sampling a *novel* signature from the
-  real-graph population (the conditional-on-size model) is **not** in [the generator]; the
-  manifold viz is its groundwork."
+  generation-algorithm-fit analysis (since pruned from this tree as course scratch work; git
+  history has it) flagged exactly this: "the actual doc-Stage-1 — sampling a *novel* signature
+  from the real-graph population (the conditional-on-size model) is **not** in [the generator];
+  the manifold viz is its groundwork."
 
 So: **measure real KGs → fit a model over their 69-feature signatures → draw novel,
 size-conditioned signatures**. The 69 features are defined in [signature.md](../../user_docs/signature.md)

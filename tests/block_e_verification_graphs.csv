@@ -1,4 +1,0 @@
-name,path,format
-wn18rr_v4,data/test_graphs/wn18rr_v4/wn18rr_v4.nt,nt
-wn18rr_v4_synth,tests/graphs/59622641_synth.ttl,ttl
-kgsynth_generated,tests/graphs/test_generated.ttl,ttl

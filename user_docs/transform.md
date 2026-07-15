@@ -1,5 +1,12 @@
 # Signature transforms
 
+This is the **sampling step** of the measure → sample → generate pipeline: given one measured
+signature, draw a new target signature to generate from, rather than reusing the baseline
+unchanged. It sits between measuring a real KG ([signature.md](signature.md)) and generating a
+synthetic one ([generator.md](generator.md)) — see [dataset.md](dataset.md) for where it plugs
+into the full `kgsynth dataset` run (load baseline → **perturb (this step)** → rebuild target →
+generate → write).
+
 A **transform** maps a signature's flat feature dict to another one:
 
 ```python

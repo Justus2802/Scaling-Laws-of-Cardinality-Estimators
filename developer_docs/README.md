@@ -27,15 +27,12 @@ digging into why it works the way it does.
 - **[notes/assumptions.md](notes/assumptions.md)** — per-block measurement assumptions and
   the reasoning behind each measurement choice (literal handling, CS/co-occurrence
   definitions, sampling, …).
-- **[notes/signature_size_dependence.md](notes/signature_size_dependence.md)** — which of the
-  135 features are **extensive** (scale with graph size) and which are **intensive** (size-free).
-  The split the Stage-1 conditional-on-size model needs.
 - **[notes/counter_benchmark.md](notes/counter_benchmark.md)** — the exact-vs-colour-coding
   motif-counter comparison per motif size, and the CC counter's adaptive sample-size feature.
   Data collected by `scripts/cc_variance.py`.
-- **[notes/generation_algorithm_fit.md](notes/generation_algorithm_fit.md)** — analysis of
-  how the spec's three-stage generation algorithm maps onto the reduced signature, the
-  reconciliations needed, and the best-effort gaps (future work).
+  (The size-dependence split — which of the 135 features are extensive vs. intensive — and the
+  generation-algorithm-fit analysis have since been pruned from this tree as course scratch work;
+  git history has them.)
 - **[notes/stage3_steering_analysis.md](notes/stage3_steering_analysis.md)** — why Stage 3
   is slow on hub-heavy graphs (`fb237_v4`) and why per-swap motif steering barely moves the
   loss. Delta-cost profiling (6-cycle delta ≥94 %), the node-level/endpoint degree guards and
@@ -107,11 +104,9 @@ not the section heading here.
 
 ## Course artifacts
 
-The academic-submission scaffold this package was built against (`../scaling_laws_student_project.pdf`
-at the repo root). Kept for provenance; not user documentation and not guaranteed to reflect the
-current implementation — see `notes/generation_algorithm_fit.md` above for where the two diverge.
+The academic-submission scaffold this package was built for. Not user documentation and not
+guaranteed to reflect the current implementation. The academic proposal PDF, the report outline,
+and the scratch TODO list have since been pruned from this tree ahead of making the repo public;
+git history has them.
 
-- **[report_outline.md](report_outline.md)** — outline for the written report: pipeline
-  architecture, the signature concept, and the evaluation/validation methodology.
 - **[NotesForReport.md](NotesForReport.md)** — raw draft notes for the report. Scratch, not prose.
-- **[problems.md](problems.md)** — a running scratch list of open questions and TODOs.

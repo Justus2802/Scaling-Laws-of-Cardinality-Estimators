@@ -5,11 +5,10 @@ reasoning** behind that signature. For the concrete module/feature reference jum
 [Implemented module](#implemented-module); for the per-block measurement assumptions see
 [notes/assumptions.md](../developer_docs/notes/assumptions.md). Empirical
 basis: [notes/signature_observations.md](../developer_docs/notes/signature_observations.md) (referred to
-below as "the notes"). For which features scale with graph size vs. which are size-free
-(the Stage-1 conditioning split), see
-[notes/signature_size_dependence.md](../developer_docs/notes/signature_size_dependence.md). For where this
-implementation intentionally departs from the proposal, see
-[Deviations from the proposal](#deviations-from-the-proposal).
+below as "the notes"). The size-dependence note (which features scale with graph size vs. which
+are size-free — the Stage-1 conditioning split) has since been pruned from this tree as course
+scratch work; git history has it. For where this implementation intentionally departs from the
+proposal, see [Deviations from the proposal](#deviations-from-the-proposal).
 
 ## Implemented module
 
@@ -603,7 +602,7 @@ corresponding block/function repeats the short version.
 | Block A stores `density`, `triples_per_entity`, `relation_reuse` | **Dropped.** Block A keeps only `num_entities`, `num_relations`, and **mean degree** `E/V` (= the old `triples_per_entity`). | All three are exact algebraic functions of `V`, mean degree, and `R` (`density = E/V²`, `relation_reuse = E/R`) — tier-1 derivable, so storing them would over-determine the signature. See [Derivability criterion](#derivability-criterion--what-may-actually-be-dropped). |
 | Block E induced **star counts** (`star_count_k2..k10`) | **Dropped** — not measured or vectorised (the `count_stars` helper is retained, unused, for tests / `scripts/cc_variance.py`). | The characteristic-set distribution (Block D) already pins per-subject fan-out, so induced stars are redundant with it. |
 | Per-feature **standard errors** on every signature value (§3.3 step 2) | **Not stored** on the signature. | Estimator variance is characterised once, offline, in `scripts/cc_variance.py` / `scripts/estimator_variance.py` (the sampled Block E motif estimators) and reported in the writeup, rather than carried per-feature on every measurement. |
-| `Generator.sample(num_triples=…)` — instantiate at an arbitrary target size (§3.4) | **Not implemented.** Size is pinned by Block A: `num_triples = round(V × mean_degree)` ([stage1.py](../src/kgsynth/generator/stage1.py)). | Honouring an arbitrary `num_triples` needs a rescaling law for the *extensive* features (raw motif counts, `\|R\|`, `\|T\|`, `num_distinct_cs`, `num_components` — see [notes/signature_size_dependence.md](../developer_docs/notes/signature_size_dependence.md)); that is the conditional-on-size model in [plan/stage1_population_sampler.md](../developer_docs/plan/stage1_population_sampler.md), blocked on data and needed only by Phase 2. |
+| `Generator.sample(num_triples=…)` — instantiate at an arbitrary target size (§3.4) | **Not implemented.** Size is pinned by Block A: `num_triples = round(V × mean_degree)` ([stage1.py](../src/kgsynth/generator/stage1.py)). | Honouring an arbitrary `num_triples` needs a rescaling law for the *extensive* features (raw motif counts, `\|R\|`, `\|T\|`, `num_distinct_cs`, `num_components` — the size-dependence analysis of which features are extensive has since been pruned from this tree; git history has it); that is the conditional-on-size model in [plan/stage1_population_sampler.md](../developer_docs/plan/stage1_population_sampler.md), blocked on data and needed only by Phase 2. |
 | Phase 2 — the scaling-law study (query generation, QLever labelling, FICE grid, `Qerror(N)` fitting) | **Out of scope.** | This submission is Phase 1 (the `kgsynth` package). Phase 2 is documented as future work. |
 | Block F path-length steering | **Not steered** — `shortest_path_max`/`_mean`/`_var` are measured but no target drives them. | The only cheap lever (hub-shortcut injection) is one-sided — it can shorten paths but not lengthen them, and the synthetic graph undershoots; see [generator.md § Path-length steering](generator.md#path-length-steering) (the archived root-cause analysis has since been pruned from this tree; git history has it). |
 | Block B relation frequency: Zipf/power-law **exponent** (G1, §3.1) | **Replaced** with a measured 7-level **quantile function** (`rel_freq_logq`) over `log(E_r / Σ E_r)`; Stage 1 evaluates the stored rank curve directly rather than sampling from a fitted exponent. | With `R` (relation count) small, the rank curve *is* the signal — a single fitted exponent lost against it on every corpus graph. `relation_zipf_exponent` survives only as the Stage-1 fallback for a graph with zero relations. See [§ G1](#g1--relation-usage-skew) and [generator.md § Relation frequency](generator.md#relation-frequency). |
@@ -662,5 +661,6 @@ Resolved against the project spec (the document):
 | `I(R;T)` scalar | **omit for now** | not in the doc |
 
 Still open / not addressed by the doc: **generator rewrite scope** (full refactor vs
-compatibility shim) — implementation choice, default incremental. See *Future work* in
-[notes/generation_algorithm_fit.md](../developer_docs/notes/generation_algorithm_fit.md) for the best-effort gaps.
+compatibility shim) — implementation choice, default incremental. The generation-algorithm-fit
+analysis of the best-effort gaps has since been pruned from this tree as course scratch work; git
+history has it.

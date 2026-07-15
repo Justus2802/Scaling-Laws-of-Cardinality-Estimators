@@ -1,6 +1,7 @@
 # custom
 output/
 CHANGELOG.md
+CLAUDE.md
 graph_data/
 sig_out/
 
@@ -80,4 +81,6 @@ checkpoints/
 logs/
 runs/
 wandb/
-19854409
+
+# Claude Code agent worktrees
+.claude/worktrees/

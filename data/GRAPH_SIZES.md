@@ -1,6 +1,6 @@
 # Graph Sizes
 
-Base RDF graphs in [`graphs/data/`](data/), ranked by triple count (line count of the raw graph file). The `*_queries` / `*_ranking` subdirectories are query workloads, not graphs, and are excluded.
+Base RDF graphs in [`graphs/`](graphs/), ranked by triple count (line count of the raw graph file). The `*_queries` / `*_ranking` subdirectories are query workloads, not graphs, and are excluded.
 
 Measurement status below refers to the **reduced signature** (`sig_out_reduced/`, Blocks
 A,B,C,D,F). See [developer_docs/plan/stage1_population_sampler.md](../developer_docs/plan/stage1_population_sampler.md)

@@ -1,7 +1,7 @@
 """Boxplot of per-feature/per-distribution relative errors for a ``kgsynth dataset`` run.
 
 Loads every ``graph_*/distance.json`` under a dataset output directory (as
-produced by ``kgsynth dataset --measure``, see ``docs/dataset.md``) and pools
+produced by ``kgsynth dataset --measure``, see ``user_docs/dataset.md``) and pools
 their per-feature errors by signature block:
 
 - **Distribution features** (``distance.json``'s ``normalised_w1``, keyed
@@ -19,9 +19,9 @@ draw.
 
 Usage
 -----
-    python scripts/dataset_error_boxplot.py generated/wn18rr_v4
-    python scripts/dataset_error_boxplot.py generated/wn18rr_v4 --out fig.png
-    python scripts/dataset_error_boxplot.py generated/wn18rr_v4 --exclude   # disable exclusion
+    python scripts/dataset_error_boxplot.py data/test_graphs/wn18rr_v4/generated
+    python scripts/dataset_error_boxplot.py data/test_graphs/wn18rr_v4/generated --out fig.png
+    python scripts/dataset_error_boxplot.py data/test_graphs/wn18rr_v4/generated --exclude   # disable exclusion
 """
 
 import argparse
@@ -83,7 +83,7 @@ def _iter_distance_files(dataset_dir: Path) -> list[Path]:
     if not paths:
         raise SystemExit(
             f"No graph_*/distance.json under {dataset_dir}. "
-            "Run with 'kgsynth dataset --measure' first (see docs/dataset.md)."
+            "Run with 'kgsynth dataset --measure' first (see user_docs/dataset.md)."
         )
     return paths
 
@@ -129,7 +129,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("dataset_dir", help="Dataset output directory, e.g. generated/wn18rr_v4.")
+    parser.add_argument("dataset_dir", help="Dataset output directory, e.g. data/test_graphs/wn18rr_v4/generated.")
     parser.add_argument("--out", default=None,
                         help="Output image path (default: "
                              "data/graph_population/dataset_error_boxplot_<name>.png)")

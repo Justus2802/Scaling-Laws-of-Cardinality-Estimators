@@ -193,9 +193,9 @@ flatten every other block's box; boxes/whiskers reflect the full data (matplotli
 rule only hides the flier points, not the whisker range).
 
 ```
-python scripts/dataset_error_boxplot.py generated/wn18rr_v4
-python scripts/dataset_error_boxplot.py generated/wn18rr_v4 --out fig.png
-python scripts/dataset_error_boxplot.py generated/wn18rr_v4 --exclude   # disable exclusion
+python scripts/dataset_error_boxplot.py data/test_graphs/wn18rr_v4/generated
+python scripts/dataset_error_boxplot.py data/test_graphs/wn18rr_v4/generated --out fig.png
+python scripts/dataset_error_boxplot.py data/test_graphs/wn18rr_v4/generated --exclude   # disable exclusion
 ```
 
 ### `sweep_error_boxplot.py`
@@ -276,7 +276,7 @@ python scripts/signature_pca_trajectory.py wn18rr_v4 --num-checkpoints 5 --rewir
 ```
 
 ### `roundtrip_pca.py`
-Takes the **name** of a corpus graph with a cached signature and generates `--num-graphs` independent synthetic replicas of it via `kgsynth.dataset`'s parallel worker pool (`ProcessPoolExecutor`, one process per graph — the same machinery `kgsynth dataset` uses, with an `Identity` transform: no perturbation, only the seed differs). It then projects the target and every synthetic graph into the corpus-fit PCA space (grey dots = real graphs) as a target star with a cloud of synthetic triangles around it, faint arrows from target to each, and reports the mean/std PC drift across the population. The target must already be measured (`kgsynth measure <file>` first, if `data/graphs/<name>/signature/block_e.json` doesn't exist yet) — like `kgsynth dataset`, this never measures Block E inside a worker process, since a seeded colour-coding estimate is not reproducible across processes when `load_kg`'s vertex numbering is hash-ordered. `--workers` sets the pool size (default: CPU count); `--size-agnostic` drops size-dependent features; `--keep-graphs DIR` saves the generated `.ttl` files + metadata instead of discarding them after the plot.
+Takes the **name** of a corpus graph with a cached signature and generates `--num-graphs` independent synthetic replicas of it via `kgsynth.dataset`'s parallel worker pool (`ProcessPoolExecutor`, one process per graph — the same machinery `kgsynth dataset` uses, with an `Identity` transform: no perturbation, only the seed differs). It then projects the target and every synthetic graph into the corpus-fit PCA space (grey dots = real graphs) as a target star with a cloud of synthetic triangles around it, faint arrows from target to each, and reports the mean/std PC drift across the population. The target must already be measured (`kgsynth measure <file>` first, if `data/graphs/<name>/signature/block_e.json` doesn't exist yet) — like `kgsynth dataset`, this never measures Block E inside a worker process, since a seeded colour-coding estimate is not reproducible across processes when `load_kg`'s vertex numbering is hash-ordered. `--workers` sets the pool size (default: CPU count); `--size-agnostic` drops size-dependent features; `--keep-graphs DIR` saves the generated `.ttl` files + metadata instead of discarding them after the plot. Without `--out`, the plot is written to `data/graph_population/<graph>_population_pca.png`.
 
 ```
 kgsynth measure data/graphs/swdf/swdf.nt      # once, if not already cached
@@ -286,7 +286,7 @@ python scripts/roundtrip_pca.py wn18rr_v4 --rewire-budget 20000 --out fig.png
 ```
 
 ### `multi_dataset_pca.py`
-Same idea as `roundtrip_pca.py`, but takes **two or more** corpus graph names and plots all of their targets + synthetic populations together in one corpus-fit PCA figure (marker shape distinguishes which base graph a point belongs to; targets in red, synthetic replicas in blue). `--rewire-budget-for GRAPH=BUDGET` overrides the rewire budget for one named graph (e.g. `=1` to effectively skip Stage 3 for it). `--load-existing GRAPH=DIR` skips generation for `GRAPH` entirely and reads its replicas' `achieved.json` straight from `DIR/graph_*/` (e.g. an earlier `--keep-graphs` run's output, or a `kgsynth dataset --measure` population directory), so a combined plot can reuse graphs generated in a previous invocation. `--ylim MIN MAX` crops the y-axis (PC2) to a fixed range — points outside it are simply not drawn; the PCA fit itself is unaffected.
+Same idea as `roundtrip_pca.py`, but takes **two or more** corpus graph names and plots all of their targets + synthetic populations together in one corpus-fit PCA figure (marker shape distinguishes which base graph a point belongs to; targets in red, synthetic replicas in blue). `--rewire-budget-for GRAPH=BUDGET` overrides the rewire budget for one named graph (e.g. `=1` to effectively skip Stage 3 for it). `--load-existing GRAPH=DIR` skips generation for `GRAPH` entirely and reads its replicas' `achieved.json` straight from `DIR/graph_*/` (e.g. an earlier `--keep-graphs` run's output, or a `kgsynth dataset --measure` population directory), so a combined plot can reuse graphs generated in a previous invocation. `--ylim MIN MAX` crops the y-axis (PC2) to a fixed range — points outside it are simply not drawn; the PCA fit itself is unaffected. Without `--out`, the plot is written to `data/graph_population/signature_pca_multi_<graphs>.png`.
 
 ```
 kgsynth measure data/test_graphs/wn18rr_v4/wn18rr_v4.nt   # once, if uncached
@@ -294,7 +294,7 @@ kgsynth measure data/test_graphs/fb237_v4/fb237_v4.nt     # once, if uncached
 python scripts/multi_dataset_pca.py wn18rr_v4 fb237_v4
 python scripts/multi_dataset_pca.py wn18rr_v4 fb237_v4 --num-graphs 10 --workers 20
 # wn18rr_v4 already generated (e.g. by `kgsynth dataset --measure`) — reuse it:
-python scripts/multi_dataset_pca.py wn18rr_v4 --load-existing wn18rr_v4=generated/wn18rr_v4
+python scripts/multi_dataset_pca.py wn18rr_v4 --load-existing wn18rr_v4=data/test_graphs/wn18rr_v4/generated
 ```
 
 ## Maintenance

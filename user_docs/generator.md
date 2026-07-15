@@ -1,9 +1,10 @@
 # The Generator (`kgsynth`) — algorithms, step by step
 
 The generator turns a measured **reduced signature** into a synthetic KG whose re-measured
-signature lands near the target. It implements the project brief's three-stage procedure
-([notes/generation_algorithm_fit.md](../developer_docs/notes/generation_algorithm_fit.md)) against
-the reduced blocks ([signature.md](signature.md)).
+signature lands near the target. It implements the project brief's three-stage procedure against
+the reduced blocks ([signature.md](signature.md)). (The analysis of how the brief's algorithm maps
+onto the reduced signature has since been pruned from this tree as course scratch work; git
+history has it.)
 
 Code lives in the **`src/kgsynth/generator/`** package:
 

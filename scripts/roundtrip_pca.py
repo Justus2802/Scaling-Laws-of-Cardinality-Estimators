@@ -132,8 +132,8 @@ def main() -> None:
                         help="Fit PCA on scale-free structural features only (drops "
                              "size-dependent features; see plot_signature_pca.py).")
     parser.add_argument("--out", type=Path, default=None,
-                        help="Output image path (default: <graph>_population_pca.png "
-                             "in the current directory).")
+                        help="Output image path (default: "
+                             "data/graph_population/<graph>_population_pca.png).")
     parser.add_argument("--keep-graphs", type=Path, default=None,
                         help="Copy the generated .ttl graphs + metadata here instead of "
                              "discarding them after the plot is made.")
@@ -238,7 +238,7 @@ def main() -> None:
     ax.grid(alpha=0.2)
     fig.tight_layout()
 
-    out_path = args.out or Path(f"{label}_population_pca.png")
+    out_path = args.out or Path(f"data/graph_population/{label}_population_pca.png")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
