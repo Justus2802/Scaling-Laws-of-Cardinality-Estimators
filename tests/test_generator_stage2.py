@@ -360,3 +360,44 @@ class TestConnectComponents(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestStage2DegreeTail(unittest.TestCase):
+    """The in-hub must actually receive the in-edges it was allocated.
+
+    Three separate repair passes have each, at some point, funded themselves out of the
+    degree tail — the reciprocity stub reservation (took its donor from ``argmax``), the
+    inv-CS template completion (redirects away from whichever object holds the *most* edges
+    of a relation, i.e. the hub), and the budget trim. Each silently undid the wiring's work
+    on exactly the node whose degree is hardest to hit, and none of them failed a test.
+
+    The fixture is deliberately extreme — few relations, a hub demanding a large share of
+    every subject pool — because that is the regime where a tail-raiding pass shows up. On a
+    slack graph the hub has room to spare and the bug hides.
+    """
+
+    def _hub_graph(self):
+        # Enough relations that inverse-CS templates have gaps (so the inv-CS completion pass
+        # actually runs and hunts for donors), and a hub whose in-degree is a large share of
+        # the whole edge budget (so it is the obvious object to raid).
+        a = _make_block_a(num_entities=300, num_triples=1500, num_relations=8)
+        b = _make_block_b()
+        b._in_degree_max = 200
+        b._in_degree_p90 = 6.0
+        schema = sample_schema(a, _make_block_c(), b=b, d=_make_block_d(),
+                               f=_make_block_f(), seed=0)
+        return instantiate(schema, seed=1), schema
+
+    def test_in_hub_keeps_the_edges_it_was_wired(self):
+        g, schema = self._hub_graph()
+        indeg = np.array(g.indegree()[:schema.num_entities])
+        target = int(schema.target_in_degrees.max())
+        # On this fixture the hub's whole in-degree allocation is realisable — with every
+        # repair pass behaving, it reaches its target exactly (stable across seeds). Any pass
+        # that funds itself out of the tail knocks it below: the unguarded inv-CS completion
+        # drops it here, and on real graphs cost fb237_v4's hub ~300 in-edges.
+        self.assertGreaterEqual(
+            indeg.max(), target,
+            f"in-hub realised {indeg.max()} of an allocated {target} — a repair pass is "
+            f"taking edges off the degree tail",
+        )

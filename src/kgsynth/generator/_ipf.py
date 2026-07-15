@@ -236,11 +236,58 @@ def round_to_columns(
     return out
 
 
+def _clip_to_entry_caps(
+    cols: np.ndarray, x: np.ndarray, entry_cap: np.ndarray, n_cols: int,
+    rng: np.random.Generator, passes: int = 8,
+) -> int:
+    """Clip each entry at ``entry_cap``, moving the excess **within its own column**.
+
+    An object can be reached by at most ``|S_r|`` *distinct* subjects, and a subject can
+    reach at most ``|O_r|`` distinct objects, because a relation may not carry the same
+    ``(s, o)`` pair twice. An allocation that hands one entity more stubs of ``r`` than that
+    is not merely hard to place — it is **unrealisable**, and no pairing algorithm will ever
+    satisfy it. (fb237_v4's in-hub was allocated 119 in-stubs of relation 178 from a pool of
+    117 subjects.)
+
+    The excess is redistributed to entries in the same column that still have headroom, in
+    proportion to that headroom, so ``Σ_v X[v, r]`` is untouched and the two sides' stub
+    counts stay equal. ``solve_edge_budget`` bounds ``e_r`` by ``|S_r|·|O_r|``, which is
+    exactly the column's total capacity here, so the redistribution always has somewhere to
+    go.
+
+    :returns: the number of stubs moved.
+    """
+    if cols.size == 0:
+        return 0
+    counts = np.bincount(cols, minlength=n_cols)
+    starts = np.concatenate(([0], np.cumsum(counts)[:-1]))
+    moved = 0
+    for _ in range(passes):
+        over = np.maximum(x - entry_cap, 0)
+        if not over.any():
+            break
+        x -= over
+        moved += int(over.sum())
+        per_col = np.bincount(cols, over, minlength=n_cols).astype(np.int64)
+        for c in np.where(per_col > 0)[0]:
+            lo, hi = int(starts[c]), int(starts[c] + counts[c])
+            xs, cp = x[lo:hi], entry_cap[lo:hi]
+            head = np.maximum(cp - xs, 0)
+            total = int(head.sum())
+            if total <= 0:
+                continue                       # column is saturated; caller's cap was wrong
+            take = min(int(per_col[c]), total)
+            add = np.minimum(rng.multinomial(take, head / total), head)
+            xs += add
+    return moved
+
+
 def fit_stubs(
     rows: np.ndarray, cols: np.ndarray, val: np.ndarray,
     row_target: np.ndarray, col_target: np.ndarray,
     n_rows: int, n_cols: int, rng: np.random.Generator,
     floor: bool = False,
+    entry_cap: "np.ndarray | None" = None,
 ) -> np.ndarray:
     """Fit integer stub counts to both margins, optionally with a ≥1-per-entry floor.
 
@@ -265,6 +312,10 @@ def fit_stubs(
     to the plain fit.
 
     :param floor: guarantee ≥1 stub per support entry where the column can afford it.
+    :param entry_cap: per-entry ceiling — the opposite pool's size, i.e. the number of
+        *distinct* partners this entity can have under relation ``r``. Without it the fit
+        can allocate an entity more stubs of a relation than there are partners to spend
+        them on, which no pairing can realise. See :func:`_clip_to_entry_caps`.
     :returns: int64 stub count per non-zero, with column sums exactly ``col_target``.
     """
     if rows.size == 0:
@@ -272,9 +323,15 @@ def fit_stubs(
     ct = np.asarray(col_target, dtype=np.int64)
     rt = np.asarray(row_target, dtype=np.int64)
 
+    def _capped(x: np.ndarray) -> np.ndarray:
+        if entry_cap is not None:
+            _clip_to_entry_caps(cols, x, np.asarray(entry_cap, dtype=np.int64),
+                                n_cols, rng)
+        return x
+
     if not floor:
         a = ipf(rows, cols, val, rt, np.maximum(ct, _EPS), n_rows, n_cols)
-        return round_to_columns(cols, a, ct, n_cols)
+        return _capped(round_to_columns(cols, a, ct, n_cols))
 
     per_col = np.bincount(cols, minlength=n_cols)
     affordable = ct >= per_col                       # column can seat one stub per entry
@@ -297,7 +354,7 @@ def fit_stubs(
         rt2 = _largest_remainder(rt2.astype(float), int(ct2.sum()))
 
     a = ipf(rows, cols, val, rt2, np.maximum(ct2, _EPS), n_rows, n_cols)
-    return round_to_columns(cols, a, ct2, n_cols) + base
+    return _capped(round_to_columns(cols, a, ct2, n_cols) + base)
 
 
 def solve_edge_budget(

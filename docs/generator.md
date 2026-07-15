@@ -307,7 +307,10 @@ where most of the structural fidelity is established.
    - `fit_stubs` fits each side to those margins: rows to the degree targets, columns to `e_r`. The
      column sums come out **exactly `e_r` on both sides**, so every relation's out-stubs and
      in-stubs match and can be paired. The out side carries the ≥1-edge-per-CS-relation floor,
-     imposed by substitution (`X = 1 + X'`) rather than by post-hoc repair.
+     imposed by substitution (`X = 1 + X'`) rather than by post-hoc repair. Each entry is capped at
+     the opposite pool's size (`X[v,r] ≤ |O_r|`, `Y[v,r] ≤ |S_r|`) — a relation cannot carry the same
+     `(s,o)` pair twice, so an entity allocated more stubs of `r` than there are partners to spend
+     them on is not merely hard to place but **unrealisable**.
    - **Stub reservation** (when `ρ_r > 0`): the two sides are fitted independently, so an entity
      eligible for both roles rarely gets a stub on *both* by chance. For up to
      `round(ρ_r·edges_r/2)` entities in `S_r ∩ O_r`, force their out- and in-stub counts to ≥1,
@@ -317,26 +320,38 @@ where most of the structural fidelity is established.
      It was harmless when the allocation came from `ones + multinomial` (no zeros, nothing to
      reserve), but with real hub mass in the allocation it flattened the peak completely: aids'
      realised max out-degree collapsed to 4 against a target of 11.
-   - **Pair** subject-stubs with object-stubs within `S_r × O_r` (configuration model); on a
-     self-loop or duplicate `(s,o)` **retry** by swapping in another pending object stub. Within
-     this pairing:
-     - **Mutual-pair construction** (reciprocal relations): draws entities *with replacement* from
-       `S_r ∩ O_r` (an entity stays available across multiple mutual pairs until either its
+   - **Pair** the stubs within `S_r × O_r`, **object by object, tightest first**, taking each
+     object's subjects **without replacement** — see
+     [§ Why the pairing draws without replacement](#why-the-pairing-draws-without-replacement) for
+     why proportional stub-drawing systematically undershoots the in-hubs and cannot be repaired
+     after the fact. Three passes, in this order:
+     - **B1 — the tight objects** (needing `≥ |S_r|/4` of the subject pool), with an unbounded scan.
+       They run **before** Phase A, which would otherwise burn exactly the stubs they need on random
+       mutual pairs.
+     - **A — mutual-pair construction** (reciprocal relations): draws entities *with replacement*
+       from `S_r ∩ O_r` (an entity stays available across multiple mutual pairs until either its
        out-stub or in-stub supply is exhausted) and places `e1→e2` + `e2→e1`, up to the reserved
        target — this is what actually realises bidirectional pairs.
-     - **Multi-relational biasing** (`edge_multiplicity`/`bidirectional_ratio` targets, independent
-       of per-relation reciprocity): the default draw first tries an object the subject already
-       links to (parallel overlap) before falling back to the unbiased reservoir.
-   Attainment is **capped by the entity pool and average stub multiplicity**, not just the
+     - **B2 — everything else**, still object-centric and without replacement, but bounded at
+       `MAX_PAIR_RETRY` misses.
+     **Multi-relational biasing** (`edge_multiplicity`/`bidirectional_ratio` targets, independent of
+     per-relation reciprocity) runs inside each object's fill: when behind the parallel target, first
+     take subjects that already point at this object via another relation.
+   Reciprocity attainment is **capped by the entity pool and average stub multiplicity**, not just the
    mechanism: e.g. on wn18rr_v4 the biggest relation needs ~3.4 stubs/entity on average from its
    shared pool to hit its reciprocity target but only has ~2.85 available, so a real shortfall
-   remains even with reservation + full stub reuse (measured: bidirectional-pair attainment ≈45–50%
-   of target across fb237/wn18rr/aids, up from the ≈20–25% opportunistic baseline before 5d/reservation).
+   remains even with reservation + full stub reuse.
 6b. **Inv-CS template completion** (step 4b, when `entity_inv_cs` is assigned): after the main
    wiring loop, detects object nodes whose actual in-predicate set is a strict subset of their
    assigned inverse-CS template. For each missing predicate `r`, finds an existing edge
    `(s', o', r)` where `o'` already receives `r` from ≥2 edges (so removing one doesn't break
-   its template), and **redirects** it to `(s', o, r)`. No net edge-count change. This enforces
+   its template) **and is over its in-degree target**, and **redirects** it to `(s', o, r)`. No net
+   edge-count change. The over-target condition is load-bearing: the object holding the *most* edges
+   of a relation is the in-hub, so without it this pass raids precisely the node the wiring worked
+   hardest to build — it stripped fb237_v4's hub from 117 edges of relation 178 back to 71, and the
+   guard alone took that graph's max-in from 1 141 to 1 442 and dbpedia100k's from 5 676 to 14 767.
+   Donors are drawn from one shuffled per-relation queue consumed across all gaps; re-scanning the
+   relation's whole edge list per gap made this pass `O(gaps · |E_r|)`, which cost aids ~110 s. This enforces
    that every template predicate is realised on each object, reducing `inv_num_distinct_cs`
    from ~63 to ~32 (target) before Stage 3. Stage 3 degree-preserving swaps partially undo this
    (ending around 55), but Stage 3 initial loss improves (49.6 vs 56.2 without this pass).
@@ -347,13 +362,11 @@ where most of the structural fidelity is established.
    place an edge touching a satellite node, or it would silently reconnect a component this step
    chose to leave isolated, undoing the `target_nc` / `target_lcc` guarantee.
 7a. **Pairing residual.** The IPF allocation leaves no *budget* deficit — every stub the degree law
-   asks for has a relation to be spent on. What can still fail is the **pairing**: the configuration
-   model draws objects at random, and a subject's last few stubs may find only self-loops or
-   already-used `(s,o)` pairs within `MAX_PAIR_RETRY` attempts. The residual is small (0–0.6% of the
-   budget across the corpus, zero on four of the nine graphs) and is placed by sampling
-   `(subject, object)` pairs weighted by remaining quota. Subject/object pools are filtered to
-   non-satellite nodes first. Driving it to zero needs a smarter endgame (bipartite Havel–Hakimi:
-   process stubs in decreasing-remaining order), which is not done.
+   asks for has a relation to be spent on. What can still fail is the **pairing**: a bounded (B2)
+   object's last few stubs may find only self-loops or already-used `(s,o)` pairs within
+   `MAX_PAIR_RETRY` misses. The residual is now tiny (0–0.15% of the budget, zero on four of the nine
+   graphs) and is placed by sampling `(subject, object)` pairs weighted by remaining quota.
+   Subject/object pools are filtered to non-satellite nodes first.
 7b. **Trim to the edge budget.** `_connect_components` appends its bridging edges *on top* of
    whatever the main loop placed. That used to be invisible, because the old wiring always finished
    short and the bridges landed in the shortfall; the IPF allocation saturates the budget, so those
@@ -667,26 +680,97 @@ mechanism, and `solve_edge_budget` logs it so a shrunk relation is visible.
 
 Against the previous wiring, across all 9 corpus graphs, `|E|` still lands exactly on target and:
 
-| graph | deficit before | deficit after | max-out (target) | max-in (target) |
+| graph | deficit before | deficit after | max-out (target) | max-in (target) | Stage 2 |
+|---|---|---|---|---|---|
+| `wn18rr_v4` | 841 | **0** | 27 (26) | **64 (64)** | 0.1 s |
+| `wn18rr_v4_ind` | — | **0** | 28 (29) | **21 (21)** | 0.2 s |
+| `fb237_v4` | 2 284 | **13** (0.04%) | **195 (195)** | 1 435 (1 442) | 0.3 s |
+| `fb237_v4_ind` | — | **22** (0.15%) | 147 (146) | **318 (318)** | 0.2 s |
+| `aids` | **184 992** | **0** | 10 (11) | **11 (11)** | 8.4 s |
+| `codex_l` | — | **150** (0.02%) | 267 (265) | **18 433 (18 433)** | 8.2 s |
+| `swdf` | — | **0** | 499 (623) | 9 128 (9 148) | 19.9 s |
+| `hetionet` | — | **1 781** (0.08%) | 22 592 (23 866) | 1 957 (2 718) | 10.1 s |
+| `dbpedia100k` | — | **26** (0.004%) | 117 (115) | **14 767 (14 767)** | 13.0 s |
+
+aids' Stage 2 drops from **15+ minutes to ~8 seconds** (the deficit pass it no longer runs was
+`O(deficit × |pool|)`); codex_l 88 s → 8 s, hetionet 220 s → 10 s, dbpedia100k 138 s → 13 s.
+
+The in-hubs — the thing the old wiring missed worst — now land **exactly** on target on `codex_l`
+(18 433), `dbpedia100k` (14 767, up from 5 676), `fb237_v4_ind`, `wn18rr_v4` and `wn18rr_v4_ind`; see
+[§ Why the pairing draws without replacement](#why-the-pairing-draws-without-replacement).
+
+Still short: `hetionet`'s max-in (1 957 / 2 718) and `swdf`'s max-out (499 / 623). Both graphs have
+in-hubs whose demand exceeds what their pools can supply even in principle; the per-entry cap in
+`fit_stubs` clips the allocation to what is realisable, and the shortfall is then genuine rather than
+lost in the wiring. `fb237_v4`'s max-in (1 435 / 1 442) and `aids`' max-out (10 / 11) are 7 and 1 short
+of exact respectively — both are recoverable by protecting the degree tail in the reciprocity stub
+reservation (measured), which is left off pending a check of what it costs reciprocity.
+
+---
+
+## Why the pairing draws without replacement
+
+The subject reservoir is a shuffled multiset with each subject repeated once per remaining out-stub,
+so drawing from it is a draw **∝ remaining stubs** — the ordinary configuration model. That is
+unbiased for a *multigraph*. But a relation may not carry the same `(s, o)` pair twice, so when a
+subject with several stubs picks the same object twice, the duplicate is discarded.
+
+The loss falls hardest on exactly the objects whose stub share is large enough to collide with
+themselves — the in-hubs. This is the **erased configuration model** bias, and it is not a small
+correction. Measured on `fb237_v4`'s in-hub:
+
+| relation | hub needs (distinct subjects) | hub's share of in-stubs | proportional draw yields | shortfall |
 |---|---|---|---|---|
-| `wn18rr_v4` | 841 | **0** | 28 (26) | **64 (64)** |
-| `wn18rr_v4_ind` | — | **0** | 28 (29) | 20 (21) |
-| `fb237_v4` | 2 284 | **227** (0.7%) | 192 (195) | 1 110 (1 442) |
-| `fb237_v4_ind` | — | **96** (0.7%) | 144 (146) | 230 (318) |
-| `aids` | **184 992** | **0** | **11 (11)** | **11 (11)** |
-| `codex_l` | — | 463 (0.08%) | **265 (265)** | 15 542 (18 433) |
-| `swdf` | — | **0** | 610 (623) | 2 422 (9 148) |
-| `hetionet` | — | 8 709 (0.4%) | 21 848 (23 866) | 2 010 (2 718) |
-| `dbpedia100k` | — | 2 510 (0.4%) | 117 (115) | 5 676 (14 767) |
+| 58 | 178 of 258 | 42.0% | ~137 | −41 |
+| 178 | 117 of 117 | 58.3% | ~82 | −35 |
+| 193 | 275 of 832 | 18.6% | ~246 | −29 |
 
-aids' Stage 2 also drops from **15+ minutes to ~11 seconds**, because the deficit pass it no longer
-runs was `O(deficit × |pool|)`.
+Note relation 58: the hub must be reached by **69% of every subject of that relation** while holding
+only 42% of its in-stubs. *No proportional rule can turn 42% into 69%* — the probability has to exceed
+the stub share to compensate for the collisions. Sampling proportionally is the one thing guaranteed
+to undershoot a hub.
 
-The residual deficit is now entirely **pairing** loss, not budget loss. The remaining weakness is
-**max-in**, which still undershoots on the graphs with very heavy in-hubs (fb237_v4, codex_l,
-dbpedia100k): the allocation gives the hub its stubs, but the configuration-model pairing cannot find
-that many *distinct* subjects for it within `MAX_PAIR_RETRY`. That is a pairing-endgame problem, and
-the fix is the same bipartite Havel–Hakimi ordering that would take the residual to zero.
+So the pairing fills **one object at a time**, taking its subjects **without replacement**: an object
+with `k` in-stubs needs `k` *distinct* subjects, and drawing them without replacement makes
+distinctness structural rather than a rejection test, so the collision loss is zero by construction.
+The draw stays random and stays weighted by remaining stubs — "without replacement" simply moved from
+the test into the sampler. (The textbook alternative is the max-entropy *simple*-graph model,
+`p_so = x_s·y_o / (1 + x_s·y_o)`, where the `1/(1+xy)` **is** the collision correction; it needs a
+dense `|S_r|×|O_r|` fit, which is 1.6×10¹⁰ entries for aids' biggest relation, so it is not used.)
+
+Objects are served in **decreasing tightness** (= decreasing stub count, `|S_r|` being fixed within a
+relation), and the tight ones are served **before Phase A**. Neither is optional:
+
+* Tightness cannot be *detected late*. By the time a random pairing "gets hard", the distinct subjects
+  a hub needed have already spent their stubs elsewhere, and no endgame repair can un-spend them. The
+  ordering is a statement about the *beginning* of the process, not the end.
+* Phase A (mutual pairs) otherwise burns exactly those stubs on random reciprocal pairs. On
+  `fb237_v4`'s relation 178 — where the hub needs *every* subject in the pool — that alone cost it 46
+  of 117.
+
+Objects needing a large share of the pool get an unbounded scan; the rest are bounded at
+`MAX_PAIR_RETRY`, since an object needing a handful of subjects out of thousands has ample freedom and
+walking the whole reservoir for it would cost far more than it buys. Tight objects are few — needing
+`≥ |S_r|/4` stubs bounds their number at `4·edges_r/|S_r|` — so the unbounded scan is affordable
+exactly where it is needed.
+
+### Three passes that funded themselves out of the degree tail
+
+The same bug appeared three times, in three different repair passes, and each one silently undid the
+wiring's work on the hubs. The pattern is worth naming: **a repair pass that needs a spare edge will
+find the most spare edges at the hub, which is precisely the node whose degree is hardest to hit.**
+
+* **The reciprocity stub reservation** (`_reserve`) took its donor stub from `np.argmax(m)`, over and
+  over — the hub by definition. It flattened aids' max out-degree to **4** against a target of 11.
+  Donors are now drawn uniformly among entities with a surplus.
+* **The inv-CS template completion** (step 4b) redirects an edge away from any object holding ≥2 edges
+  of a relation — and the object holding the *most* is the in-hub. It correctly wired `fb237_v4`'s hub
+  to all 117 subjects of relation 178 and then stripped it back to **71**, costing ~300 in-edges in
+  total. A donor edge may now only be taken from an object that is **over** its in-degree target: the
+  pass spends surplus, never target-critical mass. This single guard took `fb237_v4`'s max-in from
+  1 141 to 1 442 and `dbpedia100k`'s from 5 676 to 14 767.
+* **The budget trim** (step 5b) removes the excess from the edges whose endpoints most *exceed* their
+  degree targets, for the same reason — designed with the trap in mind rather than fixed after it.
 
 ---
 

@@ -191,3 +191,40 @@ class TestStubBalance(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestEntryCaps(unittest.TestCase):
+    def test_no_entry_exceeds_the_opposite_pool(self):
+        # A relation cannot carry the same (s, o) pair twice, so an object is reached by at
+        # most |S_r| distinct subjects. An allocation above that is not merely hard to place
+        # — it is unrealisable, and no pairing will ever satisfy it (fb237_v4's in-hub was
+        # allocated 119 in-stubs of relation 178 from a pool of 117 subjects).
+        rng = np.random.default_rng(11)
+        V, R = 400, 5
+        # Relation 0 has a tiny object pool, so its in-side entries face a big subject pool
+        # while its out-side entries have almost nowhere to go.
+        cs = [np.array([0, 1 + v % 4]) for v in range(V)]
+        inv = [np.array([0, 1 + v % 4]) if v < 12 else np.array([1 + v % 4])
+               for v in range(V)]
+        orow, ocol = build_support(cs, R)
+        irow, icol = build_support(inv, R)
+        n_obj = np.bincount(icol, minlength=R)      # |O_r|
+        n_subj = np.bincount(ocol, minlength=R)     # |S_r|
+
+        tgt = np.full(V, 6, dtype=np.int64)
+        e = solve_edge_budget(orow, ocol, rng.random(orow.size) + 0.1, tgt,
+                              irow, icol, rng.random(irow.size) + 0.1, tgt.copy(),
+                              np.full(R, int(tgt.sum()) / R), V, R,
+                              col_cap=(n_subj * n_obj).astype(float))
+        x = fit_stubs(orow, ocol, rng.random(orow.size) + 0.1, tgt, e, V, R, rng,
+                      floor=True, entry_cap=n_obj[ocol])
+        y = fit_stubs(irow, icol, rng.random(irow.size) + 0.1, tgt, e, V, R, rng,
+                      entry_cap=n_subj[icol])
+
+        self.assertTrue((x <= n_obj[ocol]).all(), "a subject was given more stubs of r "
+                                                  "than r has distinct objects")
+        self.assertTrue((y <= n_subj[icol]).all(), "an object was given more stubs of r "
+                                                   "than r has distinct subjects")
+        # The caps are enforced *within* a column, so stub balance must survive them.
+        np.testing.assert_array_equal(np.bincount(ocol, x, minlength=R).astype(np.int64), e)
+        np.testing.assert_array_equal(np.bincount(icol, y, minlength=R).astype(np.int64), e)

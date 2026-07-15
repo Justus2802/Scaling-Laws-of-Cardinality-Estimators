@@ -13,6 +13,7 @@ Turns a Schema into an igraph.Graph by
   - selectively bridging isolated components to match target num_components / LCC fraction.
 """
 
+import math
 from collections import defaultdict, deque
 
 import igraph
@@ -682,14 +683,27 @@ def instantiate(
         w_rel * content_E_target, actual_V, num_relations, col_cap=col_cap,
     )
 
+    # Per-entry ceilings: a relation cannot carry the same (s, o) pair twice, so a subject
+    # reaches at most |O_r| distinct objects and an object is reached by at most |S_r|
+    # distinct subjects. Without these the fit can hand an entity more stubs of r than there
+    # are partners to spend them on — an allocation no pairing can realise (fb237_v4's in-hub
+    # was given 119 in-stubs of relation 178 from a pool of 117 subjects).
+    n_obj_per_rel = np.zeros(num_relations, dtype=np.int64)
+    n_subj_per_rel = np.zeros(num_relations, dtype=np.int64)
+    for r in present:
+        n_obj_per_rel[r] = len(objects_by_rel[r])
+        n_subj_per_rel[r] = len(subjects_by_rel[r])
+
     # Final fit against the solved budget. Column sums come out exactly equal to it on both
     # sides — that is what makes the two sides' stubs pairable. The out side carries the
     # ≥1-edge-per-CS-relation floor; the in side does not (an entity's inverse CS is
     # completed later, best-effort, by the redirect pass in §4b).
     stub_out = fit_stubs(out_rows, out_cols, out_val, tgt_out, edge_budget_arr,
-                         actual_V, num_relations, rng, floor=True)
+                         actual_V, num_relations, rng, floor=True,
+                         entry_cap=n_obj_per_rel[out_cols])
     stub_in = fit_stubs(in_rows, in_cols, in_val, tgt_in, edge_budget_arr,
-                        actual_V, num_relations, rng)
+                        actual_V, num_relations, rng,
+                        entry_cap=n_subj_per_rel[in_cols])
 
     # Column slices: `*_cols` are sorted, so relation r owns one contiguous run.
     out_starts = np.concatenate(([0], np.cumsum(np.bincount(out_cols, minlength=num_relations))))
@@ -741,14 +755,20 @@ def instantiate(
                     entity that has one to spare. Column-sum-preserving, so the per-relation
                     stub balance the IPF allocation establishes survives.
 
-                    Donors are drawn **uniformly among the entities with a surplus**. Taking
-                    from ``argmax(m)`` instead — as this did originally — robs the same entry
-                    over and over, and that entry is by definition the hub carrying the
-                    max/p90 degree target. It was harmless while ``m_obj`` came from
-                    ``ones + multinomial`` (no zeros, so nothing to reserve), but the IPF
-                    allocation puts real hub mass in ``m``, and on a highly reciprocal graph
-                    with tens of thousands of reservations it flattened the peak completely:
-                    aids' realised max out-degree collapsed to 4 against a target of 11.
+                    **The degree tail may not donate.** Two earlier versions both destroyed it:
+                    taking from ``argmax(m)`` robs the same entry repeatedly (aids' realised max
+                    out-degree collapsed to 4 against a target of 11), and taking *uniformly
+                    among entities with a surplus* is no better where the allocation is thin —
+                    if almost every entry holds exactly one stub, the hub is the only entity
+                    with any surplus at all, so "uniform among donors" still means "take it all
+                    from the hub". On fb237_v4's relation 178 that cost the in-hub 49 of its 117
+                    stubs, and its realised max in-degree 1442 → 1128.
+
+                    So the top ``DEGSEQ_TAIL_FRACTION`` of entries — the ones carrying the
+                    p90/max degree targets, exactly as ``repair_degree_sum`` protects them — are
+                    excluded from donating. If that leaves no donor, the reservation is skipped:
+                    reciprocity simply cannot be improved here without paying for it out of the
+                    degree law, and the degree law is the more fundamental target.
                     """
                     idx = np.fromiter((pos[e] for e in reserved if e in pos),
                                       dtype=np.int64, count=-1)
@@ -756,6 +776,18 @@ def instantiate(
                         return
                     starving = idx[m[idx] == 0]
                     surplus = np.maximum(m - 1, 0)
+                    # FOLLOW-UP (deliberately not enabled): excluding the degree tail from
+                    # donating — i.e. zeroing the surplus of the top DEGSEQ_TAIL_FRACTION of
+                    # entries, the same tail repair_degree_sum protects —
+                    #
+                    #     protected = np.argsort(-m, kind="stable")[
+                    #         :max(1, int(round(m.size * DEGSEQ_TAIL_FRACTION)))]
+                    #     surplus[protected] = 0
+                    #
+                    # buys the last exact hit on two graphs (measured: fb237_v4 max-in
+                    # 1435 → 1442, aids max-out 10 → 11). It is off because it pays for that
+                    # out of reciprocity attainment, and that side of the trade has not been
+                    # measured. Turn it on only together with a bidirectional-pair check.
                     donors = np.where(surplus > 0)[0]
                     take = min(starving.size, int(surplus.sum()))
                     if take <= 0 or donors.size == 0:
@@ -808,6 +840,71 @@ def instantiate(
                 unique_src_count[o] += 1
             return True
 
+        # ── The subject reservoir, shared by both fill passes below ──────────────
+        # A shuffled multiset with each subject repeated once per remaining out-stub, so
+        # drawing from it is a draw ∝ remaining stubs: the ordinary configuration model.
+        subj_seq = [e for e, c in remaining_out.items() for _ in range(c)]
+        rng.shuffle(subj_seq)
+        pool: deque = deque(subj_seq)
+
+        def _fill_object(o: int, unbounded: bool) -> None:
+            """Give object ``o`` its in-stubs, taking subjects **without replacement**.
+
+            The configuration-model draw is unbiased for a *multigraph*, but a relation may
+            not carry the same (s, o) pair twice, so when a subject with several stubs picks
+            the same object twice the duplicate is discarded. That loss falls hardest on the
+            objects whose stub share is large enough to collide with themselves — the
+            in-hubs — which is the erased-configuration-model bias, and it is not small:
+            fb237_v4's in-hub needs 178 *distinct* subjects of relation 58 from a pool of 258
+            while holding only 42% of that relation's in-stubs, and a proportional draw
+            yields ~137. No proportional rule turns 42% into 69%.
+
+            Filling one object at a time and taking its subjects without replacement makes
+            distinctness structural rather than a rejection test, so the collision loss is
+            zero by construction. The draw stays random and stays weighted by remaining
+            stubs — "without replacement" simply moved from the test into the sampler.
+
+            Subjects that cannot serve *this* object go to ``aside`` and return to the pool
+            for the next one, so nothing is lost.
+            """
+            if n_parallel < n_parallel_target and remaining_in.get(o, 0) > 0:
+                # A subject already pointing at o (via another relation) makes this a
+                # parallel edge; take those first when behind the overlap target.
+                for s in list(in_neighbours[o]):
+                    if remaining_in.get(o, 0) <= 0:
+                        break
+                    _place(s, o)                     # guards, and counts the overlap itself
+
+            aside: list[int] = []
+            misses = 0
+            limit = math.inf if unbounded else MAX_PAIR_RETRY
+            while remaining_in.get(o, 0) > 0 and pool and misses < limit:
+                s = pool.popleft()
+                if remaining_out.get(s, 0) <= 0:
+                    continue                         # stale: subject already spent
+                if _place(s, o):
+                    misses = 0
+                else:
+                    aside.append(s)                  # can't serve *this* o — keep for others
+                    misses += 1
+            pool.extend(aside)                       # already a random subset; order is free
+
+        # Phase B1 — the **tight** objects, before anything else touches the pool.
+        # An object needing a large share of the subject pool has almost no freedom: it must
+        # draw while that pool is still intact. This cannot be deferred to an endgame repair,
+        # because by the time a random pairing "gets hard" the distinct subjects the object
+        # needed have already spent their stubs elsewhere, and no repair can un-spend them.
+        # It must also run before Phase A, which otherwise burns exactly those stubs on
+        # random mutual pairs — that alone cost fb237_v4's in-hub 46 of the 117 subjects of
+        # relation 178, a relation where it needs *every* subject.
+        # Tight objects are few (needing ≥ |S_r|/4 stubs bounds their count at
+        # 4·edges_r/|S_r|), so the unbounded scan they get is affordable.
+        objs = sorted((o for o, c in remaining_in.items() if c > 0),
+                      key=lambda o: -remaining_in[o])
+        tight = [o for o in objs if remaining_in.get(o, 0) * 4 >= n_sr]
+        for o in tight:
+            _fill_object(o, unbounded=True)
+
         # Phase A — reciprocity-driven bidirectional construction: this relation's
         # target reciprocity ρ_r (Block B, sampled per relation in Stage 1) says a
         # ρ_r fraction of its directed edges should be part of a mutual pair, i.e.
@@ -823,18 +920,19 @@ def instantiate(
         rho_r = (float(rel_recip[rel_idx]) if rel_recip is not None else 0.0)
         n_mutual_target = int(round(rho_r * edges_r / 2.0))
         if n_mutual_target > 0:
-            pool = [e for e in remaining_out
-                    if remaining_in.get(e, 0) > 0 and remaining_out[e] > 0]
+            mutual_pool = [e for e in remaining_out
+                           if remaining_in.get(e, 0) > 0 and remaining_out[e] > 0]
             built = 0
             max_attempts = 4 * n_mutual_target + 20   # bound: a few stale-pick misses per pair
             attempts = 0
-            while built < n_mutual_target and len(pool) >= 2 and attempts < max_attempts:
+            while (built < n_mutual_target and len(mutual_pool) >= 2
+                   and attempts < max_attempts):
                 attempts += 1
-                i1 = int(rng.integers(len(pool)))
-                i2 = int(rng.integers(len(pool)))
+                i1 = int(rng.integers(len(mutual_pool)))
+                i2 = int(rng.integers(len(mutual_pool)))
                 if i2 == i1:
                     continue
-                e1, e2 = pool[i1], pool[i2]
+                e1, e2 = mutual_pool[i1], mutual_pool[i2]
                 if (remaining_out.get(e1, 0) > 0 and remaining_in.get(e2, 0) > 0
                         and remaining_out.get(e2, 0) > 0 and remaining_in.get(e1, 0) > 0
                         and (e1, e2) not in placed_pairs and (e2, e1) not in placed_pairs):
@@ -847,41 +945,16 @@ def instantiate(
                 # first so popping doesn't invalidate the other's position).
                 for idx, e in sorted(((i1, e1), (i2, e2)), reverse=True):
                     if remaining_out.get(e, 0) <= 0 or remaining_in.get(e, 0) <= 0:
-                        pool[idx] = pool[-1]
-                        pool.pop()
+                        mutual_pool[idx] = mutual_pool[-1]
+                        mutual_pool.pop()
 
-        # Phase B — pair the remaining stubs. Draw objects from a shuffled reservoir
-        # (unbiased configuration model), but when behind on the parallel target first
-        # try an object s already links to (multi-relational overlap).
-        subj_seq = [e for e, c in remaining_out.items() for _ in range(c)]
-        obj_seq = [e for e, c in remaining_in.items() for _ in range(c)]
-        rng.shuffle(subj_seq)
-        rng.shuffle(obj_seq)
-        order: deque = deque(obj_seq)
-
-        def _valid(s: int, o: int) -> bool:
-            return o != s and remaining_in.get(o, 0) > 0 and (s, o) not in placed_pairs
-
-        for s in subj_seq:
-            if remaining_out.get(s, 0) <= 0:
-                continue                             # already consumed by phase A
-            placed = False
-            if n_parallel < n_parallel_target:       # multi-relational overlap first
-                for o in out_targets[s]:
-                    if _valid(s, o) and _place(s, o):
-                        placed = True
-                        break
-            if placed:
-                continue
-            for _ in range(MAX_PAIR_RETRY):          # default unbiased draw
-                if not order:
-                    break
-                cand = order.popleft()
-                if remaining_in.get(cand, 0) <= 0:
-                    continue                         # exhausted by an overlap/phase-A draw
-                if _valid(s, cand) and _place(s, cand):
-                    break
-                order.append(cand)                   # valid object, wrong for this s — requeue
+        # Phase B2 — everything else, still object-centric and still without replacement,
+        # but bounded: an object needing only a handful of subjects out of thousands has ample
+        # freedom, and letting it walk the whole reservoir would cost far more than it buys.
+        # `objs` is in decreasing-stub order, so the least free are still served first.
+        for o in objs:
+            if remaining_in.get(o, 0) > 0:
+                _fill_object(o, unbounded=False)
 
     log.info("Stage 2: wired %d content edges (overlap: parallel=%d/%d, bidir=%d/%d)",
              len(content_edges), n_parallel, n_parallel_target, n_bidir, n_bidir_target)
@@ -913,6 +986,33 @@ def instantiate(
                 edges_by_rel.setdefault(ri, []).append(ei)
                 in_count[(o, ri)] = in_count.get((o, ri), 0) + 1
 
+        # A donor edge may only be taken from an object that is **over** its in-degree
+        # target. Redirecting away from an object that is at or below target trades a
+        # Block-D gain for a Block-B loss, and it does so on precisely the wrong nodes: an
+        # object with many edges of a relation is the easiest donor to find, and the object
+        # with the most is the in-hub. Unguarded, this pass quietly undid the wiring's whole
+        # effort on the tail — fb237_v4's in-hub was correctly wired to all 117 subjects of
+        # relation 178 and then stripped back to 71 here, and its realised max in-degree
+        # sat ~300 below target because of it.
+        realised_in = np.zeros(actual_V, dtype=np.int64)
+        for _s, _o, _p in content_edges:
+            realised_in[_o] += 1
+
+        # One shuffled donor queue per relation, consumed across all gaps, rather than
+        # re-shuffling the relation's whole edge list for every gap. With the donor guard
+        # most candidates are now rejected, so the old rescan walked the entire list each
+        # time — O(gaps · |E_r|), which took aids' Stage 2 from 11s to ~120s.
+        #
+        # An edge rejected on an *object-level* test (donor not over-served, or down to its
+        # last edge of the relation) is dropped for good, not requeued: both quantities only
+        # ever decrease here, so it can never become eligible again. Only the tests that
+        # depend on the *starving* object are requeued.
+        donor_q: dict[int, deque] = {}
+        for ri, eis in edges_by_rel.items():
+            lst = list(eis)
+            rng.shuffle(lst)
+            donor_q[ri] = deque(lst)
+
         redirected = 0
         for o in range(actual_V):
             tmpl = entity_inv_cs[o]
@@ -922,24 +1022,31 @@ def instantiate(
                 if rel_idx in actual_in_preds[o]:
                     continue
                 pred = schema.relations[rel_idx]
-                candidates = list(edges_by_rel.get(rel_idx, []))
-                rng.shuffle(candidates)
-                for ei in candidates:
+                dq = donor_q.get(rel_idx)
+                if not dq:
+                    continue
+                requeue: list[int] = []
+                for _ in range(min(len(dq), MAX_PAIR_RETRY)):
+                    ei = dq.popleft()
                     s2, o2, _ = content_edges[ei]
-                    if o2 == o or s2 == o:
-                        continue
                     if in_count.get((o2, rel_idx), 0) < 2:
-                        continue
-                    if (s2, o, pred) in seen:
+                        continue                 # donor would lose its last edge of r — drop
+                    if realised_in[o2] <= tgt_in[o2]:
+                        continue                 # donor is not over-served — drop
+                    if o2 == o or s2 == o or (s2, o, pred) in seen:
+                        requeue.append(ei)       # wrong for *this* o; may suit another
                         continue
                     seen.discard((s2, o2, pred))
                     seen.add((s2, o, pred))
                     content_edges[ei] = (s2, o, pred)
                     in_count[(o2, rel_idx)] = in_count.get((o2, rel_idx), 1) - 1
                     in_count[(o, rel_idx)] = in_count.get((o, rel_idx), 0) + 1
+                    realised_in[o2] -= 1
+                    realised_in[o] += 1
                     actual_in_preds[o].add(rel_idx)
                     redirected += 1
                     break
+                dq.extend(requeue)
 
         if redirected:
             log.info("Stage 2: inv-CS template completion redirected %d edges", redirected)
